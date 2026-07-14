@@ -6,7 +6,9 @@ from fastapi import APIRouter
 
 from app.api.v1.admin.auth import router as auth_router
 from app.api.v1.admin.catalog import router as catalog_router
+from app.api.v1.admin.orders import router as orders_router
 
 admin_router = APIRouter()
 admin_router.include_router(auth_router, prefix="/auth", tags=["admin-auth"])
 admin_router.include_router(catalog_router, prefix="/case-types", tags=["admin-catalog"])
+admin_router.include_router(orders_router, prefix="/orders", tags=["admin-orders"])

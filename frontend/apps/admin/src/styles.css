@@ -179,3 +179,35 @@ input { font-family: inherit; }
 .mchip input { display: none; }
 .mchip--on { color: var(--accent-press); border-color: var(--accent); background: var(--accent-soft); font-weight: 500; }
 select.input { appearance: none; cursor: pointer; }
+
+/* ── Заказы: фильтры, бейджи, карточка ────────────── */
+.filters { display: flex; gap: 10px; margin-bottom: 16px; }
+.filters__search { flex: 1; }
+.filters__search .input { width: 100%; }
+.filters__sel { width: 200px; height: 42px; }
+.muted { color: var(--ink-faint); }
+.table .muted { color: var(--ink-faint); }
+
+.badge { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #f0eee9; color: var(--ink-soft); white-space: nowrap; }
+.badge--green { background: #e4f4ea; color: #2f7d4e; }
+.badge--red { background: #fbe6e6; color: var(--danger); }
+
+.modal__card--wide { max-width: 640px; }
+.deflist { display: grid; grid-template-columns: 160px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.deflist__row { display: contents; }
+.deflist__label { padding: 9px 14px; font-size: 13px; color: var(--ink-soft); background: #fafaf8; border-bottom: 1px solid var(--line); }
+.deflist__value { padding: 9px 14px; font-size: 13.5px; border-bottom: 1px solid var(--line); }
+.deflist__row:last-child .deflist__label, .deflist__row:last-child .deflist__value { border-bottom: none; }
+.deflist__sep { grid-column: 1 / -1; padding: 8px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); background: #fff; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); }
+
+.block { margin-top: 4px; }
+.block .field__label { margin-bottom: 8px; }
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form .input { flex: 1; }
+.inline-form .btn { white-space: nowrap; }
+
+.timeline { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line-2); }
+.timeline__item { position: relative; padding: 0 0 14px 16px; }
+.timeline__item::before { content: ''; position: absolute; left: -5px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.timeline__status { display: block; font-size: 13.5px; font-weight: 600; }
+.timeline__meta { display: block; font-size: 12px; color: var(--ink-faint); font-family: var(--mono); margin-top: 2px; }

@@ -49,6 +49,8 @@ async function handle<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export const apiUrl = (path: string): string => `${BASE}${path}`
+
 export async function apiGet<T>(path: string): Promise<T> {
   return handle<T>(await fetch(`${BASE}${path}`, { headers: headers() }))
 }
