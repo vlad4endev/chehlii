@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { fetchCatalog } from '@ui/api'
+import { fetchCatalog, plural } from '@ui/api'
 import { CatalogView } from '@ui/CatalogView'
 
 import { useFavorites } from './store'
@@ -41,9 +41,12 @@ export function App() {
     <div className="app">
       <header className="header">
         <div className="wordmark">
-          ЧЕХЛ<span className="wordmark__accent">ИИ</span>
+          чехл<span className="wordmark__accent">ии</span>
+          <span className="wordmark__dot" />
         </div>
-        <p className="tagline">Индивидуальные чехлы на заказ</p>
+        <p className="tagline">
+          Индивидуальные чехлы, <span className="serif-it">сделанные под вас</span>
+        </p>
       </header>
 
       <nav className="nav" aria-label="Разделы">
@@ -70,27 +73,44 @@ export function App() {
         )}
 
         {status === 'ready' && tab === 'catalog' && (
-          <CatalogView
-            items={items}
-            favorites={favorites.ids}
-            onOpen={setSelected}
-            onToggleFavorite={(i) => favorites.toggle(i.id)}
-          />
-        )}
-
-        {status === 'ready' && tab === 'favorites' &&
-          (favItems.length ? (
+          <>
+            <div className="pagehead">
+              <span className="meta">
+                {items.length} {plural(items.length, ['тип', 'типа', 'типов'])} в наличии
+              </span>
+              <h2 className="pagehead__title">
+                Чехлы, которых нет <span className="serif-it">ни у кого</span>
+              </h2>
+            </div>
             <CatalogView
-              items={favItems}
+              items={items}
               favorites={favorites.ids}
               onOpen={setSelected}
               onToggleFavorite={(i) => favorites.toggle(i.id)}
             />
-          ) : (
-            <div className="state">
-              Здесь появятся сохранённые чехлы. Нажмите ♡ на карточке в каталоге.
+          </>
+        )}
+
+        {status === 'ready' && tab === 'favorites' && (
+          <>
+            <div className="pagehead">
+              <span className="meta">Избранное · {favItems.length}</span>
+              <h2 className="pagehead__title">Сохранённое</h2>
             </div>
-          ))}
+            {favItems.length ? (
+              <CatalogView
+                items={favItems}
+                favorites={favorites.ids}
+                onOpen={setSelected}
+                onToggleFavorite={(i) => favorites.toggle(i.id)}
+              />
+            ) : (
+              <div className="state">
+                Пока пусто. Нажмите на сердечко у чехла в каталоге — он появится здесь.
+              </div>
+            )}
+          </>
+        )}
 
         {tab === 'why' && <Why />}
         {tab === 'reviews' && <Reviews />}

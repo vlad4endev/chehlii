@@ -1,4 +1,4 @@
-/* База: сброс, типографика, общие примитивы каталога. */
+/* База: сброс, типографика, примитивы каталога (editorial). */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -12,8 +12,8 @@ img { max-width: 100%; display: block; }
 button { font-family: inherit; cursor: pointer; }
 a { color: inherit; text-decoration: none; }
 
-/* Монограмма-плейсхолдер: используется, когда фото типа ещё не загружено —
-   отсылает к гравировке/персонализации (подпись бренда). */
+/* Монограмма-плейсхолдер (гравировка) — подпись бренда, стоит вместо фото,
+   пока реального фото типа нет. */
 .monogram {
   position: relative;
   width: 100%;
@@ -21,51 +21,51 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--r-md);
   overflow: hidden;
   background:
-    radial-gradient(120% 100% at 30% 10%, rgba(42, 70, 255, 0.10), transparent 60%),
-    linear-gradient(160deg, var(--card), var(--paper-2));
+    radial-gradient(130% 90% at 28% 8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+    linear-gradient(158deg, var(--card), var(--paper-2));
   display: grid;
   place-items: center;
 }
 .monogram__letter {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(72px, 22vw, 120px);
+  font-weight: 800;
+  font-size: clamp(72px, 24vw, 128px);
   line-height: 1;
   color: var(--ink);
-  opacity: 0.08;
-  letter-spacing: -0.04em;
+  opacity: 0.07;
+  letter-spacing: -0.05em;
   user-select: none;
 }
 .monogram__ring {
   position: absolute;
-  inset: 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: calc(var(--r-md) - 6px);
+  inset: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: calc(var(--r-md) - 8px);
   pointer-events: none;
 }
 
-/* Тег типа (Стандарт/Кастом) */
-.tag {
+/* Мета-метка (mono, uppercase) — тег типа Стандарт/Кастом и подписи разделов */
+.meta {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 8px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line-strong);
-  color: var(--ink-soft);
-  background: var(--card);
+  color: var(--ink-faint);
 }
-.tag--custom {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
+.meta--accent { color: var(--accent); }
 
-/* Цена — моноширинная, «спецификационная» */
+/* Цена — моноширинная */
 .price {
   font-family: var(--font-mono);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* Serif-italic акцент (редко: заголовочные слова, вводные строки) */
+.serif-it {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
 }

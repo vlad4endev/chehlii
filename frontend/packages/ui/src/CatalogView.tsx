@@ -3,7 +3,7 @@ import { formatPrice } from './api'
 import { MonogramImage } from './MonogramImage'
 
 // Общий компонент каталога — рендерится и в Telegram/MAX WebApp, и на лендинге.
-// Поведение кнопок задаётся снаружи через колбэки (в боте — sendData, на лендинге — deep link).
+// Поведение кнопок задаётся снаружи (в боте — sendData, на лендинге — deep link).
 export interface CatalogViewProps {
   items: CaseType[]
   favorites: Set<number>
@@ -26,20 +26,19 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
               <MonogramImage src={item.photo_url} name={item.name} />
             </button>
 
-            <span className={`tag card__tag${item.is_custom ? ' tag--custom' : ''}`}>
-              {item.is_custom ? 'Кастом' : 'Стандарт'}
-            </span>
-
             <button
-              className={`heart${fav ? ' heart--on' : ''}`}
+              className={`fav${fav ? ' fav--on' : ''}`}
               onClick={() => onToggleFavorite(item)}
               aria-pressed={fav}
               aria-label={fav ? 'Убрать из избранного' : 'В избранное'}
             >
-              {fav ? '♥' : '♡'}
+              <HeartIcon filled={fav} />
             </button>
 
             <div className="card__body" onClick={() => onOpen(item)}>
+              <span className={`meta${item.is_custom ? ' meta--accent' : ''}`}>
+                {item.is_custom ? 'Кастом' : 'Стандарт'}
+              </span>
               <h3 className="card__name">{item.name}</h3>
               <div className="price card__price">{formatPrice(item.client_price)}</div>
             </div>
@@ -47,5 +46,19 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
         )
       })}
     </div>
+  )
+}
+
+export function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 20.5 4.2 12.9a4.6 4.6 0 0 1 0-6.6 4.7 4.7 0 0 1 6.6 0l1.2 1.2 1.2-1.2a4.7 4.7 0 0 1 6.6 0 4.6 4.6 0 0 1 0 6.6z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }

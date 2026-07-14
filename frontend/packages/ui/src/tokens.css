@@ -1,55 +1,62 @@
-/* Дизайн-токены ЧехлИИ. Направление: «бутик-ателье» — галерейный холодный фон,
-   тёмная тушь, единственный акцент кобальт, продукт (фото/монограмма) в центре. */
+/* Дизайн-токены ЧехлИИ — направление «airy editorial»:
+   лёгкий воздушный свет, мягкая графитово-сливовая тушь (без чистого чёрного),
+   единственный акцент — фиолет (он же CTA), мягкие тени с лёгким подтоном. */
 :root {
   /* Палитра — светлая (по умолчанию) */
-  --paper: #ececed;         /* галерейный холодный светло-серый */
-  --paper-2: #e4e4e7;       /* чуть глубже — для полос/хедера */
+  --paper: #f6f5fa;        /* воздушный почти-белый с лёгким лиловым подтоном */
+  --paper-2: #efedf6;
   --card: #ffffff;
-  --ink: #16161a;           /* холодная почти-чёрная тушь */
-  --ink-soft: #5b5b66;
-  --ink-faint: #9a9aa4;
-  --line: #e0e0e5;
-  --line-strong: #cfcfd6;
-  --accent: #2a46ff;        /* кобальт — единственный акцент */
-  --accent-press: #1c34d8;
-  --accent-tint: #eaeeff;
-  --on-accent: #ffffff;
+  --ink: #2a2833;          /* мягкая графитово-сливовая тушь (не чёрный) */
+  --ink-2: #55525f;
+  --ink-soft: #817e8d;
+  --ink-faint: #adaabb;
+  --line: #eceaf3;         /* тонкие светлые линии */
+  --line-2: #dddbe7;
+
+  --accent: #6a4bff;       /* фиолет — единственный акцент и цвет CTA */
+  --accent-press: #5a3bf0;
+  --accent-soft: #efeaff;
+  --cta: #6a4bff;
+  --on-cta: #ffffff;
 
   /* Типографика */
   --font-display: 'Unbounded', system-ui, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
   --font-body: 'Onest', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   /* Скругления */
   --r-sm: 10px;
-  --r-md: 16px;
-  --r-lg: 22px;
+  --r-md: 18px;
+  --r-lg: 26px;
   --r-pill: 999px;
 
-  /* Тени — мягкие, «предметные» */
-  --shadow-card: 0 1px 2px rgba(20, 20, 30, 0.04), 0 8px 24px rgba(20, 20, 30, 0.06);
-  --shadow-pop: 0 12px 40px rgba(20, 20, 40, 0.16);
+  /* Тени — мягкие, с лёгким фиолетовым подтоном (воздушнее) */
+  --shadow-card: 0 1px 2px rgba(70, 55, 140, 0.03), 0 14px 34px rgba(70, 55, 140, 0.07);
+  --shadow-pop: 0 18px 55px rgba(70, 55, 140, 0.16);
 
-  /* Ритм */
-  --gap: 14px;
-  --pad: 16px;
+  --gap: 12px;
+  --pad: 18px;
   --maxw: 720px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #101013;
-    --paper-2: #17171b;
-    --card: #1a1a1f;
-    --ink: #f1f1f5;
-    --ink-soft: #a6a6b2;
-    --ink-faint: #6a6a76;
-    --line: #2a2a31;
-    --line-strong: #3a3a44;
-    --accent: #4a63ff;
-    --accent-press: #6479ff;
-    --accent-tint: #1a1e3a;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
-    --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+    --paper: #121118;
+    --paper-2: #1a1922;
+    --card: #1c1b24;
+    --ink: #f0eef7;
+    --ink-2: #c9c6d4;
+    --ink-soft: #9d9aac;
+    --ink-faint: #6a6779;
+    --line: #2a2833;
+    --line-2: #3a3747;
+    --accent: #9179ff;
+    --accent-press: #a48fff;
+    --accent-soft: #241f3d;
+    --cta: #7c62ff;
+    --on-cta: #ffffff;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 34px rgba(0, 0, 0, 0.45);
+    --shadow-pop: 0 18px 55px rgba(0, 0, 0, 0.55);
   }
 }

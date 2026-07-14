@@ -1,7 +1,5 @@
-// Страница «Зачем вам индивидуальный чехол»: ценность (текст + картинки) + раздел «О нас».
+// «Зачем вам индивидуальный чехол»: ценность (текст + картинки) + раздел «О нас».
 // Картинки — плейсхолдеры-монограммы, заменяются реальными фото через AdminUI.
-// Картинки — плейсхолдеры в монограммном стиле (буква из заголовка), заменяются
-// реальными фото через AdminUI.
 const REASONS = [
   {
     title: 'Он только ваш',
@@ -20,13 +18,16 @@ const REASONS = [
 export function Why() {
   return (
     <div className="why">
-      <header className="why__hero">
-        <h1 className="why__title">Зачем вам индивидуальный чехол</h1>
+      <div className="pagehead">
+        <span className="meta">Почему мы</span>
+        <h1 className="pagehead__title pagehead__title--xl">
+          Зачем вам <span className="serif-it">индивидуальный</span> чехол
+        </h1>
         <p className="why__lead">
-          Чехол — это то, что вы держите в руках сотни раз в день. Пусть он будет про вас, а не
-          про завод, где его отштамповали тысячным тиражом.
+          Чехол — то, что вы держите в руках сотни раз в день. Пусть он будет про вас, а не про
+          завод, где его отштамповали тысячным тиражом.
         </p>
-      </header>
+      </div>
 
       <div className="why__reasons">
         {REASONS.map((r) => (
@@ -44,12 +45,11 @@ export function Why() {
       </div>
 
       <section className="about">
-        <h2 className="about__h">О нас</h2>
+        <span className="meta">О нас</span>
         <p className="about__lead">
-          Небольшая мастерская, которая делает чехлы под каждого клиента — от лаконичной
-          гравировки до полностью авторского дизайна.
+          Небольшая мастерская, которая делает чехлы под каждого клиента — от лаконичной гравировки
+          до полностью авторского дизайна.
         </p>
-
         <div className="about__ways">
           <div className="about__way">
             <div className="monogram about__img">
