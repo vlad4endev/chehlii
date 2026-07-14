@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import sentry_sdk
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -23,3 +26,9 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health", tags=["service"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
+
+
+# Отдача собранного мини-приложения с того же домена (после API-роутов, поэтому
+# /api, /docs, /health имеют приоритет, а всё остальное — SPA).
+if settings.webroot and os.path.isdir(settings.webroot):
+    app.mount("/", StaticFiles(directory=settings.webroot, html=True), name="webapp")

@@ -36,8 +36,12 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     env_file: .env.server
+    environment:
+      WEBROOT: /app/webroot          # backend отдаёт мини-приложение (SPA) с того же домена
     ports:
       - "8090:8000"   # host:container — NPM форвардит домен на 8090
+    volumes:
+      - ./webroot:/app/webroot:ro    # сюда rsync'ится собранный фронт (dist)
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +50,23 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    restart: unless-stopped
+
+  # Telegram-бот: тонкий фронтенд, ходит в тот же серверный backend (одна БД).
+  bot:
+    build:
+      context: ..
+      dockerfile: bots/Dockerfile
+    environment:
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN}
+      BACKEND_URL: http://backend:8000/api/v1   # внутри compose-сети, не через NPM
+      REDIS_URL: redis://redis:6379/1
+      WEBAPP_URL: https://test.skypath.fun
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     sentry_dsn: str | None = None
 
+    # Каталог собранного мини-приложения (SPA). Если задан и существует — backend
+    # отдаёт фронт с того же домена, что и API (same-origin, без CORS).
+    webroot: str | None = None
+
     # PostgreSQL
     postgres_user: str = "chehlii"
     postgres_password: str = "change_me"
