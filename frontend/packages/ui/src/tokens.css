@@ -1,0 +1,55 @@
+/* Дизайн-токены ЧехлИИ. Направление: «бутик-ателье» — галерейный холодный фон,
+   тёмная тушь, единственный акцент кобальт, продукт (фото/монограмма) в центре. */
+:root {
+  /* Палитра — светлая (по умолчанию) */
+  --paper: #ececed;         /* галерейный холодный светло-серый */
+  --paper-2: #e4e4e7;       /* чуть глубже — для полос/хедера */
+  --card: #ffffff;
+  --ink: #16161a;           /* холодная почти-чёрная тушь */
+  --ink-soft: #5b5b66;
+  --ink-faint: #9a9aa4;
+  --line: #e0e0e5;
+  --line-strong: #cfcfd6;
+  --accent: #2a46ff;        /* кобальт — единственный акцент */
+  --accent-press: #1c34d8;
+  --accent-tint: #eaeeff;
+  --on-accent: #ffffff;
+
+  /* Типографика */
+  --font-display: 'Unbounded', system-ui, sans-serif;
+  --font-body: 'Onest', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Скругления */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-pill: 999px;
+
+  /* Тени — мягкие, «предметные» */
+  --shadow-card: 0 1px 2px rgba(20, 20, 30, 0.04), 0 8px 24px rgba(20, 20, 30, 0.06);
+  --shadow-pop: 0 12px 40px rgba(20, 20, 40, 0.16);
+
+  /* Ритм */
+  --gap: 14px;
+  --pad: 16px;
+  --maxw: 720px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #101013;
+    --paper-2: #17171b;
+    --card: #1a1a1f;
+    --ink: #f1f1f5;
+    --ink-soft: #a6a6b2;
+    --ink-faint: #6a6a76;
+    --line: #2a2a31;
+    --line-strong: #3a3a44;
+    --accent: #4a63ff;
+    --accent-press: #6479ff;
+    --accent-tint: #1a1e3a;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+  }
+}

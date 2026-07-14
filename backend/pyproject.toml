@@ -1,0 +1,18 @@
+[project]
+name = "chehlii-backend"
+version = "0.1.0"
+description = "ЧехлИИ backend: REST API, webhooks, order FSM, scheduler"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Автогенерируемые Alembic-миграции не линтуем (typing.Union, длинные строки sa.Column).
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

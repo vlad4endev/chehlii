@@ -1,0 +1,302 @@
+.app {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+/* ── Хедер ─────────────────────────────────────────── */
+.header {
+  padding: calc(var(--pad) + 6px) var(--pad) 10px;
+  background: linear-gradient(180deg, var(--paper-2), var(--paper));
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--ink);
+}
+.wordmark__accent { color: var(--accent); }
+.tagline {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+}
+
+/* ── Навигация ─────────────────────────────────────── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+  padding: 8px var(--pad);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav__tab {
+  position: relative;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+.nav__tab--active {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+.nav__count {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+/* ── Основная область ──────────────────────────────── */
+.main { padding: var(--pad); }
+.state {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ── Сетка каталога ────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap);
+}
+.card {
+  position: relative;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 8px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.card:active { transform: scale(0.985); }
+.card__media {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.card__tag {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 2;
+}
+.card__body { padding: 10px 6px 4px; cursor: pointer; }
+.card__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.card__price {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* ── Кнопка избранного ─────────────────────────────── */
+.heart {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: 17px;
+  color: var(--ink);
+  box-shadow: var(--shadow-card);
+}
+.heart--on { color: var(--accent); }
+.heart--inline {
+  position: static;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+/* ── Экран деталей (sheet) ─────────────────────────── */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  animation: sheet-in 0.24s ease;
+}
+@keyframes sheet-in { from { transform: translateY(2%); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+.sheet__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px var(--pad);
+}
+.sheet__close {
+  width: 38px; height: 38px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--r-pill);
+  font-size: 18px;
+  color: var(--ink);
+}
+.sheet__scroll { flex: 1; overflow-y: auto; padding: 0 var(--pad) 16px; }
+.detail__media { max-width: 320px; margin: 0 auto 18px; }
+.detail__head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.detail__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+  margin: 2px 0 0;
+}
+.detail__price { font-size: 18px; }
+.detail__desc { color: var(--ink-soft); line-height: 1.55; margin: 16px 0; }
+.detail__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--ink-soft);
+  background: var(--card);
+}
+
+.sheet__actions {
+  display: flex;
+  gap: 10px;
+  padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+.sheet__hint {
+  margin: 0;
+  padding: 0 var(--pad) 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-faint);
+  background: var(--paper);
+}
+.btn {
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.btn--primary { background: var(--accent); color: var(--on-accent); }
+.btn--primary:active { background: var(--accent-press); }
+.btn--ghost { flex: 0 0 auto; background: var(--card); border-color: var(--line-strong); color: var(--ink); }
+
+/* ── Зачем вам индивидуальный чехол ────────────────── */
+.why { padding: 4px 2px 24px; }
+.why__hero { padding-bottom: 8px; }
+.why__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  margin: 0 0 12px;
+}
+.why__lead { font-size: 16px; line-height: 1.5; color: var(--ink-soft); margin: 0; }
+
+.why__reasons { margin: 20px 0 8px; }
+.reason {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.reason__media { aspect-ratio: 1; border: 1px solid var(--line); }
+.reason__media .monogram__letter { font-size: 40px; }
+.reason__title { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0 0 6px; letter-spacing: -0.02em; }
+.reason__text { margin: 0; color: var(--ink-soft); line-height: 1.5; font-size: 14px; }
+
+.about {
+  margin-top: 20px;
+  padding: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+.about__h { font-family: var(--font-display); font-weight: 600; font-size: 20px; margin: 0 0 8px; letter-spacing: -0.02em; }
+.about__lead { margin: 0 0 18px; color: var(--ink-soft); line-height: 1.5; font-size: 14px; }
+.about__ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.about__img { aspect-ratio: 1; margin-bottom: 10px; }
+.about__img .monogram__letter { font-size: 44px; }
+.about__wayh { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0 0 4px; }
+.about__wayt { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.45; }
+
+/* ── Отзывы (сеткой, как каталог) ──────────────────── */
+.review {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+}
+.review__avatar {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.review__text { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+.review__author { font-weight: 600; font-size: 13px; color: var(--ink-soft); }

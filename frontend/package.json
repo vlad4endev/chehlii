@@ -1,0 +1,14 @@
+{
+  "name": "chehlii-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @chehlii/miniapp",
+    "build": "npm run build -w @chehlii/miniapp",
+    "lint": "npm run lint -w @chehlii/miniapp"
+  }
+}
