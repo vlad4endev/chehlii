@@ -10,13 +10,15 @@ import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
 import { Placeholder } from './pages/Placeholder'
+import { Reviews } from './pages/Reviews'
 import { SECTIONS } from './sections'
 
-// Реализованные разделы; остальные — заглушка (Фазы E–H).
+// Реализованные разделы; остальные — заглушка (Фазы F–H).
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
   '/orders': <Orders />,
   '/clients': <Clients />,
+  '/reviews': <Reviews />,
 }
 
 function Protected() {

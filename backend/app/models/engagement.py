@@ -33,7 +33,7 @@ class Review(Base, TimestampMixin):
     __tablename__ = "reviews"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"))
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
     text: Mapped[str | None] = mapped_column(Text)  # сообщение клиента в боте
     photo_url: Mapped[str | None] = mapped_column(String(1024))  # фото чехла (опционально)

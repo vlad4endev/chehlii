@@ -211,3 +211,20 @@ select.input { appearance: none; cursor: pointer; }
 .timeline__item::before { content: ''; position: absolute; left: -5px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .timeline__status { display: block; font-size: 13.5px; font-weight: 600; }
 .timeline__meta { display: block; font-size: 12px; color: var(--ink-faint); font-family: var(--mono); margin-top: 2px; }
+
+/* ── Отзывы (модерация) ───────────────────────────── */
+.count-badge { font-size: 12px; font-weight: 600; color: var(--accent-press); background: var(--accent-soft); padding: 3px 10px; border-radius: 999px; vertical-align: middle; margin-left: 8px; }
+.segmented { display: inline-flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-bottom: 18px; }
+.segmented__btn { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-soft); }
+.segmented__btn:hover { color: var(--ink); }
+.segmented__btn--active { background: var(--accent-soft); color: var(--accent-press); font-weight: 600; }
+
+.reviews-list { display: flex; flex-direction: column; gap: 12px; }
+.rcard { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.rcard__body { min-width: 0; flex: 1; }
+.rcard__top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.rcard__author { font-weight: 600; font-size: 14px; }
+.rcard__date { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+.rcard__text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.rcard__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.btn--sm { height: 34px; padding: 0 14px; font-size: 13px; }

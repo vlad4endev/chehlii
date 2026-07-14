@@ -13,8 +13,8 @@ from sqlalchemy import select
 from app.constants import IPHONE_MODELS
 from app.core.database import SessionLocal
 from app.core.security import hash_password
-from app.enums import AdminRole, BotMessageMode
-from app.models import AdminUser, BotMessage, CaseType, CaseTypeModel
+from app.enums import AdminRole, BotMessageMode, ReviewStatus
+from app.models import AdminUser, BotMessage, CaseType, CaseTypeModel, Review
 
 CASE_TYPES = [
     {
@@ -108,13 +108,32 @@ async def seed_bot_messages(session) -> None:
         session.add(BotMessage(code=code, trigger=trigger, text=text, mode=BotMessageMode.AUTO))
 
 
+_P = ReviewStatus.PUBLISHED
+_M = ReviewStatus.PENDING
+SAMPLE_REVIEWS = [
+    ("Марина", "Кастом по рисунку — точь-в-точь, печать супер.", _P),
+    ("Илья", "Гравировка аккуратная, пришло быстро.", _P),
+    ("Sofia", "Дизайнер помог с макетом. Рекомендую.", _M),
+    ("Артём", "Взял в подарок с инициалами — супер.", _M),
+    ("Ольга", "Немного задержали, но чехол отличный!", _M),
+]
+
+
+async def seed_reviews(session) -> None:
+    if await session.scalar(select(Review).limit(1)):
+        return
+    for name, text, status in SAMPLE_REVIEWS:
+        session.add(Review(author_name=name, text=text, status=status))
+
+
 async def main() -> None:
     async with SessionLocal() as session:
         await seed_admin(session)
         await seed_catalog(session)
         await seed_bot_messages(session)
+        await seed_reviews(session)
         await session.commit()
-    print("Seed завершён: администратор, каталог, тексты бота.")
+    print("Seed завершён: администратор, каталог, тексты бота, отзывы.")
 
 
 if __name__ == "__main__":
