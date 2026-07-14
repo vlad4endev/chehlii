@@ -45,6 +45,7 @@ async function handle<T>(res: Response): Promise<T> {
     }
     throw new ApiError(res.status, detail)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 

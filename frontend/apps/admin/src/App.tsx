@@ -1,11 +1,19 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
+import type { ReactNode } from 'react'
+
 import { useAuth } from './auth'
 import { AdminLayout } from './layout/AdminLayout'
+import { Catalog } from './pages/Catalog'
 import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
 import { Placeholder } from './pages/Placeholder'
 import { SECTIONS } from './sections'
+
+// Реализованные разделы; остальные — заглушка (Фазы C–H).
+const PAGES: Record<string, ReactNode> = {
+  '/catalog': <Catalog />,
+}
 
 function Protected() {
   const { user, loading } = useAuth()
@@ -33,9 +41,7 @@ export function App() {
               key={s.path}
               path={s.path.slice(1)}
               element={
-                <RoleGuard roles={s.roles}>
-                  <Placeholder title={s.label} />
-                </RoleGuard>
+                <RoleGuard roles={s.roles}>{PAGES[s.path] ?? <Placeholder title={s.label} />}</RoleGuard>
               }
             />
           ))}

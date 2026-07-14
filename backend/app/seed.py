@@ -10,22 +10,11 @@ import asyncio
 
 from sqlalchemy import select
 
+from app.constants import IPHONE_MODELS
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.enums import AdminRole, BotMessageMode
 from app.models import AdminUser, BotMessage, CaseType, CaseTypeModel
-
-IPHONE_MODELS = [
-    "iPhone 14",
-    "iPhone 14 Pro",
-    "iPhone 15",
-    "iPhone 15 Pro",
-    "iPhone 16",
-    "iPhone 16 Pro",
-    "iPhone 17",
-    "iPhone 17 Pro",
-    "iPhone 17 Air",
-]
 
 CASE_TYPES = [
     {
