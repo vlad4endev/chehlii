@@ -5,16 +5,18 @@ import type { ReactNode } from 'react'
 import { useAuth } from './auth'
 import { AdminLayout } from './layout/AdminLayout'
 import { Catalog } from './pages/Catalog'
+import { Clients } from './pages/Clients'
 import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
 import { Placeholder } from './pages/Placeholder'
 import { SECTIONS } from './sections'
 
-// Реализованные разделы; остальные — заглушка (Фазы D–H).
+// Реализованные разделы; остальные — заглушка (Фазы E–H).
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
   '/orders': <Orders />,
+  '/clients': <Clients />,
 }
 
 function Protected() {
