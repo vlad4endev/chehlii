@@ -6,6 +6,7 @@ import { CatalogView } from '@ui/CatalogView'
 
 import { useFavorites } from './store'
 import { CaseDetail } from './pages/CaseDetail'
+import { OrderHandoff } from './pages/OrderHandoff'
 import { Why } from './pages/Why'
 import { Reviews } from './pages/Reviews'
 
@@ -24,6 +25,7 @@ export function App() {
   const [items, setItems] = useState<CaseType[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [selected, setSelected] = useState<CaseType | null>(null)
+  const [ordered, setOrdered] = useState<{ item: CaseType; model: string } | null>(null)
   const favorites = useFavorites()
 
   useEffect(() => {
@@ -74,14 +76,19 @@ export function App() {
 
         {status === 'ready' && tab === 'catalog' && (
           <>
-            <div className="pagehead">
-              <span className="meta">
-                {items.length} {plural(items.length, ['тип', 'типа', 'типов'])} в наличии
+            <section className="hero">
+              <div className="hero__glow" aria-hidden="true" />
+              <div className="hero__orb" aria-hidden="true">
+                <span>Ч</span>
+              </div>
+              <span className="meta hero__eyebrow">
+                {items.length} {plural(items.length, ['тип', 'типа', 'типов'])} · под вас
               </span>
-              <h2 className="pagehead__title">
-                Чехлы, которых нет <span className="serif-it">ни у кого</span>
+              <h2 className="hero__title">
+                Носите то, что <span className="serif-it">только ваше</span>
               </h2>
-            </div>
+              <p className="hero__sub">Дизайнерские чехлы с гравировкой и авторским принтом.</p>
+            </section>
             <CatalogView
               items={items}
               favorites={favorites.ids}
@@ -122,7 +129,15 @@ export function App() {
           isFavorite={favorites.ids.has(selected.id)}
           onToggleFavorite={() => favorites.toggle(selected.id)}
           onClose={() => setSelected(null)}
+          onOrdered={(model) => {
+            setOrdered({ item: selected, model })
+            setSelected(null)
+          }}
         />
+      )}
+
+      {ordered && (
+        <OrderHandoff item={ordered.item} model={ordered.model} onBack={() => setOrdered(null)} />
       )}
     </div>
   )

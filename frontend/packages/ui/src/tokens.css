@@ -1,23 +1,28 @@
-/* Дизайн-токены ЧехлИИ — направление «airy editorial»:
-   лёгкий воздушный свет, мягкая графитово-сливовая тушь (без чистого чёрного),
-   единственный акцент — фиолет (он же CTA), мягкие тени с лёгким подтоном. */
+/* Дизайн-токены ЧехлИИ. Направление вдохновлено rusuniq.ru: фирменный оранжевый,
+   драматичный тёмный акцент и объёмная 3D-подача. База — светлая и воздушная
+   (чтобы не было тяжести), тёмное и объёмное — точечно. */
 :root {
   /* Палитра — светлая (по умолчанию) */
-  --paper: #f6f5fa;        /* воздушный почти-белый с лёгким лиловым подтоном */
-  --paper-2: #efedf6;
+  --paper: #f2f1ed;        /* тёплый почти-белый */
+  --paper-2: #e8e5de;
   --card: #ffffff;
-  --ink: #2a2833;          /* мягкая графитово-сливовая тушь (не чёрный) */
-  --ink-2: #55525f;
-  --ink-soft: #817e8d;
-  --ink-faint: #adaabb;
-  --line: #eceaf3;         /* тонкие светлые линии */
-  --line-2: #dddbe7;
+  --ink: #201e1b;          /* мягкая тёплая тушь (не чёрный) */
+  --ink-2: #524e48;
+  --ink-soft: #7c7870;
+  --ink-faint: #aca69c;
+  --line: #e7e3db;
+  --line-2: #d7d3c9;
 
-  --accent: #6a4bff;       /* фиолет — единственный акцент и цвет CTA */
-  --accent-press: #5a3bf0;
-  --accent-soft: #efeaff;
-  --cta: #6a4bff;
+  --accent: #ff5a2d;       /* оранжевый rusuniq — единственный акцент */
+  --accent-press: #e8481d;
+  --accent-soft: #ffe7de;
+  --cta: #ff5a2d;
   --on-cta: #ffffff;
+
+  /* Тёмный акцент-герой */
+  --hero-bg: #17140f;
+  --hero-ink: #f7f4ef;
+  --hero-soft: #b9b2a6;
 
   /* Типографика */
   --font-display: 'Unbounded', system-ui, sans-serif;
@@ -29,11 +34,13 @@
   --r-sm: 10px;
   --r-md: 18px;
   --r-lg: 26px;
+  --r-xl: 32px;
   --r-pill: 999px;
 
-  /* Тени — мягкие, с лёгким фиолетовым подтоном (воздушнее) */
-  --shadow-card: 0 1px 2px rgba(70, 55, 140, 0.03), 0 14px 34px rgba(70, 55, 140, 0.07);
-  --shadow-pop: 0 18px 55px rgba(70, 55, 140, 0.16);
+  /* Тени — мягкие + объёмная (для 3D-элементов) */
+  --shadow-card: 0 1px 2px rgba(40, 30, 20, 0.04), 0 14px 34px rgba(40, 30, 20, 0.08);
+  --shadow-vol: 0 6px 12px rgba(40, 30, 20, 0.08), 0 26px 50px rgba(40, 30, 20, 0.16);
+  --shadow-pop: 0 18px 55px rgba(40, 30, 20, 0.2);
 
   --gap: 12px;
   --pad: 18px;
@@ -42,21 +49,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121118;
-    --paper-2: #1a1922;
-    --card: #1c1b24;
-    --ink: #f0eef7;
-    --ink-2: #c9c6d4;
-    --ink-soft: #9d9aac;
-    --ink-faint: #6a6779;
-    --line: #2a2833;
-    --line-2: #3a3747;
-    --accent: #9179ff;
-    --accent-press: #a48fff;
-    --accent-soft: #241f3d;
-    --cta: #7c62ff;
-    --on-cta: #ffffff;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 34px rgba(0, 0, 0, 0.45);
-    --shadow-pop: 0 18px 55px rgba(0, 0, 0, 0.55);
+    --paper: #131211;
+    --paper-2: #1c1a18;
+    --card: #1e1c1a;
+    --ink: #f4f1ec;
+    --ink-2: #cbc7bf;
+    --ink-soft: #a09b92;
+    --ink-faint: #6d685f;
+    --line: #2b2825;
+    --line-2: #3b3733;
+    --accent: #ff7a52;
+    --accent-press: #ff8f6c;
+    --accent-soft: #3a221a;
+    --cta: #ff7a52;
+    --on-cta: #17140f;
+    --hero-bg: #0d0b09;
+    --hero-ink: #f7f4ef;
+    --hero-soft: #b9b2a6;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px rgba(0, 0, 0, 0.5);
+    --shadow-vol: 0 6px 12px rgba(0, 0, 0, 0.5), 0 26px 50px rgba(0, 0, 0, 0.6);
+    --shadow-pop: 0 18px 55px rgba(0, 0, 0, 0.6);
   }
 }

@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-// Избранное. По ТЗ хранится на сервере (привязка к клиенту) — эндпоинты появятся
-// в бэкенде позже; пока используем localStorage, чтобы UX работал. Интерфейс хука
-// не изменится при переходе на серверное хранилище.
-const KEY = 'chehlii:favorites'
+import { getTelegramUser } from './telegram'
 
-function read(): number[] {
+// Избранное. По ТЗ хранится на сервере и привязано к клиенту (tg_id/max_id) — серверные
+// эндпоинты появятся позже. Пока используем localStorage, но ключ уже привязан к клиенту
+// (у каждого Telegram-аккаунта своё избранное). Интерфейс хука не изменится при переходе
+// на серверное хранилище.
+function storageKey(): string {
+  const user = getTelegramUser()
+  return user ? `chehlii:favorites:${user.id}` : 'chehlii:favorites'
+}
+
+function read(key: string): number[] {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as number[]) : []
   } catch {
     return []
@@ -15,11 +21,12 @@ function read(): number[] {
 }
 
 export function useFavorites() {
-  const [ids, setIds] = useState<Set<number>>(() => new Set(read()))
+  const key = useMemo(storageKey, [])
+  const [ids, setIds] = useState<Set<number>>(() => new Set(read(key)))
 
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify([...ids]))
-  }, [ids])
+    localStorage.setItem(key, JSON.stringify([...ids]))
+  }, [key, ids])
 
   const toggle = useCallback((id: number) => {
     setIds((prev) => {

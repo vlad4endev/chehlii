@@ -1,4 +1,4 @@
-/* База: сброс, типографика, примитивы каталога (editorial). */
+/* База: сброс, типографика, объёмные примитивы каталога. */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -12,8 +12,8 @@ img { max-width: 100%; display: block; }
 button { font-family: inherit; cursor: pointer; }
 a { color: inherit; text-decoration: none; }
 
-/* Монограмма-плейсхолдер (гравировка) — подпись бренда, стоит вместо фото,
-   пока реального фото типа нет. */
+/* Монограмма-плейсхолдер: объёмная 3D-буква на «подиуме» с оранжевой гранью —
+   подпись бренда и заглушка вместо фото типа. */
 .monogram {
   position: relative;
   width: 100%;
@@ -21,20 +21,29 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--r-md);
   overflow: hidden;
   background:
-    radial-gradient(130% 90% at 28% 8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
-    linear-gradient(158deg, var(--card), var(--paper-2));
+    radial-gradient(85% 55% at 50% 16%, rgba(255, 90, 45, 0.16), transparent 62%),
+    radial-gradient(65% 34% at 50% 104%, rgba(40, 30, 20, 0.12), transparent 72%),
+    linear-gradient(165deg, #ffffff, var(--paper-2));
   display: grid;
   place-items: center;
 }
 .monogram__letter {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: clamp(72px, 24vw, 128px);
+  font-size: clamp(76px, 24vw, 132px);
   line-height: 1;
-  color: var(--ink);
-  opacity: 0.07;
   letter-spacing: -0.05em;
+  color: #f0ede7;
+  transform: translateY(-3%);
   user-select: none;
+  /* Экструзия (вниз-вправо) + оранжевая грань + мягкая отбрасываемая тень */
+  text-shadow:
+    1px 1px 0 #e9e5de,
+    2px 2px 0 #e2ded6,
+    3px 3px 0 #dbd6ce,
+    4px 4px 0 #d5d0c7,
+    5px 6px 0 rgba(255, 90, 45, 0.38),
+    6px 9px 16px rgba(40, 30, 20, 0.3);
 }
 .monogram__ring {
   position: absolute;
@@ -44,7 +53,7 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 
-/* Мета-метка (mono, uppercase) — тег типа Стандарт/Кастом и подписи разделов */
+/* Мета-метка (mono, uppercase) — теги и подписи разделов */
 .meta {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -55,7 +64,6 @@ a { color: inherit; text-decoration: none; }
 }
 .meta--accent { color: var(--accent); }
 
-/* Цена — моноширинная */
 .price {
   font-family: var(--font-mono);
   font-weight: 500;
@@ -63,7 +71,6 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: -0.01em;
 }
 
-/* Serif-italic акцент (редко: заголовочные слова, вводные строки) */
 .serif-it {
   font-family: var(--font-serif);
   font-style: italic;

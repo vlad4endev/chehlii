@@ -1,6 +1,6 @@
 import type { CaseType } from './types'
 import { formatPrice } from './api'
-import { MonogramImage } from './MonogramImage'
+import { CaseMockup } from './CaseMockup'
 
 // Общий компонент каталога — рендерится и в Telegram/MAX WebApp, и на лендинге.
 // Поведение кнопок задаётся снаружи (в боте — sendData, на лендинге — deep link).
@@ -23,7 +23,7 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
               onClick={() => onOpen(item)}
               aria-label={`Открыть ${item.name}`}
             >
-              <MonogramImage src={item.photo_url} name={item.name} />
+              <CaseMockup name={item.name} isCustom={item.is_custom} photoUrl={item.photo_url} />
             </button>
 
             <button

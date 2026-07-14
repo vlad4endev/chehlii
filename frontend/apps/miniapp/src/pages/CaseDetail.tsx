@@ -1,49 +1,66 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
 import { formatPrice } from '@ui/api'
-import { MonogramImage } from '@ui/MonogramImage'
+import { CaseMockup } from '@ui/CaseMockup'
 import { HeartIcon } from '@ui/CatalogView'
 
-import { isTelegram, mainButton, sendOrder } from '../telegram'
+import { backButton, isTelegram, mainButton, sendOrder } from '../telegram'
 
-// Экран типа чехла. «Выбрать для заказа»: в Telegram — sendData в бот + нативная
-// MainButton; вне Telegram (лендинг) — deep link в бот.
+// Экран типа чехла. Модель iPhone выбирается здесь же, в мини-приложении.
+// «Выбрать для заказа» доступна только после выбора модели; далее в бот уходит
+// {case_id, case_type, model}. В Telegram — sendData + нативная MainButton;
+// вне Telegram (лендинг) — экран-хэндофф в бот.
 export function CaseDetail({
   item,
   isFavorite,
   onToggleFavorite,
   onClose,
+  onOrdered,
 }: {
   item: CaseType
   isFavorite: boolean
   onToggleFavorite: () => void
   onClose: () => void
+  onOrdered: (model: string) => void
 }) {
   const caseType = item.is_custom ? 'custom' : 'standard'
+  const available = item.models.filter((m) => m.is_available)
+  const [model, setModel] = useState<string | null>(null)
 
   function order() {
-    const sent = sendOrder(item.id, caseType)
-    if (!sent) {
-      const deepLink = `https://t.me/chehlii_bot?start=case_${item.id}_${caseType}`
-      window.open(deepLink, '_blank')
-    }
+    if (!model) return
+    const sent = sendOrder(item.id, caseType, model)
+    if (!sent) onOrdered(model)
   }
 
+  // Нативная кнопка «Назад» Telegram закрывает экран типа.
+  useEffect(() => {
+    const bb = backButton()
+    if (!bb) return
+    bb.show()
+    bb.onClick(onClose)
+    return () => {
+      bb.offClick(onClose)
+      bb.hide()
+    }
+  }, [onClose])
+
+  // Нативная кнопка Telegram: показываем только когда модель выбрана.
   useEffect(() => {
     const mb = mainButton()
     if (!mb) return
+    const handler = () => order()
     mb.setText('Выбрать для заказа')
-    mb.show()
-    mb.onClick(order)
+    if (model) mb.show()
+    else mb.hide()
+    mb.onClick(handler)
     return () => {
-      mb.offClick(order)
+      mb.offClick(handler)
       mb.hide()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id])
-
-  const available = item.models.filter((m) => m.is_available)
+  }, [item.id, model])
 
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label={item.name}>
@@ -68,7 +85,12 @@ export function CaseDetail({
 
       <div className="sheet__scroll">
         <div className="detail__media">
-          <MonogramImage src={item.photo_url} name={item.name} />
+          <CaseMockup
+            name={item.name}
+            isCustom={item.is_custom}
+            photoUrl={item.photo_url}
+            model={model ?? undefined}
+          />
         </div>
 
         <h1 className="detail__name">{item.name}</h1>
@@ -77,24 +99,33 @@ export function CaseDetail({
         {item.description && <p className="detail__desc">{item.description}</p>}
 
         <div className="detail__models">
-          <div className="meta detail__label">Доступные модели</div>
+          <div className="meta detail__label">Выберите модель iPhone</div>
           <div className="chips">
             {available.map((m) => (
-              <span className="chip" key={m.model_name}>
+              <button
+                key={m.model_name}
+                className={`chip chip--select${model === m.model_name ? ' chip--on' : ''}`}
+                onClick={() => setModel(m.model_name)}
+                aria-pressed={model === m.model_name}
+              >
                 {m.model_name}
-              </span>
+              </button>
             ))}
           </div>
         </div>
       </div>
 
       <div className="sheet__actions">
-        <button className="btn btn--ghost" onClick={onToggleFavorite} aria-pressed={isFavorite}>
+        <button
+          className="btn btn--icon"
+          onClick={onToggleFavorite}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
+        >
           <HeartIcon filled={isFavorite} />
-          {isFavorite ? 'В избранном' : 'В избранное'}
         </button>
-        <button className="btn btn--primary" onClick={order}>
-          Выбрать для заказа
+        <button className="btn btn--primary" onClick={order} disabled={!model}>
+          {model ? 'Выбрать для заказа' : 'Выберите модель'}
         </button>
       </div>
       {!isTelegram() && <p className="sheet__hint">Оформление заказа продолжится в боте</p>}
