@@ -24,6 +24,7 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
+from app.services import integrations
 from app.services import order_state_machine as fsm
 from app.services import yandex_disk
 
@@ -332,8 +333,17 @@ async def upload_mockup(
     content = await file.read()
     filename = (file.filename or f"mockup_{order_id}").replace("/", "_")
 
+    token = await integrations.get(session, "yandex_disk.oauth_token")
+    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
+    if not token:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Яндекс.Диск не настроен — задайте OAuth-токен в разделе «Настройки → Интеграции».",
+        )
     try:
-        url = await yandex_disk.upload(yandex_disk.design_path(order_id, filename), content)
+        url = await yandex_disk.upload(
+            yandex_disk.design_path(root, order_id, filename), content, token=token
+        )
     except yandex_disk.YandexDiskError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Яндекс.Диск: {e}") from e
 

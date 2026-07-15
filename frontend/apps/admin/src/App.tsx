@@ -13,6 +13,7 @@ import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
 import { Placeholder } from './pages/Placeholder'
 import { Reviews } from './pages/Reviews'
+import { Settings } from './pages/Settings'
 import { Users } from './pages/Users'
 import { SECTIONS } from './sections'
 
@@ -25,6 +26,7 @@ const PAGES: Record<string, ReactNode> = {
   '/bot-texts': <BotTexts />,
   '/broadcasts': <Broadcasts />,
   '/users': <Users />,
+  '/settings': <Settings />,
 }
 
 function Protected() {

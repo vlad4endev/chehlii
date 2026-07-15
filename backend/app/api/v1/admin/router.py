@@ -8,6 +8,7 @@ from app.api.v1.admin.auth import router as auth_router
 from app.api.v1.admin.bot_messages import router as bot_messages_router
 from app.api.v1.admin.broadcasts import router as broadcasts_router
 from app.api.v1.admin.catalog import router as catalog_router
+from app.api.v1.admin.integrations import router as integrations_router
 from app.api.v1.admin.clients import router as clients_router
 from app.api.v1.admin.orders import router as orders_router
 from app.api.v1.admin.reviews import router as reviews_router
@@ -26,3 +27,4 @@ admin_router.include_router(
 )
 admin_router.include_router(broadcasts_router, prefix="/broadcasts", tags=["admin-broadcasts"])
 admin_router.include_router(users_router, prefix="/users", tags=["admin-users"])
+admin_router.include_router(integrations_router, prefix="/integrations", tags=["admin-integrations"])

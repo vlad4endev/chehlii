@@ -26,6 +26,7 @@ export const SECTIONS: Section[] = [
   { path: '/bot-texts', label: 'Тексты бота', icon: 'bot', roles: ['admin'] },
   { path: '/broadcasts', label: 'Рассылки', icon: 'broadcast', roles: ['admin'], badge: 'broadcasts_drafts' },
   { path: '/users', label: 'Пользователи', icon: 'users', roles: ['admin'] },
+  { path: '/settings', label: 'Настройки', icon: 'settings', roles: ['admin'] },
 ]
 
 export interface NavGroup {
@@ -38,7 +39,7 @@ const GROUPS: NavGroup[] = [
   { label: null, items: [OVERVIEW] },
   { label: 'Работа', items: SECTIONS.slice(0, 3) }, // Заказы, Каталог, Клиенты
   { label: 'Контент', items: SECTIONS.slice(3, 6) }, // Отзывы, Тексты, Рассылки
-  { label: 'Система', items: SECTIONS.slice(6) }, // Пользователи
+  { label: 'Система', items: SECTIONS.slice(6) }, // Пользователи, Настройки
 ]
 
 export function sectionsFor(role: Role): Section[] {
