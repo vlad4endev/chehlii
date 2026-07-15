@@ -192,33 +192,50 @@ async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> Non
     )
 
 
+# В MAX нет постоянной reply-клавиатуры (как в Telegram): чтобы навигация не
+# «терялась», каждый ответ пункта меню отправляется новым сообщением со свежим
+# меню (гарантированно валидная inline-клавиатура).
 @dp.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
-    await event.message.answer(
+    await _send_menu(
+        event.bot,
+        event.message.recipient.chat_id,
         f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
         f"Ваш промокод для друга: {c.get('slave_code') or '—'}\n\n"
-        "Приглашайте друзей — за каждого начисляется скидка (задаёт администратор)."
+        "Приглашайте друзей — за каждого начисляется скидка (задаёт администратор).",
     )
 
 
 @dp.message_callback(F.callback.payload == CB_PAYMENTS)
 async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await event.message.answer("Раздел «Мои оплаты» появится после подключения платёжного шлюза.")
+    await _send_menu(
+        event.bot,
+        event.message.recipient.chat_id,
+        "Раздел «Мои оплаты» появится после подключения платёжного шлюза.",
+    )
 
 
 @dp.message_callback(F.callback.payload == CB_DELIVERIES)
 async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await event.message.answer("Раздел «Мои доставки» появится после подключения служб доставки.")
+    await _send_menu(
+        event.bot,
+        event.message.recipient.chat_id,
+        "Раздел «Мои доставки» появится после подключения служб доставки.",
+    )
 
 
 @dp.message_callback(F.callback.payload == CB_HELP)
 async def on_help(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await event.message.answer("Скоро поможем подобрать лучший вариант ✨ (в разработке).")
+    await _send_menu(
+        event.bot,
+        event.message.recipient.chat_id,
+        "Скоро поможем подобрать лучший вариант ✨ (в разработке).",
+    )
 
 
 # ── Ввод имени / материалов ────────────────────────────
