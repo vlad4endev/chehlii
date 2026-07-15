@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 
-import { ApiError } from '../api'
+import { ApiError, mediaUrl } from '../api'
 import {
   type CaseTypeAdmin,
   type CaseTypeInput,
@@ -9,6 +9,7 @@ import {
   fetchCaseTypes,
   fetchIphoneModels,
   updateCaseType,
+  uploadCatalogPhoto,
 } from '../catalogApi'
 
 const money = (n: number) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
@@ -63,6 +64,7 @@ export function Catalog() {
         <table className="table">
           <thead>
             <tr>
+              <th className="th-thumb"></th>
               <th>Название</th>
               <th>Тип</th>
               <th className="num">Себес</th>
@@ -77,6 +79,21 @@ export function Catalog() {
           <tbody>
             {items.map((it) => (
               <tr key={it.id} onClick={() => setEditing(it)}>
+                <td className="td-thumb">
+                  {(() => {
+                    const cover =
+                      it.photo_url ?? it.models.find((m) => m.photo_url)?.photo_url ?? null
+                    const withPhoto = it.models.filter((m) => m.photo_url).length
+                    return cover ? (
+                      <span className="cthumb">
+                        <img src={mediaUrl(cover)} alt="" />
+                        {withPhoto > 0 && <span className="cthumb__badge">{withPhoto}</span>}
+                      </span>
+                    ) : (
+                      <span className="cthumb cthumb--empty">—</span>
+                    )
+                  })()}
+                </td>
                 <td className="strong">{it.name}</td>
                 <td>
                   <span className={`chip${it.is_custom ? ' chip--accent' : ''}`}>
@@ -104,7 +121,7 @@ export function Catalog() {
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={9} className="table__empty">
+                <td colSpan={10} className="table__empty">
                   Типов пока нет. Добавьте первый.
                 </td>
               </tr>
@@ -154,6 +171,9 @@ function CaseTypeEditor({
           : models, // новый тип — по умолчанию все модели доступны
       ),
   )
+  const [modelPhotos, setModelPhotos] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries((item?.models ?? []).map((m) => [m.model_name, m.photo_url])),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -164,6 +184,10 @@ function CaseTypeEditor({
       else next.add(m)
       return next
     })
+  }
+
+  function setModelPhoto(m: string, url: string | null) {
+    setModelPhotos((prev) => ({ ...prev, [m]: url }))
   }
 
   async function save() {
@@ -181,7 +205,11 @@ function CaseTypeEditor({
       cost: Number(cost) || 0,
       margin: Number(margin) || 0,
       is_active: isActive,
-      models: models.map((m) => ({ model_name: m, is_available: available.has(m) })),
+      models: models.map((m) => ({
+        model_name: m,
+        is_available: available.has(m),
+        photo_url: modelPhotos[m] ?? null,
+      })),
     }
     try {
       if (item) await updateCaseType(item.id, body)
@@ -238,10 +266,11 @@ function CaseTypeEditor({
             />
           </label>
 
-          <label className="field">
-            <span className="field__label">Ссылка на фото</span>
-            <input className="input" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} />
-          </label>
+          <div className="field">
+            <span className="field__label">Обложка типа</span>
+            <div className="field__hint">Показывается в сетке каталога и как запасное фото, если у модели нет своего.</div>
+            <PhotoUpload url={photoUrl || null} onChange={(u) => setPhotoUrl(u ?? '')} size="cover" />
+          </div>
 
           <div className="grid2">
             <label className="field">
@@ -268,18 +297,25 @@ function CaseTypeEditor({
           </div>
 
           <div className="field">
-            <span className="field__label">Доступность по моделям iPhone</span>
-            <div className="models">
-              {models.map((m) => (
-                <label key={m} className={`mchip${available.has(m) ? ' mchip--on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={available.has(m)}
-                    onChange={() => toggleModel(m)}
-                  />
-                  {m}
-                </label>
-              ))}
+            <span className="field__label">Модели iPhone и фото под каждую</span>
+            <div className="field__hint">Отметьте доступные модели. Загрузите фото чехла на конкретной модели — оно покажется в мини-аппе при её выборе.</div>
+            <div className="modelrows">
+              {models.map((m) => {
+                const on = available.has(m)
+                return (
+                  <div key={m} className={`modelrow${on ? '' : ' modelrow--off'}`}>
+                    <label className="modelrow__check">
+                      <input type="checkbox" checked={on} onChange={() => toggleModel(m)} />
+                      <span className="modelrow__name">{m}</span>
+                    </label>
+                    <PhotoUpload
+                      url={modelPhotos[m] ?? null}
+                      onChange={(u) => setModelPhoto(m, u)}
+                      size="model"
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -295,6 +331,72 @@ function CaseTypeEditor({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Загрузка изображения: клик по плитке открывает выбор файла, превью — сразу
+// после загрузки. size='cover' — крупнее (обложка), 'model' — компактно в строке.
+function PhotoUpload({
+  url,
+  onChange,
+  size = 'model',
+}: {
+  url: string | null
+  onChange: (url: string | null) => void
+  size?: 'cover' | 'model'
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function pick(file?: File) {
+    if (!file) return
+    setErr(null)
+    setBusy(true)
+    try {
+      onChange(await uploadCatalogPhoto(file))
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Не удалось загрузить')
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className={`photoup photoup--${size}`}>
+      <button
+        type="button"
+        className="photoup__thumb"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        title={url ? 'Заменить фото' : 'Загрузить фото'}
+      >
+        {url ? (
+          <img src={mediaUrl(url)} alt="" />
+        ) : (
+          <span className="photoup__ph">{busy ? '…' : '+'}</span>
+        )}
+      </button>
+      {url && !busy && (
+        <button
+          type="button"
+          className="photoup__rm"
+          onClick={() => onChange(null)}
+          aria-label="Удалить фото"
+        >
+          ✕
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        hidden
+        onChange={(e) => pick(e.target.files?.[0])}
+      />
+      {err && <span className="photoup__err">{err}</span>}
     </div>
   )
 }

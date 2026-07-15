@@ -4,6 +4,15 @@ import type { CaseType } from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
+// Абсолютный URL фото каталога. Бэкенд отдаёт фото с корня своего домена
+// (`/media/...`); в проде мини-апп на том же домене — путь не меняется.
+const MEDIA_ORIGIN = import.meta.env.VITE_API_BASE ?? ''
+export function mediaUrl(p: string | null | undefined): string | null {
+  if (!p) return null
+  if (p.startsWith('http') || p.startsWith('data:')) return p
+  return `${MEDIA_ORIGIN}${p}`
+}
+
 export async function fetchCatalog(): Promise<CaseType[]> {
   const res = await fetch(`${BASE}/catalog`)
   if (!res.ok) throw new Error(`Каталог недоступен (${res.status})`)

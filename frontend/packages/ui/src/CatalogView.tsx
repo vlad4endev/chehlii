@@ -1,5 +1,5 @@
 import type { CaseType } from './types'
-import { formatPrice } from './api'
+import { formatPrice, mediaUrl } from './api'
 import { CaseMockup } from './CaseMockup'
 
 // Общий компонент каталога — рендерится и в Telegram/MAX WebApp, и на лендинге.
@@ -16,6 +16,8 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
     <div className="grid">
       {items.map((item) => {
         const fav = favorites.has(item.id)
+        // Обложка карточки: фото типа, иначе первое фото среди моделей.
+        const cover = mediaUrl(item.photo_url ?? item.models.find((m) => m.photo_url)?.photo_url)
         return (
           <article className="card" key={item.id}>
             <button
@@ -23,7 +25,7 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
               onClick={() => onOpen(item)}
               aria-label={`Открыть ${item.name}`}
             >
-              <CaseMockup name={item.name} isCustom={item.is_custom} photoUrl={item.photo_url} />
+              <CaseMockup name={item.name} isCustom={item.is_custom} photoUrl={cover} />
             </button>
 
             <button

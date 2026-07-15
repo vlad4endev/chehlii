@@ -1,8 +1,9 @@
-import { apiGet, apiSend } from './api'
+import { apiGet, apiSend, apiUpload } from './api'
 
 export interface ModelAvailability {
   model_name: string
   is_available: boolean
+  photo_url: string | null
 }
 
 export interface CaseTypeAdmin {
@@ -29,6 +30,10 @@ export interface CaseTypeInput {
   is_active: boolean
   models: ModelAvailability[]
 }
+
+// Загружает изображение и возвращает относительный URL (`/media/catalog/…`).
+export const uploadCatalogPhoto = (file: File) =>
+  apiUpload<{ url: string }>('/admin/media', file).then((r) => r.url)
 
 export const fetchCaseTypes = () => apiGet<CaseTypeAdmin[]>('/admin/case-types')
 export const fetchIphoneModels = () => apiGet<string[]>('/admin/case-types/iphone-models')

@@ -41,6 +41,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
 
 
+# Загруженные медиа (фото каталога) — на /media, до корневого SPA-маршрута.
+# Папку создаём при старте: том монтируется на запись (не :ro, как webroot).
+os.makedirs(settings.media_root, exist_ok=True)
+app.mount("/media", StaticFiles(directory=settings.media_root), name="media")
+
 # Отдача собранных SPA с того же домена (после API-роутов, поэтому /api, /docs,
 # /health имеют приоритет). Админка — на /admin (монтируется до корня), мини-
 # приложение — на /. Более специфичный маршрут регистрируется первым.

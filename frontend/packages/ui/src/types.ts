@@ -3,6 +3,7 @@
 export interface CaseModel {
   model_name: string
   is_available: boolean
+  photo_url: string | null
 }
 
 export interface CaseType {

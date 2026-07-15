@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     webroot: str | None = None
     # Каталог собранной админки (SPA). Отдаётся по пути /admin того же домена.
     webroot_admin: str | None = None
+    # Папка загруженных медиа (фото каталога). Отдаётся по пути /media, доступна
+    # на запись (в отличие от webroot). См. эндпоинт admin/media.py.
+    media_root: str = "/app/media"
 
     # PostgreSQL
     postgres_user: str = "casetop"

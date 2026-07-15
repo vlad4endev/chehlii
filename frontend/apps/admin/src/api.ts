@@ -64,6 +64,27 @@ export async function apiSend<T>(method: string, path: string, body?: unknown): 
   )
 }
 
+// Загрузка файла (multipart). Content-Type задаёт браузер вместе с boundary —
+// поэтому только заголовок авторизации, без 'Content-Type'.
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  const t = getToken()
+  return handle<T>(
+    await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: t ? { Authorization: `Bearer ${t}` } : {},
+      body: form,
+    }),
+  )
+}
+
+// Абсолютный URL медиа из относительного пути (`/media/...`). API отдаёт медиа
+// с корня своего домена; в проде админка на том же домене — путь остаётся как есть.
+const API_ORIGIN = import.meta.env.VITE_API_BASE ?? ''
+export const mediaUrl = (p: string): string =>
+  !p || p.startsWith('http') || p.startsWith('data:') ? p : `${API_ORIGIN}${p}`
+
 // ── Аутентификация ─────────────────────────────────────
 interface LoginOut {
   access_token: string

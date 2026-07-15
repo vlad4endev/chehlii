@@ -44,6 +44,7 @@ services:
     volumes:
       - ./webroot:/app/webroot:ro              # собранный мини-апп (dist)
       - ./webroot-admin:/app/webroot-admin:ro  # собранная админка (dist, base=/admin/)
+      - ./media:/app/media                     # загруженные фото каталога (rw, отдаётся на /media)
     depends_on:
       postgres:
         condition: service_healthy

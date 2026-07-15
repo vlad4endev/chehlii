@@ -44,5 +44,8 @@ class CaseTypeModel(Base):
     )
     model_name: Mapped[str] = mapped_column(String(64), nullable=False)  # напр. "iPhone 15 Pro"
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Фото чехла именно на этой модели iPhone. Если пусто — в мини-аппе берётся
+    # обложка типа (CaseType.photo_url), а если и её нет — рисуется вектор-мокап.
+    photo_url: Mapped[str | None] = mapped_column(String(1024))
 
     case_type: Mapped[CaseType] = relationship(back_populates="models")

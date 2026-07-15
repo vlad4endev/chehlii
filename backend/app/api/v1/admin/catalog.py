@@ -25,6 +25,7 @@ router = APIRouter()
 class ModelAvailability(BaseModel):
     model_name: str
     is_available: bool = True
+    photo_url: str | None = None
 
 
 class CaseTypeIn(BaseModel):
@@ -65,7 +66,9 @@ def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
         is_active=ct.is_active,
         orders_count=orders_count,
         models=[
-            ModelAvailability(model_name=m.model_name, is_available=m.is_available)
+            ModelAvailability(
+                model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url
+            )
             for m in ct.models
         ],
     )
@@ -131,7 +134,8 @@ async def create_case_type(
         is_active=payload.is_active,
     )
     ct.models = [
-        CaseTypeModel(model_name=m.model_name, is_available=m.is_available) for m in payload.models
+        CaseTypeModel(model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url)
+        for m in payload.models
     ]
     session.add(ct)
     await session.commit()
@@ -159,7 +163,8 @@ async def update_case_type(
     ct.models.clear()
     await session.flush()
     ct.models = [
-        CaseTypeModel(model_name=m.model_name, is_available=m.is_available) for m in payload.models
+        CaseTypeModel(model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url)
+        for m in payload.models
     ]
     await session.commit()
     await session.refresh(ct, ["models"])

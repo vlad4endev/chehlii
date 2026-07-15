@@ -22,6 +22,7 @@ router = APIRouter()
 class CaseModelOut(BaseModel):
     model_name: str
     is_available: bool
+    photo_url: str | None
 
 
 class CaseTypeOut(BaseModel):
@@ -54,7 +55,9 @@ async def list_case_types(
             photo_url=ct.photo_url,
             client_price=ct.client_price,
             models=[
-                CaseModelOut(model_name=m.model_name, is_available=m.is_available)
+                CaseModelOut(
+                    model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url
+                )
                 for m in ct.models
             ],
         )

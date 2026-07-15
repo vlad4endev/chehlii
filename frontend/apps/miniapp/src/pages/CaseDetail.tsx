@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { createOrder, formatPrice, upsertClient } from '@ui/api'
+import { createOrder, formatPrice, mediaUrl, upsertClient } from '@ui/api'
 import { CaseMockup } from '@ui/CaseMockup'
 import { HeartIcon } from '@ui/CatalogView'
 
@@ -29,6 +29,10 @@ export function CaseDetail({
   const available = item.models.filter((m) => m.is_available)
   const [model, setModel] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Фото под выбранную модель → фолбэк на обложку типа. Мокап рисуется, если фото нет.
+  const selected = available.find((m) => m.model_name === model)
+  const photo = mediaUrl(selected?.photo_url ?? item.photo_url)
 
   async function order() {
     if (!model || submitting) return
@@ -109,7 +113,7 @@ export function CaseDetail({
           <CaseMockup
             name={item.name}
             isCustom={item.is_custom}
-            photoUrl={item.photo_url}
+            photoUrl={photo}
             model={model ?? undefined}
           />
         </div>
