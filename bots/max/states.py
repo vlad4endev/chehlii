@@ -10,3 +10,4 @@ class OrderFlow(StatesGroup):
     confirming = State()  # Показано подтверждение (тип+модель+цена)
     waiting_name = State()  # Стандарт: ждём имя/букву
     waiting_materials = State()  # Кастом: ждём фото/материалы
+    confirming_materials = State()  # Кастом: показана сводка материалов, ждём подтверждения

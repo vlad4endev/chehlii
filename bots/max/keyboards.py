@@ -25,6 +25,8 @@ CB_DELIVERIES = "menu:deliveries"
 CB_HELP = "menu:help"
 CB_CONFIRM = "order:confirm"
 CB_CANCEL = "order:cancel"
+CB_MAT_CONFIRM = "materials:confirm"
+CB_MAT_REDO = "materials:redo"
 
 
 def contact_kb():
@@ -55,5 +57,14 @@ def confirm_kb():
     b.row(
         CallbackButton(text="✅ Подтвердить", payload=CB_CONFIRM),
         CallbackButton(text="↩️ Назад", payload=CB_CANCEL),
+    )
+    return b.as_markup()
+
+
+def materials_confirm_kb():
+    b = InlineKeyboardBuilder()
+    b.row(
+        CallbackButton(text="✅ Подтвердить", payload=CB_MAT_CONFIRM),
+        CallbackButton(text="🔄 Прислать заново", payload=CB_MAT_REDO),
     )
     return b.as_markup()

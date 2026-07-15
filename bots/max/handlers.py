@@ -31,10 +31,13 @@ from bots.max.keyboards import (
     CB_DELIVERIES,
     CB_DISCOUNT,
     CB_HELP,
+    CB_MAT_CONFIRM,
+    CB_MAT_REDO,
     CB_PAYMENTS,
     confirm_kb,
     contact_kb,
     main_menu_kb,
+    materials_confirm_kb,
 )
 from bots.max.states import OrderFlow
 
@@ -233,17 +236,42 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
 
 @dp.message_created(OrderFlow.waiting_materials)
 async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
-    data = await context.get_data()
+    text = event.message.body.text or ""
     files: list[str] = []
     for att in event.message.body.attachments or []:
         payload = getattr(att, "payload", None)
         token = getattr(payload, "token", None) or getattr(payload, "url", None)
         if token:
             files.append(token)
+    if not text and not files:
+        await event.message.answer("Пришлите фото/файлы и/или опишите пожелание.")
+        return
+    # Не финализируем сразу — показываем сводку и ждём подтверждения (клиент
+    # может передумать/переслать заново).
+    await context.update_data(materials_text=text, materials_files=files)
+    await context.set_state(OrderFlow.confirming_materials)
+    await event.message.answer(
+        "Проверьте кастом-чехол:\n\n"
+        f"📝 Описание: {text or '—'}\n"
+        f"📎 Вложений: {len(files)}\n\n"
+        "Всё верно? Нажмите «Подтвердить» — и чехол уйдёт в работу.",
+        attachments=[materials_confirm_kb()],
+    )
+
+
+@dp.message_callback(F.callback.payload == CB_MAT_CONFIRM)
+async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -> None:
+    data = await context.get_data()
+    order_id = data.get("order_id")
+    if not order_id:
+        await event.answer(notification="Сессия истекла, начните заново")
+        await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
+        return
+    await event.answer(notification="Принято ✅")
     await backend.update_order(
-        data["order_id"],
-        materials_text=event.message.body.text or "",
-        materials_files=files,
+        order_id,
+        materials_text=data.get("materials_text", ""),
+        materials_files=data.get("materials_files", []),
     )
     await context.clear()
     await _send_menu(
@@ -251,6 +279,13 @@ async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
         event.message.recipient.chat_id,
         texts.get("msg_007б") + "\n\n(ссылка на оплату — после подключения шлюза)",
     )
+
+
+@dp.message_callback(F.callback.payload == CB_MAT_REDO)
+async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> None:
+    await event.answer()
+    await context.set_state(OrderFlow.waiting_materials)
+    await event.message.answer(texts.get("msg_006б"))
 
 
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.

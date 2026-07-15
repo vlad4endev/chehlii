@@ -56,3 +56,14 @@ def confirm_kb() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def materials_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data="materials:confirm"),
+                InlineKeyboardButton(text="🔄 Прислать заново", callback_data="materials:redo"),
+            ]
+        ]
+    )

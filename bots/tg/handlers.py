@@ -24,6 +24,7 @@ from bots.tg.keyboards import (
     confirm_kb,
     contact_kb,
     main_menu_kb,
+    materials_confirm_kb,
 )
 from bots.tg.states import OrderFlow
 
@@ -164,7 +165,6 @@ async def on_name(msg: Message, state: FSMContext) -> None:
 
 @router.message(OrderFlow.waiting_materials)
 async def on_materials(msg: Message, state: FSMContext) -> None:
-    data = await state.get_data()
     # Файлы (фото/аудио/документы) пока фиксируем как file_id; загрузка на Яндекс Диск — далее.
     files: list[str] = []
     if msg.photo:
@@ -173,16 +173,46 @@ async def on_materials(msg: Message, state: FSMContext) -> None:
         files.append(msg.document.file_id)
     if msg.voice:
         files.append(msg.voice.file_id)
+    text = msg.caption or msg.text or ""
+    if not text and not files:
+        await msg.answer("Пришлите фото/файлы и/или опишите пожелание.")
+        return
+    # Не финализируем сразу — показываем сводку и ждём подтверждения (клиент
+    # может передумать/переслать заново).
+    await state.update_data(materials_text=text, materials_files=files)
+    await state.set_state(OrderFlow.confirming_materials)
+    await msg.answer(
+        "Проверьте кастом-чехол:\n\n"
+        f"📝 Описание: {text or '—'}\n"
+        f"📎 Вложений: {len(files)}\n\n"
+        "Всё верно? Нажмите «Подтвердить» — и чехол уйдёт в работу.",
+        reply_markup=materials_confirm_kb(),
+    )
+
+
+@router.callback_query(OrderFlow.confirming_materials, F.data == "materials:confirm")
+async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await cb.message.edit_reply_markup(reply_markup=None)
     await backend.update_order(
         data["order_id"],
-        materials_text=msg.caption or msg.text or "",
-        materials_files=files,
+        materials_text=data.get("materials_text", ""),
+        materials_files=data.get("materials_files", []),
     )
     await state.clear()
-    await msg.answer(
+    await cb.message.answer(
         texts.get("msg_007б") + "\n\n(ссылка на оплату — после подключения шлюза)",
         reply_markup=main_menu_kb(),
     )
+    await cb.answer()
+
+
+@router.callback_query(OrderFlow.confirming_materials, F.data == "materials:redo")
+async def on_materials_redo(cb: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(OrderFlow.waiting_materials)
+    await cb.message.edit_reply_markup(reply_markup=None)
+    await cb.message.answer(texts.get("msg_006б"))
+    await cb.answer()
 
 
 # Фолбэк: любое сообщение вне сценария → в меню.
