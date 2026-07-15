@@ -80,6 +80,19 @@ async def _to_out(session: AsyncSession, order: Order) -> OrderOut:
     )
 
 
+@router.get("/{order_id}", response_model=OrderOut)
+async def get_order(
+    order_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderOut:
+    # Нужен ботам (MAX без sendData): мини-приложение создаёт заказ, бот получает
+    # его по id из deep-link и показывает подтверждение.
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    return await _to_out(session, order)
+
+
 @router.post("", response_model=OrderOut)
 async def create_order(
     payload: OrderCreateIn,

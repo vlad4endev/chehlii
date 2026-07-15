@@ -35,6 +35,11 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def get_order(self, order_id: int) -> dict:
+        r = await self._client.get(f"/orders/{order_id}")
+        r.raise_for_status()
+        return r.json()
+
     async def create_order(
         self, client_id: int, case_type_id: int, branch: str, model_name: str
     ) -> dict:
