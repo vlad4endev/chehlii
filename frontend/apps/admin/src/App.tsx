@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 
 import { useAuth } from './auth'
 import { AdminLayout } from './layout/AdminLayout'
+import { BotTexts } from './pages/BotTexts'
 import { Catalog } from './pages/Catalog'
 import { Clients } from './pages/Clients'
 import { Dashboard } from './pages/Dashboard'
@@ -13,12 +14,13 @@ import { Placeholder } from './pages/Placeholder'
 import { Reviews } from './pages/Reviews'
 import { SECTIONS } from './sections'
 
-// Реализованные разделы; остальные — заглушка (Фазы F–H).
+// Реализованные разделы; остальные — заглушка (Фазы G–H).
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
   '/orders': <Orders />,
   '/clients': <Clients />,
   '/reviews': <Reviews />,
+  '/bot-texts': <BotTexts />,
 }
 
 function Protected() {

@@ -228,3 +228,5 @@ select.input { appearance: none; cursor: pointer; }
 .rcard__text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
 .rcard__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .btn--sm { height: 34px; padding: 0 14px; font-size: 13px; }
+
+.cell-clip { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
