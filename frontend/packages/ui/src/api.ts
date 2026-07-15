@@ -35,6 +35,56 @@ export async function fetchReviews(): Promise<ReviewItem[]> {
   )
 }
 
+// ── Заказ из мини-приложения (используется каналами без sendData, напр. MAX) ──
+// Мини-приложение создаёт клиента и заказ через общий backend, затем передаёт
+// боту id заказа deep-link'ом. В Telegram вместо этого работает WebApp.sendData.
+export interface MiniClient {
+  id: number
+  phone: string | null
+  total_discount: number
+}
+
+export async function upsertClient(
+  channel: 'tg' | 'max',
+  channelUserId: string,
+  nickname?: string,
+): Promise<MiniClient> {
+  const res = await fetch(`${BASE}/clients/upsert`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel, channel_user_id: channelUserId, nickname }),
+  })
+  if (!res.ok) throw new Error(`Не удалось определить клиента (${res.status})`)
+  return res.json()
+}
+
+export interface MiniOrder {
+  id: number
+  is_custom: boolean
+  model_name: string | null
+  client_price: number
+}
+
+export async function createOrder(
+  clientId: number,
+  caseTypeId: number,
+  branch: 'standard' | 'custom',
+  modelName: string,
+): Promise<MiniOrder> {
+  const res = await fetch(`${BASE}/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      case_type_id: caseTypeId,
+      branch,
+      model_name: modelName,
+    }),
+  })
+  if (!res.ok) throw new Error(`Не удалось создать заказ (${res.status})`)
+  return res.json()
+}
+
 export function formatPrice(value: number): string {
   return new Intl.NumberFormat('ru-RU').format(value) + ' ₽'
 }

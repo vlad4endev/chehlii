@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { formatPrice } from '@ui/api'
+import { createOrder, formatPrice, upsertClient } from '@ui/api'
 import { CaseMockup } from '@ui/CaseMockup'
 import { HeartIcon } from '@ui/CatalogView'
 
+import { getMaxUser, isMax, openBotWithOrder } from '../max'
 import { backButton, isTelegram, mainButton, sendOrder } from '../telegram'
 
 // Экран типа чехла. Модель iPhone выбирается здесь же, в мини-приложении.
@@ -27,11 +28,31 @@ export function CaseDetail({
   const caseType = item.is_custom ? 'custom' : 'standard'
   const available = item.models.filter((m) => m.is_available)
   const [model, setModel] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  function order() {
-    if (!model) return
-    const sent = sendOrder(item.id, caseType, model)
-    if (!sent) onOrdered(model)
+  async function order() {
+    if (!model || submitting) return
+    // Telegram: нативный sendData передаёт выбор боту и закрывает WebApp.
+    if (sendOrder(item.id, caseType, model)) return
+    // MAX: sendData нет — создаём заказ через backend и открываем бота deep-link'ом.
+    if (isMax()) {
+      const user = getMaxUser()
+      if (user) {
+        setSubmitting(true)
+        try {
+          const client = await upsertClient('max', String(user.id), user.username ?? user.firstName)
+          const ord = await createOrder(client.id, item.id, caseType, model)
+          openBotWithOrder(ord.id)
+          return
+        } catch {
+          // не вышло — покажем экран-хэндофф ниже
+        } finally {
+          setSubmitting(false)
+        }
+      }
+    }
+    // Лендинг/браузер: экран-хэндофф со ссылкой в бот.
+    onOrdered(model)
   }
 
   // Нативная кнопка «Назад» Telegram закрывает экран типа.
@@ -124,8 +145,8 @@ export function CaseDetail({
         >
           <HeartIcon filled={isFavorite} />
         </button>
-        <button className="btn btn--primary" onClick={order} disabled={!model}>
-          {model ? 'Выбрать для заказа' : 'Выберите модель'}
+        <button className="btn btn--primary" onClick={order} disabled={!model || submitting}>
+          {submitting ? 'Оформляем…' : model ? 'Выбрать для заказа' : 'Выберите модель'}
         </button>
       </div>
       {!isTelegram() && <p className="sheet__hint">Оформление заказа продолжится в боте</p>}
