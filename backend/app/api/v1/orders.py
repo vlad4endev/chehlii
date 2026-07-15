@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.enums import CaseBranch, OrderStatus
 from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
-from app.services import pricing
+from app.services import integrations, pricing, yandex_disk
 
 router = APIRouter()
 
@@ -127,13 +127,41 @@ async def create_order(
     return await _to_out(session, order)
 
 
+@router.post("/{order_id}/client-file")
+async def add_client_file(
+    order_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    """Файл клиента (материалы для дизайнера) → Яндекс Диск /orders/{id}/client/.
+    Вызывает бот, скачав файл из мессенджера. Ссылка добавляется в materials_files.
+    """
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    content = await file.read()
+    filename = (file.filename or "file").replace("/", "_")
+
+    token = await integrations.get(session, "yandex_disk.oauth_token")
+    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
+    if not token:
+        raise HTTPException(status_code=400, detail="Яндекс.Диск не настроен")
+    url = await yandex_disk.upload(
+        yandex_disk.client_path(root, order_id, filename), content, token=token
+    )
+    files = [*(order.materials_files or []), url]
+    order.materials_files = files
+    await session.commit()
+    return {"url": url, "materials_files": files}
+
+
 @router.post("/{order_id}/mockup-response", response_model=OrderOut)
 async def mockup_response(
     order_id: int,
     payload: MockupResponseIn,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> OrderOut:
-    """Ответ клиента на макет из бота: «Подтвердить» → согласование, «Переделать» → пересогласование."""
+    """Ответ клиента на макет из бота: «Подтвердить» → согласование, иначе пересогласование."""
     order = await session.get(Order, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Заказ не найден")

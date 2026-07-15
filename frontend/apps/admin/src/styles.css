@@ -383,3 +383,4 @@ select.input { appearance: none; cursor: pointer; }
 .contact-ch__nick { font-weight: 600; font-size: 13.5px; }
 .contact-ch__meta { font-size: 12px; color: var(--ink-faint); font-family: var(--mono); }
 .contact-ch__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.filelinks { display: inline-flex; flex-wrap: wrap; gap: 6px; }

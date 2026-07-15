@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart, StateFilter
@@ -189,14 +190,14 @@ async def on_name(msg: Message, state: FSMContext) -> None:
 
 @router.message(OrderFlow.waiting_materials)
 async def on_materials(msg: Message, state: FSMContext) -> None:
-    # Файлы (фото/аудио/документы) пока фиксируем как file_id; загрузка на Яндекс Диск — далее.
-    files: list[str] = []
+    # Фиксируем file_id + имя; на подтверждении скачаем и зальём на Яндекс Диск.
+    files: list[dict] = []
     if msg.photo:
-        files.append(msg.photo[-1].file_id)
+        files.append({"id": msg.photo[-1].file_id, "name": "photo.jpg"})
     if msg.document:
-        files.append(msg.document.file_id)
+        files.append({"id": msg.document.file_id, "name": msg.document.file_name or "file"})
     if msg.voice:
-        files.append(msg.voice.file_id)
+        files.append({"id": msg.voice.file_id, "name": "voice.ogg"})
     text = msg.caption or msg.text or ""
     if not text and not files:
         await msg.answer("Пришлите фото/файлы и/или опишите пожелание.")
@@ -214,21 +215,39 @@ async def on_materials(msg: Message, state: FSMContext) -> None:
     )
 
 
+async def _persist_files(bot, order_id: int, files: list[dict]) -> list[str]:
+    """Скачать файлы из Telegram и загрузить на Яндекс Диск через backend.
+    Возвращает публичные ссылки (для materials_files)."""
+    links: list[str] = []
+    for i, f in enumerate(files):
+        fid = f.get("id") if isinstance(f, dict) else f
+        name = f.get("name", f"file_{i + 1}") if isinstance(f, dict) else f"file_{i + 1}"
+        try:
+            buf = await bot.download(fid)
+            res = await backend.add_client_file(order_id, name, buf.read())
+            links.append(res["url"])
+        except Exception as e:  # noqa: BLE001
+            logging.warning("client file upload failed: %s", e)
+    return links
+
+
 @router.callback_query(OrderFlow.confirming_materials, F.data == "materials:confirm")
 async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
+    order_id = data["order_id"]
     await cb.message.edit_reply_markup(reply_markup=None)
+    await cb.answer()
+    links = await _persist_files(cb.bot, order_id, data.get("materials_files", []))
     await backend.update_order(
-        data["order_id"],
+        order_id,
         materials_text=data.get("materials_text", ""),
-        materials_files=data.get("materials_files", []),
+        materials_files=links,
     )
     await state.clear()
     await cb.message.answer(
         texts.get("msg_007б") + "\n\n(ссылка на оплату — после подключения шлюза)",
         reply_markup=main_menu_kb(),
     )
-    await cb.answer()
 
 
 @router.callback_query(OrderFlow.confirming_materials, F.data == "materials:redo")

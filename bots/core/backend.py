@@ -60,6 +60,13 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def add_client_file(self, order_id: int, filename: str, content: bytes) -> dict:
+        r = await self._client.post(
+            f"/orders/{order_id}/client-file", files={"file": (filename, content)}
+        )
+        r.raise_for_status()
+        return r.json()
+
     async def mockup_response(self, order_id: int, approved: bool) -> dict:
         r = await self._client.post(
             f"/orders/{order_id}/mockup-response", json={"approved": approved}

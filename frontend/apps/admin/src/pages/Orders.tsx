@@ -229,6 +229,32 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               <Row label="Тип" value={order.is_custom ? 'Кастом' : 'Стандарт'} />
               {order.custom_text && <Row label="Имя/буква" value={order.custom_text} />}
               {order.materials_text && <Row label="Материалы" value={order.materials_text} />}
+              {Array.isArray(order.materials_files) && order.materials_files.length > 0 && (
+                <div className="deflist__row">
+                  <span className="deflist__label">Файлы клиента</span>
+                  <span className="deflist__value">
+                    <span className="filelinks">
+                      {order.materials_files.map((f, i) =>
+                        typeof f === 'string' && f.startsWith('http') ? (
+                          <a
+                            key={i}
+                            className="chatbadge"
+                            href={f}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Файл {i + 1} ↗
+                          </a>
+                        ) : (
+                          <span key={i} className="chip muted">
+                            Файл {i + 1}
+                          </span>
+                        ),
+                      )}
+                    </span>
+                  </span>
+                </div>
+              )}
               {order.delivery_service && <Row label="Доставка" value={order.delivery_service} />}
               {order.delivery_address && <Row label="Адрес" value={order.delivery_address} />}
               {order.tracking_code && <Row label="Трек" value={order.tracking_code} />}

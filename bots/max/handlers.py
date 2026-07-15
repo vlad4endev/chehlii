@@ -11,8 +11,10 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
+import httpx
 from maxapi import Dispatcher, F
 from maxapi.context import MemoryContext
 from maxapi.types import (
@@ -69,6 +71,21 @@ def _bot_identity(bot) -> tuple[str | None, int | None]:
 async def _send_menu(bot, chat_id: int, text: str) -> None:
     username, bot_id = _bot_identity(bot)
     await bot.send_message(chat_id=chat_id, text=text, attachments=[main_menu_kb(username, bot_id)])
+
+
+async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
+    """Скачать файлы клиента по URL из MAX и залить на Яндекс Диск через backend."""
+    links: list[str] = []
+    async with httpx.AsyncClient(timeout=30) as http:
+        for i, url in enumerate(urls):
+            try:
+                r = await http.get(url)
+                r.raise_for_status()
+                res = await backend.add_client_file(order_id, f"file_{i + 1}", r.content)
+                links.append(res["url"])
+            except Exception as e:  # noqa: BLE001
+                logging.warning("client file (max) upload failed: %s", e)
+    return links
 
 
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
@@ -257,9 +274,9 @@ async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
     files: list[str] = []
     for att in event.message.body.attachments or []:
         payload = getattr(att, "payload", None)
-        token = getattr(payload, "token", None) or getattr(payload, "url", None)
-        if token:
-            files.append(token)
+        url = getattr(payload, "url", None)
+        if url:
+            files.append(url)
     if not text and not files:
         await event.message.answer("Пришлите фото/файлы и/или опишите пожелание.")
         return
@@ -285,10 +302,11 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
         await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
         return
     await event.answer(notification="Принято ✅")
+    links = await _persist_files(order_id, data.get("materials_files", []))
     await backend.update_order(
         order_id,
         materials_text=data.get("materials_text", ""),
-        materials_files=data.get("materials_files", []),
+        materials_files=links,
     )
     await context.clear()
     await _send_menu(
