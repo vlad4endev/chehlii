@@ -38,7 +38,7 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
     {
         "id": "cdek",
         "title": "СДЭК",
-        "hint": "Служба доставки: заявка, расчёт стоимости, статус.",
+        "hint": "Служба доставки: расчёт стоимости, заявка, статус. Отправитель — ваш склад.",
         "fields": [
             {
                 "key": "cdek.account",
@@ -51,7 +51,31 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "key": "cdek.test",
                 "label": "Тестовый режим (true/false)",
                 "secret": False,
-                "placeholder": "false",
+                "placeholder": "true",
+            },
+            {
+                "key": "cdek.from_postal",
+                "label": "Индекс отправителя (склад)",
+                "secret": False,
+                "placeholder": "101000",
+            },
+            {
+                "key": "cdek.tariff_code",
+                "label": "Код тарифа",
+                "secret": False,
+                "placeholder": "137 (склад-дверь)",
+            },
+            {
+                "key": "cdek.weight",
+                "label": "Вес посылки, г",
+                "secret": False,
+                "placeholder": "300",
+            },
+            {
+                "key": "cdek.sender_name",
+                "label": "Имя отправителя",
+                "secret": False,
+                "placeholder": "casetop",
             },
         ],
     },

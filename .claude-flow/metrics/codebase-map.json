@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-15T15:17:22.795Z",
+  "timestamp": "2026-07-15T15:41:22.715Z",
   "projectRoot": "/Users/vl4endev/Documents/ЧехлыИИ",
   "structure": {
     "hasPackageJson": false,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1784128642795
+  "scannedAt": 1784130082715
 }
