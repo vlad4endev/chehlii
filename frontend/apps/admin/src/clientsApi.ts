@@ -26,6 +26,30 @@ export interface DiscountsInput {
   discount_slave_code: number
 }
 
+export interface ContactChannel {
+  client_id: number
+  channel: 'tg' | 'max'
+  channel_user_id: string
+  nickname: string | null
+  number_orders: number
+  total_discount: number
+  chat_url: string | null
+}
+
+export interface Contact {
+  key: string
+  display_name: string | null
+  phone: string | null
+  total_orders: number
+  max_discount: number
+  channels: ContactChannel[]
+}
+
+export function fetchContacts(q?: string): Promise<Contact[]> {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : ''
+  return apiGet<Contact[]>(`/admin/clients/contacts${qs}`)
+}
+
 export function fetchClients(q?: string): Promise<Client[]> {
   const qs = q ? `?q=${encodeURIComponent(q)}` : ''
   return apiGet<Client[]>(`/admin/clients${qs}`)

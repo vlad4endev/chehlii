@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-15T11:36:22.691Z",
+  "projectRoot": "/Users/vl4endev/Documents/ЧехлыИИ",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1784115382691
+}

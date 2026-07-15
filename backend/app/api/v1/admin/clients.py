@@ -7,6 +7,7 @@ total_discount = loyal_discount + discount_for_slave + discount_master_code — 
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated
 
@@ -23,6 +24,28 @@ from app.models.order import Order
 from app.services import pricing
 
 router = APIRouter()
+
+# Хэндл мессенджера (буквы/цифры/подчёркивание) — для прямой ссылки на профиль.
+_HANDLE = re.compile(r"^[A-Za-z0-9_]{4,32}$")
+
+
+def _norm_phone(phone: str | None) -> str | None:
+    """Нормализация телефона до последних 10 цифр (РФ) — ключ объединения контактов."""
+    if not phone:
+        return None
+    digits = re.sub(r"\D", "", phone)
+    return digits[-10:] if len(digits) >= 10 else (digits or None)
+
+
+def _chat_url(c: Client) -> str | None:
+    """Ссылка «открыть чат» с клиентом в его мессенджере."""
+    handle = c.nickname if c.nickname and _HANDLE.match(c.nickname) else None
+    if c.channel == Channel.TG:
+        # По хэндлу — универсальная веб-ссылка; иначе — deep link по id (в приложении).
+        return f"https://t.me/{handle}" if handle else f"tg://user?id={c.channel_user_id}"
+    if c.channel == Channel.MAX:
+        return f"https://max.ru/{handle}" if handle else None
+    return None
 
 
 class ClientOut(BaseModel):
@@ -49,6 +72,27 @@ class DiscountsIn(BaseModel):
     discount_for_slave: float
     discount_master_code: float
     discount_slave_code: float
+
+
+class ContactChannel(BaseModel):
+    client_id: int
+    channel: Channel
+    channel_user_id: str
+    nickname: str | None
+    number_orders: int
+    total_discount: float
+    chat_url: str | None  # «открыть чат» в мессенджере
+
+
+class ContactOut(BaseModel):
+    """Единый контакт: один человек, объединённый по номеру телефона из разных каналов."""
+
+    key: str
+    display_name: str | None
+    phone: str | None
+    total_orders: int
+    max_discount: float
+    channels: list[ContactChannel]
 
 
 def _to_out(c: Client, orders: int) -> ClientOut:
@@ -95,6 +139,54 @@ async def list_clients(
     counts = await _orders_counts(session)
     result = await session.execute(stmt)
     return [_to_out(c, counts.get(c.id, 0)) for c in result.scalars().all()]
+
+
+@router.get("/contacts", response_model=list[ContactOut])
+async def list_contacts(
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    q: Annotated[str | None, Query()] = None,
+) -> list[ContactOut]:
+    """Клиенты, объединённые в контакты по номеру телефона (TG + MAX = один контакт)."""
+    stmt = select(Client).order_by(Client.id.desc())
+    if q:
+        term = f"%{q.strip()}%"
+        stmt = stmt.where(or_(Client.phone.ilike(term), Client.nickname.ilike(term)))
+    clients = (await session.scalars(stmt)).all()
+    counts = await _orders_counts(session)
+
+    groups: dict[str, list[Client]] = {}
+    for c in clients:
+        norm = _norm_phone(c.phone)
+        groups.setdefault(norm or f"c{c.id}", []).append(c)
+
+    contacts: list[ContactOut] = []
+    for key, members in groups.items():
+        channels = [
+            ContactChannel(
+                client_id=m.id,
+                channel=m.channel,
+                channel_user_id=m.channel_user_id,
+                nickname=m.nickname,
+                number_orders=counts.get(m.id, 0),
+                total_discount=float(m.total_discount),
+                chat_url=_chat_url(m),
+            )
+            for m in sorted(members, key=lambda m: m.channel)
+        ]
+        contacts.append(
+            ContactOut(
+                key=key,
+                display_name=next((m.nickname for m in members if m.nickname), None),
+                phone=next((m.phone for m in members if m.phone), None),
+                total_orders=sum(ch.number_orders for ch in channels),
+                max_discount=max((ch.total_discount for ch in channels), default=0.0),
+                channels=channels,
+            )
+        )
+    # Сначала с бо́льшим числом заказов, затем объединённые (2 канала) выше.
+    contacts.sort(key=lambda x: (-x.total_orders, -len(x.channels)))
+    return contacts
 
 
 async def _get_or_404(session: AsyncSession, client_id: int) -> Client:

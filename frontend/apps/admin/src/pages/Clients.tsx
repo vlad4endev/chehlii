@@ -1,25 +1,65 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../api'
-import { type Client, fetchClient, fetchClients, updateDiscounts } from '../clientsApi'
-import { ChannelChip, StatLine, UserCell } from '../ui'
+import {
+  type Client,
+  type Contact,
+  type ContactChannel,
+  fetchClient,
+  fetchContacts,
+  updateDiscounts,
+} from '../clientsApi'
+import { StatLine, UserCell } from '../ui'
 
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 
+function openChat(url: string | null) {
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+function hasChannel(c: Contact, ch: 'tg' | 'max'): boolean {
+  return c.channels.some((x) => x.channel === ch)
+}
+
+// Бейдж канала: кликабельный → открывает чат в мессенджере.
+function ChatBadge({ ch, stop }: { ch: ContactChannel; stop?: boolean }) {
+  const label = CHANNEL_LABEL[ch.channel] ?? ch.channel
+  if (ch.chat_url) {
+    return (
+      <button
+        className="chatbadge"
+        title={`Открыть чат в ${label}`}
+        onClick={(e) => {
+          if (stop) e.stopPropagation()
+          openChat(ch.chat_url)
+        }}
+      >
+        {label} ↗
+      </button>
+    )
+  }
+  return (
+    <span className="chip" title="Прямая ссылка на профиль недоступна">
+      {label}
+    </span>
+  )
+}
+
 export function Clients() {
-  const [items, setItems] = useState<Client[]>([])
+  const [items, setItems] = useState<Contact[]>([])
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [openId, setOpenId] = useState<number | null>(null)
+  const [openContact, setOpenContact] = useState<Contact | null>(null)
+  const [editId, setEditId] = useState<number | null>(null)
 
   async function reload() {
     setLoading(true)
     setError(null)
     try {
-      setItems(await fetchClients(q.trim() || undefined))
+      setItems(await fetchContacts(q.trim() || undefined))
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить клиентов')
     } finally {
@@ -61,10 +101,10 @@ export function Clients() {
       {!loading && !error && items.length > 0 && (
         <StatLine
           items={[
-            { label: 'Всего клиентов', value: items.length },
-            { label: 'С заказами', value: items.filter((c) => c.number_orders > 0).length },
-            { label: 'Telegram', value: items.filter((c) => c.channel === 'tg').length },
-            { label: 'MAX', value: items.filter((c) => c.channel === 'max').length },
+            { label: 'Контактов', value: items.length },
+            { label: 'В двух каналах', value: items.filter((c) => c.channels.length > 1).length },
+            { label: 'Telegram', value: items.filter((c) => hasChannel(c, 'tg')).length },
+            { label: 'MAX', value: items.filter((c) => hasChannel(c, 'max')).length },
           ]}
         />
       )}
@@ -74,35 +114,46 @@ export function Clients() {
           <thead>
             <tr>
               <th>Клиент</th>
-              <th>Канал</th>
+              <th>Каналы · открыть чат</th>
               <th className="num">Заказы</th>
               <th className="num">Скидка</th>
-              <th>Промокод для друга</th>
             </tr>
           </thead>
           <tbody>
             {items.map((c) => (
-              <tr key={c.id} onClick={() => setOpenId(c.id)}>
+              <tr key={c.key} onClick={() => setOpenContact(c)}>
                 <td>
-                  <UserCell name={c.nickname || 'Без ника'} sub={c.phone || undefined} />
+                  <UserCell
+                    name={c.display_name || 'Без ника'}
+                    sub={
+                      c.phone
+                        ? c.channels.length > 1
+                          ? `${c.phone} · один контакт`
+                          : c.phone
+                        : undefined
+                    }
+                  />
                 </td>
                 <td>
-                  <ChannelChip channel={c.channel} />
+                  <span className="chatcell">
+                    {c.channels.map((ch) => (
+                      <ChatBadge key={ch.client_id} ch={ch} stop />
+                    ))}
+                  </span>
                 </td>
-                <td className="num">{c.number_orders}</td>
+                <td className="num">{c.total_orders}</td>
                 <td className="num">
-                  {c.total_discount > 0 ? (
-                    <span className="chip chip--accent">{c.total_discount}%</span>
+                  {c.max_discount > 0 ? (
+                    <span className="chip chip--accent">{c.max_discount}%</span>
                   ) : (
                     <span className="muted">—</span>
                   )}
                 </td>
-                <td className="mono">{c.slave_code || '—'}</td>
               </tr>
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={5} className="table__empty">
+                <td colSpan={4} className="table__empty">
                   Клиентов не найдено.
                 </td>
               </tr>
@@ -111,9 +162,81 @@ export function Clients() {
         </table>
       )}
 
-      {openId != null && (
-        <ClientModal id={openId} onClose={() => setOpenId(null)} onSaved={reload} />
+      {openContact && (
+        <ContactModal
+          contact={openContact}
+          onClose={() => setOpenContact(null)}
+          onEdit={(clientId) => {
+            setOpenContact(null)
+            setEditId(clientId)
+          }}
+        />
       )}
+      {editId != null && (
+        <ClientModal id={editId} onClose={() => setEditId(null)} onSaved={reload} />
+      )}
+    </div>
+  )
+}
+
+function ContactModal({
+  contact,
+  onClose,
+  onEdit,
+}: {
+  contact: Contact
+  onClose: () => void
+  onEdit: (clientId: number) => void
+}) {
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <h2 className="modal__title">{contact.display_name || 'Контакт'}</h2>
+          <button className="modal__close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal__body">
+          {contact.phone && (
+            <div className="price-note">
+              Телефон: <b>{contact.phone}</b>
+              {contact.channels.length > 1 && ' · объединён по номеру (TG + MAX)'}
+            </div>
+          )}
+          <div className="field__label">Каналы</div>
+          {contact.channels.map((ch) => (
+            <div className="contact-ch" key={ch.client_id}>
+              <div className="contact-ch__main">
+                <span className="chip">{CHANNEL_LABEL[ch.channel] ?? ch.channel}</span>
+                <span className="contact-ch__nick">{ch.nickname || 'без ника'}</span>
+                <span className="contact-ch__meta">
+                  {ch.number_orders} зак. · скидка {ch.total_discount}%
+                </span>
+              </div>
+              <div className="contact-ch__actions">
+                {ch.chat_url ? (
+                  <button className="btn btn--ghost btn--sm" onClick={() => openChat(ch.chat_url)}>
+                    Открыть чат ↗
+                  </button>
+                ) : (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    ссылка недоступна
+                  </span>
+                )}
+                <button className="btn btn--primary btn--sm" onClick={() => onEdit(ch.client_id)}>
+                  Скидки
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose}>
+            Закрыть
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
