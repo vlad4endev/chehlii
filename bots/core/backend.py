@@ -60,5 +60,22 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def mockup_response(self, order_id: int, approved: bool) -> dict:
+        r = await self._client.post(
+            f"/orders/{order_id}/mockup-response", json={"approved": approved}
+        )
+        r.raise_for_status()
+        return r.json()
+
+    # ── Исходящая очередь (backend → клиент через бота) ──
+    async def get_outbox(self, channel: str, limit: int = 10) -> list[dict]:
+        r = await self._client.get("/outbox", params={"channel": channel, "limit": limit})
+        r.raise_for_status()
+        return r.json()
+
+    async def mark_outbox_sent(self, msg_id: int) -> None:
+        r = await self._client.post(f"/outbox/{msg_id}/sent")
+        r.raise_for_status()
+
 
 backend = Backend()

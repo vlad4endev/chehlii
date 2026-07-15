@@ -149,7 +149,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nextStatus, setNextStatus] = useState('')
-  const [mockup, setMockup] = useState('')
+  const [mockupFile, setMockupFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -158,7 +158,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     try {
       const d = await fetchOrder(id)
       setOrder(d)
-      setMockup(d.mockup_url ?? '')
+      setMockupFile(null)
       setNextStatus('')
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить заказ')
@@ -186,11 +186,12 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   }
 
   async function sendMockup() {
-    if (!mockup.trim()) return
+    if (!mockupFile) return
     setBusy(true)
     try {
-      const d = await uploadMockup(id, mockup.trim())
+      const d = await uploadMockup(id, mockupFile)
       setOrder(d)
+      setMockupFile(null)
       onChanged()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось отправить макет')
@@ -253,13 +254,21 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               <div className="inline-form">
                 <input
                   className="input"
-                  placeholder="Ссылка на макет (файл → Яндекс Диск позже)"
-                  value={mockup}
-                  onChange={(e) => setMockup(e.target.value)}
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setMockupFile(e.target.files?.[0] ?? null)}
                 />
-                <button className="btn btn--primary" onClick={sendMockup} disabled={busy || !mockup.trim()}>
-                  Отправить макет
+                <button
+                  className="btn btn--primary"
+                  onClick={sendMockup}
+                  disabled={busy || !mockupFile}
+                >
+                  Загрузить и отправить
                 </button>
+              </div>
+              <div className="card__hint">
+                Файл уйдёт на Яндекс.Диск, статус станет «Отправка макета», а клиент получит его
+                в боте с кнопками «Подтвердить / Переделать».
               </div>
             </div>
 

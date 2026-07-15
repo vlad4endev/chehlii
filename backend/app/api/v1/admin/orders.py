@@ -9,7 +9,7 @@ import io
 from datetime import UTC, date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import or_, select
@@ -22,8 +22,10 @@ from app.enums import AdminRole, CaseBranch, Channel, OrderStatus, PaymentStatus
 from app.models.admin_user import AdminUser
 from app.models.catalog import CaseType
 from app.models.client import Client
+from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.services import order_state_machine as fsm
+from app.services import yandex_disk
 
 router = APIRouter()
 
@@ -309,21 +311,47 @@ async def change_status(
     return await get_order(order_id, user, session)
 
 
-class MockupIn(BaseModel):
-    mockup_url: str
+_MOCKUP_DEFAULT_TEXT = (
+    "Дизайнер подготовил макет вашего чехла ✨\n"
+    "Посмотрите файл выше и подтвердите — или отправьте на доработку."
+)
 
 
 @router.post("/{order_id}/mockup", response_model=OrderDetail)
 async def upload_mockup(
     order_id: int,
-    payload: MockupIn,
     user: CurrentAdmin,
     session: Annotated[AsyncSession, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
 ) -> OrderDetail:
-    """Загрузка макета: пока по ссылке; файл → Яндекс Диск и отправка клиенту — далее."""
-    order, _, _ = await _load(session, order_id)
-    order.mockup_url = payload.mockup_url
+    """Триггерная цепочка передачи макета (ТЗ v2.0): дизайнер грузит файл →
+    (1) файл на Яндекс Диск /orders/{id}/design/, (2) статус «Отправка макета»,
+    (3) заявка в outbox — бот доставит клиенту с кнопками «Подтвердить/Переделать».
+    """
+    order, client, _ = await _load(session, order_id)
+    content = await file.read()
+    filename = (file.filename or f"mockup_{order_id}").replace("/", "_")
+
+    try:
+        url = await yandex_disk.upload(yandex_disk.design_path(order_id, filename), content)
+    except yandex_disk.YandexDiskError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Яндекс.Диск: {e}") from e
+
+    order.mockup_url = url
     if fsm.can_transition(order.status, OrderStatus.MOCKUP_SENT):
         await _record(session, order, OrderStatus.MOCKUP_SENT, user)
+
+    msg = await session.scalar(select(BotMessage).where(BotMessage.code == "msg_009аб"))
+    session.add(
+        OutboundMessage(
+            client_id=client.id,
+            channel=client.channel,
+            channel_user_id=client.channel_user_id,
+            order_id=order.id,
+            kind="mockup",
+            text=(msg.text if msg else _MOCKUP_DEFAULT_TEXT),
+            attachment_url=url,
+        )
+    )
     await session.commit()
     return await get_order(order_id, user, session)

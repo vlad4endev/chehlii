@@ -36,6 +36,10 @@ class OrderUpdateIn(BaseModel):
     materials_files: list | None = None
 
 
+class MockupResponseIn(BaseModel):
+    approved: bool  # True — «Подтвердить», False — «Переделать»
+
+
 class OrderOut(BaseModel):
     id: int
     status: OrderStatus
@@ -118,6 +122,27 @@ async def create_order(
     session.add(order)
     await session.flush()
     await _record_status(session, order, OrderStatus.CASE_CONFIRMED, "Выбор из мини-приложения")
+    await session.commit()
+    await session.refresh(order)
+    return await _to_out(session, order)
+
+
+@router.post("/{order_id}/mockup-response", response_model=OrderOut)
+async def mockup_response(
+    order_id: int,
+    payload: MockupResponseIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderOut:
+    """Ответ клиента на макет из бота: «Подтвердить» → согласование, «Переделать» → пересогласование."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    if payload.approved:
+        await _record_status(session, order, OrderStatus.MOCKUP_APPROVAL, "Клиент подтвердил макет")
+    else:
+        await _record_status(
+            session, order, OrderStatus.MOCKUP_REVISION, "Клиент отправил макет на доработку"
+        )
     await session.commit()
     await session.refresh(order)
     return await _to_out(session, order)

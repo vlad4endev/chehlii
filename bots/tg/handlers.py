@@ -116,6 +116,30 @@ async def on_cancel(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
 
 
+# ── Ответ клиента на макет («Подтвердить» / «Переделать») ──
+@router.callback_query(F.data.startswith("mockup:"))
+async def on_mockup_response(cb: CallbackQuery) -> None:
+    try:
+        _, action, oid = cb.data.split(":")
+        order_id = int(oid)
+    except (ValueError, AttributeError):
+        await cb.answer()
+        return
+    approved = action == "approve"
+    try:
+        await backend.mockup_response(order_id, approved)
+    except Exception:
+        await cb.answer("Не получилось сохранить, попробуйте ещё раз", show_alert=True)
+        return
+    await cb.message.edit_reply_markup(reply_markup=None)
+    await cb.message.answer(
+        "Спасибо! Макет согласован — переходим к оплате."
+        if approved
+        else "Принято! Дизайнер доработает макет и пришлёт заново."
+    )
+    await cb.answer()
+
+
 # ── Главное меню ───────────────────────────────────────
 @router.message(F.text == BTN_CATALOG)
 async def on_catalog_fallback(msg: Message) -> None:

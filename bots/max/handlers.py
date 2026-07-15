@@ -305,6 +305,31 @@ async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> N
     await event.message.answer(texts.get("msg_006б"))
 
 
+# ── Ответ клиента на макет («Подтвердить» / «Переделать») ──
+@dp.message_callback(F.callback.payload.startswith("mockup:"))
+async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> None:
+    try:
+        _, action, oid = event.callback.payload.split(":")
+        order_id = int(oid)
+    except (ValueError, AttributeError):
+        await event.answer()
+        return
+    approved = action == "approve"
+    try:
+        await backend.mockup_response(order_id, approved)
+    except Exception:
+        await event.answer(notification="Не получилось, попробуйте ещё раз")
+        return
+    await event.answer(notification="Принято ✅")
+    await _send_menu(
+        event.bot,
+        event.message.recipient.chat_id,
+        "Спасибо! Макет согласован — переходим к оплате."
+        if approved
+        else "Принято! Дизайнер доработает макет и пришлёт заново.",
+    )
+
+
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.
 @dp.message_created(F.message.body.text)
 async def on_fallback(event: MessageCreated, context: MemoryContext) -> None:

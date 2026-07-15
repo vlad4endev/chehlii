@@ -68,3 +68,12 @@ def materials_confirm_kb():
         CallbackButton(text="🔄 Прислать заново", payload=CB_MAT_REDO),
     )
     return b.as_markup()
+
+
+def mockup_kb(order_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(
+        CallbackButton(text="✅ Подтвердить", payload=f"mockup:approve:{order_id}"),
+        CallbackButton(text="🔄 Переделать", payload=f"mockup:redo:{order_id}"),
+    )
+    return b.as_markup()

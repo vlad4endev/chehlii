@@ -7,8 +7,26 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.enums import BotMessageMode, ScenarioType
+from app.enums import BotMessageMode, Channel, ScenarioType
 from app.models.base import Base, TimestampMixin
+
+
+class OutboundMessage(Base, TimestampMixin):
+    """Исходящее сообщение клиенту. Backend кладёт его сюда, а бот (у которого есть
+    доступ к мессенджеру и прокси) забирает и отправляет — backend не ходит в
+    Telegram/MAX напрямую (TG заблокирован на сервере)."""
+
+    __tablename__ = "outbound_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    client_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    channel: Mapped[Channel] = mapped_column(String(8), nullable=False)
+    channel_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # chat/user id
+    order_id: Mapped[int | None] = mapped_column(BigInteger)
+    kind: Mapped[str] = mapped_column(String(32), default="text")  # text | mockup
+    text: Mapped[str | None] = mapped_column(Text)
+    attachment_url: Mapped[str | None] = mapped_column(String(1024))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BotMessage(Base, TimestampMixin):

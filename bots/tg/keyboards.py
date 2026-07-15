@@ -58,6 +58,17 @@ def confirm_kb() -> InlineKeyboardMarkup:
     )
 
 
+def mockup_kb(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"mockup:approve:{order_id}"),
+                InlineKeyboardButton(text="🔄 Переделать", callback_data=f"mockup:redo:{order_id}"),
+            ]
+        ]
+    )
+
+
 def materials_confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
