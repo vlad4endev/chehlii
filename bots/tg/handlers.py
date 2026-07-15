@@ -176,14 +176,24 @@ async def on_help(msg: Message) -> None:
     await msg.answer("Скоро поможем подобрать лучший вариант ✨ (в разработке).")
 
 
+async def _pay_line(order_id: int) -> str:
+    """Ссылка на предоплату (Robokassa) для сообщения клиенту; фолбэк если не настроено."""
+    try:
+        p = await backend.payment_link(order_id, "prepayment")
+        return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
+    except Exception:
+        return "\n\n(ссылка на оплату появится после настройки Robokassa)"
+
+
 # ── Ввод имени / материалов ────────────────────────────
 @router.message(OrderFlow.waiting_name, F.text)
 async def on_name(msg: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    await backend.update_order(data["order_id"], custom_text=msg.text)
+    order_id = data["order_id"]
+    await backend.update_order(order_id, custom_text=msg.text)
     await state.clear()
     await msg.answer(
-        texts.get("msg_007а") + "\n\n(ссылка на оплату — после подключения шлюза)",
+        texts.get("msg_007а") + await _pay_line(order_id),
         reply_markup=main_menu_kb(),
     )
 
@@ -245,7 +255,7 @@ async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await cb.message.answer(
-        texts.get("msg_007б") + "\n\n(ссылка на оплату — после подключения шлюза)",
+        texts.get("msg_007б") + await _pay_line(order_id),
         reply_markup=main_menu_kb(),
     )
 

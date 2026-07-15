@@ -88,6 +88,15 @@ async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     return links
 
 
+async def _pay_line(order_id: int) -> str:
+    """Ссылка на предоплату (Robokassa); фолбэк если оплата не настроена."""
+    try:
+        p = await backend.payment_link(order_id, "prepayment")
+        return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
+    except Exception:
+        return "\n\n(ссылка на оплату появится после настройки Robokassa)"
+
+
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
                  context: MemoryContext) -> None:
     """Единый вход: /start, первый старт бота или возврат из мини-приложения."""
@@ -259,12 +268,13 @@ async def on_help(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_created(OrderFlow.waiting_name)
 async def on_name(event: MessageCreated, context: MemoryContext) -> None:
     data = await context.get_data()
-    await backend.update_order(data["order_id"], custom_text=event.message.body.text or "")
+    order_id = data["order_id"]
+    await backend.update_order(order_id, custom_text=event.message.body.text or "")
     await context.clear()
     await _send_menu(
         event.bot,
         event.message.recipient.chat_id,
-        texts.get("msg_007а") + "\n\n(ссылка на оплату — после подключения шлюза)",
+        texts.get("msg_007а") + await _pay_line(order_id),
     )
 
 
@@ -312,7 +322,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
     await _send_menu(
         event.bot,
         event.message.recipient.chat_id,
-        texts.get("msg_007б") + "\n\n(ссылка на оплату — после подключения шлюза)",
+        texts.get("msg_007б") + await _pay_line(order_id),
     )
 
 

@@ -60,6 +60,11 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def payment_link(self, order_id: int, kind: str = "prepayment") -> dict:
+        r = await self._client.post("/payments/link", json={"order_id": order_id, "kind": kind})
+        r.raise_for_status()
+        return r.json()
+
     async def add_client_file(self, order_id: int, filename: str, content: bytes) -> dict:
         r = await self._client.post(
             f"/orders/{order_id}/client-file", files={"file": (filename, content)}

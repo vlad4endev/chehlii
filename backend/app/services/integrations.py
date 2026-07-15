@@ -66,26 +66,41 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
     },
     {
         "id": "payment",
-        "title": "Платёжный оператор",
-        "hint": "Приём оплаты (предоплата, постоплата, доставка).",
+        "title": "Оплата (Robokassa)",
+        "hint": (
+            "Приём предоплаты и постоплаты. В ЛК Robokassa укажите ResultURL, Success и "
+            "Fail (см. подсказку под полями)."
+        ),
         "fields": [
             {
-                "key": "payment.provider",
-                "label": "Провайдер",
-                "secret": False,
-                "placeholder": "yookassa / tinkoff / cloudpayments",
-            },
-            {
-                "key": "payment.merchant_id",
-                "label": "Merchant / Shop ID",
+                "key": "payment.robokassa_login",
+                "label": "MerchantLogin (идентификатор магазина)",
                 "secret": False,
                 "placeholder": "",
             },
             {
-                "key": "payment.secret_key",
-                "label": "Секретный ключ",
+                "key": "payment.robokassa_pass1",
+                "label": "Пароль №1",
                 "secret": True,
                 "placeholder": "",
+            },
+            {
+                "key": "payment.robokassa_pass2",
+                "label": "Пароль №2",
+                "secret": True,
+                "placeholder": "",
+            },
+            {
+                "key": "payment.robokassa_test",
+                "label": "Тестовый режим (true/false)",
+                "secret": False,
+                "placeholder": "true",
+            },
+            {
+                "key": "payment.prepay_percent",
+                "label": "Размер предоплаты, %",
+                "secret": False,
+                "placeholder": "50",
             },
         ],
     },
