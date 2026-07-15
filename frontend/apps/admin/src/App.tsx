@@ -13,9 +13,10 @@ import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
 import { Placeholder } from './pages/Placeholder'
 import { Reviews } from './pages/Reviews'
+import { Users } from './pages/Users'
 import { SECTIONS } from './sections'
 
-// Реализованные разделы; остальные — заглушка (Фаза H).
+// Все разделы AdminUI реализованы (Фазы A–H).
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
   '/orders': <Orders />,
@@ -23,6 +24,7 @@ const PAGES: Record<string, ReactNode> = {
   '/reviews': <Reviews />,
   '/bot-texts': <BotTexts />,
   '/broadcasts': <Broadcasts />,
+  '/users': <Users />,
 }
 
 function Protected() {

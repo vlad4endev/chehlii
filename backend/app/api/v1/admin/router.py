@@ -11,6 +11,7 @@ from app.api.v1.admin.catalog import router as catalog_router
 from app.api.v1.admin.clients import router as clients_router
 from app.api.v1.admin.orders import router as orders_router
 from app.api.v1.admin.reviews import router as reviews_router
+from app.api.v1.admin.users import router as users_router
 
 admin_router = APIRouter()
 admin_router.include_router(auth_router, prefix="/auth", tags=["admin-auth"])
@@ -22,3 +23,4 @@ admin_router.include_router(
     bot_messages_router, prefix="/bot-messages", tags=["admin-bot-messages"]
 )
 admin_router.include_router(broadcasts_router, prefix="/broadcasts", tags=["admin-broadcasts"])
+admin_router.include_router(users_router, prefix="/users", tags=["admin-users"])
