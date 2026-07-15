@@ -14,7 +14,7 @@ export function AdminLayout() {
     <div className="layout">
       <aside className="sidebar">
         <div className="sidebar__brand">
-          чехл<span className="accent">ии</span>
+          casetop
           <span className="sidebar__brand-sub">админка</span>
         </div>
         <nav className="nav">

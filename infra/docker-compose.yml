@@ -1,7 +1,7 @@
 # Локальная конфигурация разработки.
 # На VK Cloud: образы берутся из VK Container Registry, файлы — в VK Object Storage,
 # postgres/redis — управляемые сервисы VK Cloud (см. infra/README-vkcloud.md).
-name: chehlii
+name: casetop
 
 services:
   postgres:

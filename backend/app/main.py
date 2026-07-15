@@ -28,7 +28,7 @@ if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.app_env, traces_sample_rate=0.1)
 
 app = FastAPI(
-    title="ЧехлИИ API",
+    title="casetop API",
     version="0.1.0",
     description="Backend базового этапа: каталог, заказы, клиенты, оплата, доставка, webhooks.",
 )

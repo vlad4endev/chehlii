@@ -30,7 +30,7 @@ export function Login() {
     <div className="login">
       <form className="login__card" onSubmit={submit}>
         <div className="login__brand">
-          чехл<span className="accent">ии</span> · админка
+          casetop · админка
         </div>
         <label className="field">
           <span className="field__label">Почта</span>

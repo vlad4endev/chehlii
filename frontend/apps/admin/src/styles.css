@@ -1,17 +1,18 @@
 :root {
-  --bg: #f4f3f0;
+  --bg: #f4f4f3;
   --panel: #ffffff;
-  --ink: #201e1b;
-  --ink-soft: #6c6860;
-  --ink-faint: #a7a299;
-  --line: #e7e3db;
-  --line-2: #d8d3c9;
-  --accent: #ff5a2d;
-  --accent-press: #e8481d;
-  --accent-soft: #ffe7de;
+  --ink: #17181a;
+  --ink-soft: #6d6f73;
+  --ink-faint: #a6a8ac;
+  --line: #e6e6e4;
+  --line-2: #d4d4d1;
+  --accent: #17181a;
+  --accent-press: #000000;
+  --accent-soft: #ececeb;
   --danger: #d64545;
   --radius: 12px;
   --font: 'Onest', system-ui, sans-serif;
+  --display: 'Unbounded', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
@@ -39,7 +40,7 @@ input { font-family: inherit; }
   flex-direction: column;
   gap: 16px;
 }
-.login__brand { font-weight: 700; font-size: 20px; letter-spacing: -0.02em; margin-bottom: 6px; }
+.login__brand { font-family: var(--display); font-weight: 800; font-size: 20px; letter-spacing: -0.02em; text-transform: lowercase; margin-bottom: 6px; }
 .login__error { color: var(--danger); font-size: 13px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -84,7 +85,7 @@ input { font-family: inherit; }
   flex-direction: column;
   gap: 20px;
 }
-.sidebar__brand { font-weight: 700; font-size: 20px; letter-spacing: -0.02em; padding: 4px 8px; display: flex; align-items: baseline; gap: 8px; }
+.sidebar__brand { font-family: var(--display); font-weight: 800; font-size: 19px; letter-spacing: -0.02em; text-transform: lowercase; padding: 4px 8px; display: flex; align-items: baseline; gap: 8px; }
 .sidebar__brand-sub { font-size: 11px; font-weight: 500; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav__link {

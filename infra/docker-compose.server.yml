@@ -1,8 +1,8 @@
-# Серверная конфигурация (VPS 77.93.125.36, изолированный проект `chehlii`).
-# Запуск:  docker compose -p chehlii --env-file .env.server -f docker-compose.server.yml up -d --build
+# Серверная конфигурация (VPS 77.93.125.36, изолированный проект `casetop`).
+# Запуск:  docker compose -p casetop --env-file .env.server -f docker-compose.server.yml up -d --build
 # Отличия от локальной: postgres/redis НЕ публикуются на host (только внутри сети проекта),
 # backend слушает свободный host-порт 8090 → его проксирует nginx_proxy_manager по домену.
-name: chehlii
+name: casetop
 
 services:
   postgres:

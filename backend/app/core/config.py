@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     webroot_admin: str | None = None
 
     # PostgreSQL
-    postgres_user: str = "chehlii"
+    postgres_user: str = "casetop"
     postgres_password: str = "change_me"
-    postgres_db: str = "chehlii"
+    postgres_db: str = "casetop"
     postgres_host: str = "postgres"
     postgres_port: int = 5432
 

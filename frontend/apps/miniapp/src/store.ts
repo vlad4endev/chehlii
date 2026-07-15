@@ -8,7 +8,7 @@ import { getTelegramUser } from './telegram'
 // на серверное хранилище.
 function storageKey(): string {
   const user = getTelegramUser()
-  return user ? `chehlii:favorites:${user.id}` : 'chehlii:favorites'
+  return user ? `casetop:favorites:${user.id}` : 'casetop:favorites'
 }
 
 function read(key: string): number[] {

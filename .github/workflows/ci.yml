@@ -14,12 +14,12 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: chehlii
-          POSTGRES_PASSWORD: chehlii
-          POSTGRES_DB: chehlii_test
+          POSTGRES_USER: casetop
+          POSTGRES_PASSWORD: casetop
+          POSTGRES_DB: casetop_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U chehlii" --health-interval 5s
+          --health-cmd "pg_isready -U casetop" --health-interval 5s
           --health-timeout 5s --health-retries 10
       redis:
         image: redis:7
@@ -45,9 +45,9 @@ jobs:
         env:
           APP_ENV: ci
           POSTGRES_HOST: localhost
-          POSTGRES_USER: chehlii
-          POSTGRES_PASSWORD: chehlii
-          POSTGRES_DB: chehlii_test
+          POSTGRES_USER: casetop
+          POSTGRES_PASSWORD: casetop
+          POSTGRES_DB: casetop_test
           REDIS_HOST: localhost
           JWT_SECRET: ci_secret
         run: pytest -q

@@ -42,10 +42,7 @@ export function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="wordmark">
-          чехл<span className="wordmark__accent">ии</span>
-          <span className="wordmark__dot" />
-        </div>
+        <div className="wordmark">casetop</div>
         <p className="tagline">
           Индивидуальные чехлы, <span className="serif-it">сделанные под вас</span>
         </p>
@@ -79,7 +76,7 @@ export function App() {
             <section className="hero">
               <div className="hero__glow" aria-hidden="true" />
               <div className="hero__orb" aria-hidden="true">
-                <span>Ч</span>
+                <span>c</span>
               </div>
               <span className="meta hero__eyebrow">
                 {items.length} {plural(items.length, ['тип', 'типа', 'типов'])} · под вас

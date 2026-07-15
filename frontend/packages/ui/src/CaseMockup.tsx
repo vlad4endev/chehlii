@@ -111,9 +111,9 @@ export function CaseMockup({
       <svg viewBox="0 0 320 400" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id={`${gid}-art`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#ff8a5c" />
-            <stop offset="0.55" stopColor="#ff5a2d" />
-            <stop offset="1" stopColor="#e8481d" />
+            <stop offset="0" stopColor="#3a3b3e" />
+            <stop offset="0.55" stopColor="#1d1e20" />
+            <stop offset="1" stopColor="#0a0a0b" />
           </linearGradient>
           <linearGradient id={`${gid}-gloss`} x1="0" y1="0" x2="0.7" y2="1">
             <stop offset="0" stopColor="#ffffff" stopOpacity="0.5" />
@@ -121,12 +121,12 @@ export function CaseMockup({
             <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
           </linearGradient>
           <filter id={`${gid}-shadow`} x="-30%" y="-20%" width="160%" height="150%">
-            <feDropShadow dx="0" dy="14" stdDeviation="16" floodColor="#2a1e12" floodOpacity="0.22" />
+            <feDropShadow dx="0" dy="14" stdDeviation="16" floodColor="#141414" floodOpacity="0.22" />
           </filter>
         </defs>
 
         {/* подиум-тень */}
-        <ellipse cx="160" cy="372" rx="86" ry="14" fill="#2a1e12" opacity="0.12" />
+        <ellipse cx="160" cy="372" rx="86" ry="14" fill="#141414" opacity="0.12" />
 
         <g filter={`url(#${gid}-shadow)`}>
           {/* корпус */}
@@ -140,9 +140,9 @@ export function CaseMockup({
           {/* арт / гравировка-монограмма */}
           {isCustom ? (
             <g opacity="0.9">
-              <circle cx="150" cy="250" r="52" fill="#ffffff" opacity="0.16" />
-              <circle cx="196" cy="300" r="30" fill="#ffe7de" opacity="0.28" />
-              <circle cx="120" cy="310" r="20" fill="#17140f" opacity="0.14" />
+              <circle cx="150" cy="250" r="52" fill="#ffffff" opacity="0.14" />
+              <circle cx="196" cy="300" r="30" fill="#ffffff" opacity="0.10" />
+              <circle cx="120" cy="310" r="20" fill="#000000" opacity="0.18" />
               <text x="160" y="252" textAnchor="middle" fontSize="60" fontFamily="Unbounded, sans-serif" fontWeight="800" fill="#ffffff" opacity="0.9">✦</text>
             </g>
           ) : (

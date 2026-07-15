@@ -1,28 +1,28 @@
-/* Дизайн-токены ЧехлИИ. Направление вдохновлено rusuniq.ru: фирменный оранжевый,
-   драматичный тёмный акцент и объёмная 3D-подача. База — светлая и воздушная
-   (чтобы не было тяжести), тёмное и объёмное — точечно. */
+/* Дизайн-токены casetop. Айдентика по логотипу: монохром — жирный чёрный
+   вордмарк на светлом. Никакого цветного акцента; выразительность даёт контраст,
+   вес шрифта и объём (тени). База светлая и чистая, чёрное — точечно и уверенно. */
 :root {
-  /* Палитра — светлая (по умолчанию) */
-  --paper: #f2f1ed;        /* тёплый почти-белый */
-  --paper-2: #e8e5de;
+  /* Палитра — светлая (по умолчанию), нейтральный монохром */
+  --paper: #f4f4f3;        /* почти-белый, нейтральный */
+  --paper-2: #e9e9e7;
   --card: #ffffff;
-  --ink: #201e1b;          /* мягкая тёплая тушь (не чёрный) */
-  --ink-2: #524e48;
-  --ink-soft: #7c7870;
-  --ink-faint: #aca69c;
-  --line: #e7e3db;
-  --line-2: #d7d3c9;
+  --ink: #17181a;          /* почти чёрный (как в логотипе) */
+  --ink-2: #4a4c4f;
+  --ink-soft: #77797d;
+  --ink-faint: #a6a8ac;
+  --line: #e6e6e4;
+  --line-2: #d4d4d1;
 
-  --accent: #ff5a2d;       /* оранжевый rusuniq — единственный акцент */
-  --accent-press: #e8481d;
-  --accent-soft: #ffe7de;
-  --cta: #ff5a2d;
+  --accent: #17181a;       /* акцент = графит/чёрный (кнопки, выделения) */
+  --accent-press: #000000;
+  --accent-soft: #ececeb;  /* нейтральная подложка вместо цветной */
+  --cta: #17181a;
   --on-cta: #ffffff;
 
-  /* Тёмный акцент-герой */
-  --hero-bg: #17140f;
-  --hero-ink: #f7f4ef;
-  --hero-soft: #b9b2a6;
+  /* Тёмный акцент-герой — нейтральный чёрный */
+  --hero-bg: #141414;
+  --hero-ink: #f6f6f5;
+  --hero-soft: #b4b5b6;
 
   /* Типографика */
   --font-display: 'Unbounded', system-ui, sans-serif;
@@ -49,23 +49,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #131211;
-    --paper-2: #1c1a18;
-    --card: #1e1c1a;
-    --ink: #f4f1ec;
-    --ink-2: #cbc7bf;
-    --ink-soft: #a09b92;
-    --ink-faint: #6d685f;
-    --line: #2b2825;
-    --line-2: #3b3733;
-    --accent: #ff7a52;
-    --accent-press: #ff8f6c;
-    --accent-soft: #3a221a;
-    --cta: #ff7a52;
-    --on-cta: #17140f;
-    --hero-bg: #0d0b09;
-    --hero-ink: #f7f4ef;
-    --hero-soft: #b9b2a6;
+    --paper: #121212;
+    --paper-2: #1b1b1c;
+    --card: #1d1d1e;
+    --ink: #f2f2f1;
+    --ink-2: #c7c8c9;
+    --ink-soft: #9a9a9c;
+    --ink-faint: #67686a;
+    --line: #2a2b2d;
+    --line-2: #3a3b3e;
+    --accent: #f4f4f3;       /* на тёмном акцент — светлый (кнопки белые) */
+    --accent-press: #ffffff;
+    --accent-soft: #26272a;
+    --cta: #f4f4f3;
+    --on-cta: #141414;
+    --hero-bg: #0c0c0c;
+    --hero-ink: #f6f6f5;
+    --hero-soft: #b4b5b6;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px rgba(0, 0, 0, 0.5);
     --shadow-vol: 0 6px 12px rgba(0, 0, 0, 0.5), 0 26px 50px rgba(0, 0, 0, 0.6);
     --shadow-pop: 0 18px 55px rgba(0, 0, 0, 0.6);

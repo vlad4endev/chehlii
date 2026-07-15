@@ -12,7 +12,7 @@ PostgreSQL 17 и Redis. Конфигурация Docker Compose (`infra/`) со�
 ```bash
 make services   # brew services start postgresql@17 redis
 make install    # venv + зависимости backend
-make db         # роль и база chehlii
+make db         # роль и база casetop
 make migrate    # применить миграции (создаёт 12 таблиц)
 make seed       # демо-данные: админ, каталог, тексты бота
 make run        # http://localhost:8000
@@ -26,8 +26,8 @@ open http://localhost:8000/docs              # Swagger UI
 ```
 
 ## Учётные данные (локально)
-- БД: `chehlii` / `chehlii` @ `localhost:5432`, база `chehlii`
-- Админ AdminUI: `admin@chehlii.local` / `admin123` (используется с появлением auth в Спринте 1)
+- БД: `casetop` / `casetop` @ `localhost:5432`, база `casetop`
+- Админ AdminUI: `admin@casetop.local` / `admin123` (используется с появлением auth в Спринте 1)
 
 Секреты локального `backend/.env` не коммитятся. Пример — `infra/.env.example`.
 

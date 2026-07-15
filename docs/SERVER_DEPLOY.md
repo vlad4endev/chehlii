@@ -1,26 +1,26 @@
 # Деплой на сервер 77.93.125.36 (staging)
 
 VPS: Ubuntu 24.04, 4 CPU / 15 ГБ RAM. Сервер общий — на нём уже работает ~13 Docker-проектов
-(supabase, n8n, nocobase, timelog, nginx_proxy_manager и др.). ЧехлИИ развёрнут **изолированно**,
-как отдельный compose-проект `chehlii`, без вмешательства в чужие сервисы.
+(supabase, n8n, nocobase, timelog, nginx_proxy_manager и др.). casetop развёрнут **изолированно**,
+как отдельный compose-проект `casetop`, без вмешательства в чужие сервисы.
 
 ## Что развёрнуто
-- Проект на сервере: `/home/skyputh/chehlii/`
-- Compose-проект `chehlii`: контейнеры `chehlii-backend-1`, `chehlii-postgres-1`, `chehlii-redis-1`
+- Проект на сервере: `/home/skyputh/casetop/`
+- Compose-проект `casetop`: контейнеры `casetop-backend-1`, `casetop-postgres-1`, `casetop-redis-1`
 - Postgres/Redis — только внутри сети проекта (наружу не публикуются)
 - Backend — host-порт **8090** → `http://77.93.125.36:8090` (для проксирования доменом через NPM)
-- Секреты — в `/home/skyputh/chehlii/infra/.env.server` (сгенерированы на сервере, права 600, не в git)
+- Секреты — в `/home/skyputh/casetop/infra/.env.server` (сгенерированы на сервере, права 600, не в git)
 
 ## Команды эксплуатации (на сервере)
 ```bash
-cd /home/skyputh/chehlii/infra
-COMPOSE="docker compose -p chehlii --env-file .env.server -f docker-compose.server.yml"
+cd /home/skyputh/casetop/infra
+COMPOSE="docker compose -p casetop --env-file .env.server -f docker-compose.server.yml"
 
 $COMPOSE ps                      # статус
 $COMPOSE logs -f backend         # логи
 $COMPOSE up -d --build           # пересобрать/обновить
 $COMPOSE down                    # остановить (данные в volume сохраняются)
-docker exec chehlii-backend-1 python -m app.seed   # посев демо-данных
+docker exec casetop-backend-1 python -m app.seed   # посев демо-данных
 ```
 
 ## Обновление кода (с локальной машины)
@@ -28,7 +28,7 @@ docker exec chehlii-backend-1 python -m app.seed   # посев демо-дан�
 cd ~/Documents/ЧехлыИИ
 rsync -az --delete --exclude '.git' --exclude 'backend/.venv' --exclude '**/__pycache__' \
   --exclude 'infra/.env.server' --exclude 'backend/.env' \
-  -e "ssh -p 22" ./ skyputh@77.93.125.36:/home/skyputh/chehlii/
+  -e "ssh -p 22" ./ skyputh@77.93.125.36:/home/skyputh/casetop/
 # затем на сервере: $COMPOSE up -d --build
 ```
 

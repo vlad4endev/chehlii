@@ -1,6 +1,6 @@
 // API-клиент админки. Токен — в localStorage, добавляется в Authorization.
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
-const TOKEN_KEY = 'chehlii:admin:token'
+const TOKEN_KEY = 'casetop:admin:token'
 
 export type Role = 'admin' | 'designer'
 

@@ -1,7 +1,7 @@
 [project]
-name = "chehlii-backend"
+name = "casetop-backend"
 version = "0.1.0"
-description = "ЧехлИИ backend: REST API, webhooks, order FSM, scheduler"
+description = "casetop backend: REST API, webhooks, order FSM, scheduler"
 requires-python = ">=3.12"
 
 [tool.ruff]

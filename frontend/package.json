@@ -1,5 +1,5 @@
 {
-  "name": "chehlii-frontend",
+  "name": "casetop-frontend",
   "private": true,
   "version": "0.1.0",
   "workspaces": [
@@ -7,8 +7,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @chehlii/miniapp",
-    "build": "npm run build -w @chehlii/miniapp",
-    "lint": "npm run lint -w @chehlii/miniapp"
+    "dev": "npm run dev -w @casetop/miniapp",
+    "build": "npm run build -w @casetop/miniapp",
+    "lint": "npm run lint -w @casetop/miniapp"
   }
 }
