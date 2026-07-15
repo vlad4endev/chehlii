@@ -80,15 +80,6 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         ],
     },
     {
-        "id": "ozon",
-        "title": "Ozon Доставка",
-        "hint": "Служба доставки Ozon.",
-        "fields": [
-            {"key": "ozon.client_id", "label": "Client Id", "secret": False, "placeholder": ""},
-            {"key": "ozon.api_key", "label": "API Key", "secret": True, "placeholder": ""},
-        ],
-    },
-    {
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (
