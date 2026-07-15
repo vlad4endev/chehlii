@@ -7,9 +7,22 @@ import os
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles с SPA-fallback: на 404 отдаёт index.html (для client-side роутинга)."""
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
 if settings.sentry_dsn:
     sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.app_env, traces_sample_rate=0.1)
@@ -28,7 +41,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.app_env}
 
 
-# Отдача собранного мини-приложения с того же домена (после API-роутов, поэтому
-# /api, /docs, /health имеют приоритет, а всё остальное — SPA).
+# Отдача собранных SPA с того же домена (после API-роутов, поэтому /api, /docs,
+# /health имеют приоритет). Админка — на /admin (монтируется до корня), мини-
+# приложение — на /. Более специфичный маршрут регистрируется первым.
+if settings.webroot_admin and os.path.isdir(settings.webroot_admin):
+    app.mount("/admin", SPAStaticFiles(directory=settings.webroot_admin, html=True), name="admin")
+
 if settings.webroot and os.path.isdir(settings.webroot):
-    app.mount("/", StaticFiles(directory=settings.webroot, html=True), name="webapp")
+    app.mount("/", SPAStaticFiles(directory=settings.webroot, html=True), name="webapp")

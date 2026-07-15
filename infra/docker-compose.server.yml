@@ -37,11 +37,13 @@ services:
       dockerfile: Dockerfile
     env_file: .env.server
     environment:
-      WEBROOT: /app/webroot          # backend отдаёт мини-приложение (SPA) с того же домена
+      WEBROOT: /app/webroot              # мини-приложение (SPA) на /
+      WEBROOT_ADMIN: /app/webroot-admin  # админка (SPA) на /admin
     ports:
       - "8090:8000"   # host:container — NPM форвардит домен на 8090
     volumes:
-      - ./webroot:/app/webroot:ro    # сюда rsync'ится собранный фронт (dist)
+      - ./webroot:/app/webroot:ro              # собранный мини-апп (dist)
+      - ./webroot-admin:/app/webroot-admin:ro  # собранная админка (dist, base=/admin/)
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +59,7 @@ services:
     build:
       context: ..
       dockerfile: bots/Dockerfile
+    profiles: ["bots"]   # запускается по запросу, когда задан TG_BOT_TOKEN
     environment:
       TG_BOT_TOKEN: ${TG_BOT_TOKEN}
       BACKEND_URL: http://backend:8000/api/v1   # внутри compose-сети, не через NPM
@@ -67,6 +70,24 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # MAX-бот: тот же backend, отдельный поллер (профиль max — запускается по запросу).
+  bot_max:
+    build:
+      context: ..
+      dockerfile: bots/Dockerfile
+    command: python -m bots.run_max
+    profiles: ["max"]
+    environment:
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN}   # нужен для импорта общего config (не используется в MAX)
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
+      MAX_BOT_USERNAME: ${MAX_BOT_USERNAME}
+      BACKEND_URL: http://backend:8000/api/v1
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      backend:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

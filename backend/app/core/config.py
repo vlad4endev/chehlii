@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # Каталог собранного мини-приложения (SPA). Если задан и существует — backend
     # отдаёт фронт с того же домена, что и API (same-origin, без CORS).
     webroot: str | None = None
+    # Каталог собранной админки (SPA). Отдаётся по пути /admin того же домена.
+    webroot_admin: str | None = None
 
     # PostgreSQL
     postgres_user: str = "chehlii"
