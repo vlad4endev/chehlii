@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin.auth import router as auth_router
 from app.api.v1.admin.bot_messages import router as bot_messages_router
+from app.api.v1.admin.broadcasts import router as broadcasts_router
 from app.api.v1.admin.catalog import router as catalog_router
 from app.api.v1.admin.clients import router as clients_router
 from app.api.v1.admin.orders import router as orders_router
@@ -17,4 +18,7 @@ admin_router.include_router(catalog_router, prefix="/case-types", tags=["admin-c
 admin_router.include_router(orders_router, prefix="/orders", tags=["admin-orders"])
 admin_router.include_router(clients_router, prefix="/clients", tags=["admin-clients"])
 admin_router.include_router(reviews_router, prefix="/reviews", tags=["admin-reviews"])
-admin_router.include_router(bot_messages_router, prefix="/bot-messages", tags=["admin-bot-messages"])
+admin_router.include_router(
+    bot_messages_router, prefix="/bot-messages", tags=["admin-bot-messages"]
+)
+admin_router.include_router(broadcasts_router, prefix="/broadcasts", tags=["admin-broadcasts"])
