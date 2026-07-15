@@ -13,6 +13,7 @@ import {
   fetchOrders,
   uploadMockup,
 } from '../ordersApi'
+import { StatusPill } from './Dashboard'
 
 const fmtDate = (iso: string) => {
   const d = new Date(iso)
@@ -20,13 +21,6 @@ const fmtDate = (iso: string) => {
 }
 const money = (n: number) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
-
-function statusClass(status: string): string {
-  if (status === 'cancelled') return 'badge badge--red'
-  if (['prepayment_paid', 'postpayment_paid', 'delivered', 'review_received', 'shipped'].includes(status))
-    return 'badge badge--green'
-  return 'badge'
-}
 
 export function Orders() {
   const [items, setItems] = useState<OrderRow[]>([])
@@ -128,7 +122,7 @@ export function Orders() {
                   {o.model_name && <span className="muted"> · {o.model_name}</span>}
                 </td>
                 <td>
-                  <span className={statusClass(o.status)}>{o.status_label}</span>
+                  <StatusPill status={o.status} label={o.status_label} />
                 </td>
                 {isAdmin && <td className="num mono">{o.final_price != null ? money(o.final_price) : '—'}</td>}
               </tr>
@@ -211,7 +205,11 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
         <div className="modal__head">
           <h2 className="modal__title">
             Заказ #{id}
-            {order && <span className={statusClass(order.status)} style={{ marginLeft: 10 }}>{order.status_label}</span>}
+            {order && (
+              <span style={{ marginLeft: 10 }}>
+                <StatusPill status={order.status} label={order.status_label} />
+              </span>
+            )}
           </h2>
           <button className="modal__close" onClick={onClose}>
             ✕

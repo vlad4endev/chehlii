@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "miniapp",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "-w", "@casetop/miniapp"],
+      "port": 5173
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "-w", "@casetop/admin"],
+      "port": 5174
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "backend/.venv/bin/uvicorn",
+      "runtimeArgs": ["app.main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8000", "--reload"],
+      "port": 8000
+    }
+  ]
+}
