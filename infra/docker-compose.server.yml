@@ -62,6 +62,7 @@ services:
     profiles: ["bots"]   # запускается по запросу, когда задан TG_BOT_TOKEN
     environment:
       TG_BOT_TOKEN: ${TG_BOT_TOKEN}
+      TG_PROXY: ${TG_PROXY:-}   # socks5://… или http://… для обхода блокировки Telegram
       BACKEND_URL: http://backend:8000/api/v1   # внутри compose-сети, не через NPM
       REDIS_URL: redis://redis:6379/1
       WEBAPP_URL: https://test.skypath.fun

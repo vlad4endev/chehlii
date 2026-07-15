@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
 
 from bots.core.backend import backend
@@ -18,7 +19,11 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await texts.load()
 
-    bot = Bot(settings.tg_bot_token)
+    # api.telegram.org заблокирован в РФ — при наличии TG_PROXY ходим через прокси.
+    session = AiohttpSession(proxy=settings.tg_proxy) if settings.tg_proxy else None
+    if settings.tg_proxy:
+        logging.info("Telegram: используется прокси")
+    bot = Bot(settings.tg_bot_token, session=session)
     dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
     dp.include_router(router)
 
