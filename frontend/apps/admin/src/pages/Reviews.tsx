@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { ApiError } from '../api'
 import { type ReviewAdmin, type ReviewStatus, fetchReviews, moderate } from '../reviewsApi'
+import { Avatar, StatLine } from '../ui'
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
@@ -65,6 +66,16 @@ export function Reviews() {
         </h1>
       </div>
 
+      {!loading && !error && items.length > 0 && (
+        <StatLine
+          items={[
+            { label: 'На модерации', value: items.filter((r) => r.status === 'pending').length },
+            { label: 'Опубликовано', value: items.filter((r) => r.status === 'published').length },
+            { label: 'Отклонено', value: items.filter((r) => r.status === 'rejected').length },
+          ]}
+        />
+      )}
+
       <div className="segmented">
         {FILTERS.map((f) => (
           <button
@@ -86,6 +97,7 @@ export function Reviews() {
             <div className="rcard" key={r.id}>
               <div className="rcard__body">
                 <div className="rcard__top">
+                  <Avatar name={r.author_name || 'Аноним'} />
                   <span className="rcard__author">{r.author_name || 'Аноним'}</span>
                   <span className="rcard__date">{fmtDate(r.created_at)}</span>
                   <span className={badgeClass(r.status)}>{r.status_label}</span>

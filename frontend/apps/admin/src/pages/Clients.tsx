@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { ApiError } from '../api'
 import { type Client, fetchClient, fetchClients, updateDiscounts } from '../clientsApi'
+import { ChannelChip, StatLine, UserCell } from '../ui'
 
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 const fmtDate = (iso: string | null) =>
@@ -57,12 +58,22 @@ export function Clients() {
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
 
+      {!loading && !error && items.length > 0 && (
+        <StatLine
+          items={[
+            { label: 'Всего клиентов', value: items.length },
+            { label: 'С заказами', value: items.filter((c) => c.number_orders > 0).length },
+            { label: 'Telegram', value: items.filter((c) => c.channel === 'tg').length },
+            { label: 'MAX', value: items.filter((c) => c.channel === 'max').length },
+          ]}
+        />
+      )}
+
       {!loading && !error && (
         <table className="table">
           <thead>
             <tr>
               <th>Клиент</th>
-              <th>Телефон</th>
               <th>Канал</th>
               <th className="num">Заказы</th>
               <th className="num">Скидка</th>
@@ -72,17 +83,26 @@ export function Clients() {
           <tbody>
             {items.map((c) => (
               <tr key={c.id} onClick={() => setOpenId(c.id)}>
-                <td className="strong">{c.nickname || '—'}</td>
-                <td className="mono">{c.phone || '—'}</td>
-                <td>{CHANNEL_LABEL[c.channel] ?? c.channel}</td>
+                <td>
+                  <UserCell name={c.nickname || 'Без ника'} sub={c.phone || undefined} />
+                </td>
+                <td>
+                  <ChannelChip channel={c.channel} />
+                </td>
                 <td className="num">{c.number_orders}</td>
-                <td className="num mono strong">{c.total_discount}%</td>
+                <td className="num">
+                  {c.total_discount > 0 ? (
+                    <span className="chip chip--accent">{c.total_discount}%</span>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
                 <td className="mono">{c.slave_code || '—'}</td>
               </tr>
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="table__empty">
+                <td colSpan={5} className="table__empty">
                   Клиентов не найдено.
                 </td>
               </tr>

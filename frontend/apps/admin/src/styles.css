@@ -348,3 +348,18 @@ select.input { appearance: none; cursor: pointer; }
 .rcard__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .cell-clip { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
+
+/* ── Сводная строка метрик раздела ────────────────── */
+.statline { display: flex; gap: 12px; flex-wrap: wrap; margin: -8px 0 20px; }
+.statchip { display: flex; flex-direction: column; gap: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 18px; box-shadow: var(--shadow-sm); min-width: 118px; }
+.statchip__value { font-family: var(--display); font-weight: 800; font-size: 21px; letter-spacing: -0.02em; line-height: 1; }
+.statchip__label { font-size: 11.5px; color: var(--ink-soft); }
+
+/* ── Аватар / ячейка-человек ──────────────────────── */
+.avatar { width: 30px; height: 30px; border-radius: 9px; background: var(--ink); color: #fff; display: inline-grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 11px; text-transform: uppercase; flex: 0 0 auto; }
+.cell-user { display: inline-flex; align-items: center; gap: 10px; }
+.cell-user__meta { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.cell-user__name { font-weight: 600; }
+.cell-user__sub { font-size: 11.5px; color: var(--ink-faint); font-family: var(--mono); }
+
+.chip--code { font-family: var(--mono); font-weight: 600; color: var(--ink); background: var(--accent-soft); border-color: var(--line-2); }

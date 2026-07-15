@@ -10,6 +10,7 @@ import {
   previewSegment,
   sendBroadcast,
 } from '../broadcastsApi'
+import { StatLine } from '../ui'
 
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 
@@ -83,6 +84,19 @@ export function Broadcasts() {
 
       {!loading && !error && items.length === 0 && (
         <div className="empty">Рассылок пока нет. Создайте первую.</div>
+      )}
+
+      {!loading && !error && items.length > 0 && (
+        <StatLine
+          items={[
+            { label: 'Отправлено', value: items.filter((b) => !b.is_draft).length },
+            { label: 'Черновиков', value: items.filter((b) => b.is_draft).length },
+            {
+              label: 'Всего получателей',
+              value: items.reduce((s, b) => s + (b.is_draft ? 0 : b.recipients_count), 0),
+            },
+          ]}
+        />
       )}
 
       {!loading && !error && items.length > 0 && (

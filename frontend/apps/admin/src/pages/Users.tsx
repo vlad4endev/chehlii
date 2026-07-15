@@ -11,6 +11,7 @@ import {
   fetchUsers,
   updateUser,
 } from '../usersApi'
+import { StatLine, UserCell } from '../ui'
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { dateStyle: 'medium' })
@@ -65,12 +66,22 @@ export function Users() {
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
 
+      {!loading && !error && items.length > 0 && (
+        <StatLine
+          items={[
+            { label: 'Всего', value: items.length },
+            { label: 'Администраторов', value: items.filter((u) => u.role === 'admin').length },
+            { label: 'Дизайнеров', value: items.filter((u) => u.role === 'designer').length },
+            { label: 'Активных', value: items.filter((u) => u.is_active).length },
+          ]}
+        />
+      )}
+
       {!loading && !error && (
         <table className="table">
           <thead>
             <tr>
-              <th>Почта</th>
-              <th>Имя</th>
+              <th>Пользователь</th>
               <th>Роль</th>
               <th>Статус</th>
               <th>Создан</th>
@@ -80,12 +91,15 @@ export function Users() {
           <tbody>
             {items.map((u) => (
               <tr key={u.id}>
-                <td className="strong">
-                  {u.email}
-                  {me?.id === u.id && <span className="muted"> (вы)</span>}
+                <td>
+                  <UserCell
+                    name={u.full_name || u.email}
+                    sub={u.full_name ? u.email : me?.id === u.id ? 'это вы' : undefined}
+                  />
                 </td>
-                <td>{u.full_name ?? '—'}</td>
-                <td>{ROLE_LABEL[u.role]}</td>
+                <td>
+                  <span className="chip">{ROLE_LABEL[u.role]}</span>
+                </td>
                 <td>
                   {u.is_active ? (
                     <span className="badge badge--green">Активен</span>

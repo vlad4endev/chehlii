@@ -5,13 +5,9 @@ import { useAuth } from '../auth'
 import { Icon } from '../icons'
 import { type Section, groupsFor, sectionByPath } from '../sections'
 import { type Stats, fetchStats } from '../statsApi'
+import { initials } from '../ui'
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Администратор', designer: 'Дизайнер' }
-
-function initials(name: string): string {
-  const parts = name.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || name[0]?.toUpperCase() || '·'
-}
 
 function badgeValue(section: Section, stats: Stats | null): number | null {
   if (!section.badge || !stats) return null

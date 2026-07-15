@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { ApiError } from '../api'
 import { type BotMessage, fetchBotMessages, updateBotMessage } from '../botTextsApi'
+import { StatLine } from '../ui'
 
 export function BotTexts() {
   const [items, setItems] = useState<BotMessage[]>([])
@@ -34,6 +35,16 @@ export function BotTexts() {
         Редактируются без перепрограммирования. Плейсхолдеры вида {'{price}'} подставляются ботом.
       </p>
 
+      {!loading && !error && items.length > 0 && (
+        <StatLine
+          items={[
+            { label: 'Сообщений', value: items.length },
+            { label: 'В Telegram', value: items.filter((m) => m.channel_tg).length },
+            { label: 'В MAX', value: items.filter((m) => m.channel_max).length },
+          ]}
+        />
+      )}
+
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
 
@@ -50,7 +61,9 @@ export function BotTexts() {
           <tbody>
             {items.map((m) => (
               <tr key={m.code} onClick={() => setEditing(m)}>
-                <td className="strong mono">{m.code}</td>
+                <td>
+                  <span className="chip chip--code">{m.code}</span>
+                </td>
                 <td className="muted">{m.trigger}</td>
                 <td className="cell-clip">{m.text}</td>
                 <td className="row-actions" onClick={(e) => e.stopPropagation()}>
