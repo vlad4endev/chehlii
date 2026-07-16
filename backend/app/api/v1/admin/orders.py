@@ -139,8 +139,48 @@ def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) ->
     )
 
 
+# Линейный порядок статусов для ручной смены в AdminUI: двигаться можно только
+# вперёд по воронке (назад нельзя). CANCELLED вне линии — предлагается отдельно
+# как «завершить отменой». Авто-переходы бота/вебхуков идут через FSM отдельно.
+_PIPELINE: list[OrderStatus] = [
+    OrderStatus.CASE_TYPE_SELECTED,
+    OrderStatus.MODEL_SELECTED,
+    OrderStatus.CASE_CONFIRMED,
+    OrderStatus.MATERIALS_SUBMITTED,
+    OrderStatus.PREPAYMENT_ISSUED,
+    OrderStatus.PREPAYMENT_PAID,
+    OrderStatus.HANDED_TO_DESIGN,
+    OrderStatus.DESIGN_IN_PROGRESS,
+    OrderStatus.MOCKUP_SENT,
+    OrderStatus.MOCKUP_APPROVAL,
+    OrderStatus.MOCKUP_REVISION,
+    OrderStatus.POSTPAYMENT_ISSUED,
+    OrderStatus.POSTPAYMENT_PAID,
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REVIEW_OFFERED,
+    OrderStatus.REVIEW_RECEIVED,
+]
+_PIPELINE_POS = {s: i for i, s in enumerate(_PIPELINE)}
+# Финальные статусы — двигаться дальше некуда.
+_FINAL = {OrderStatus.CANCELLED, OrderStatus.REVIEW_RECEIVED}
+
+
+def _forward_statuses(current: OrderStatus) -> list[OrderStatus]:
+    """Все статусы «вперёд» по воронке от текущего (+ «Отменён»). Назад — нельзя."""
+    if current in _FINAL:
+        return []
+    pos = _PIPELINE_POS[current]
+    ahead = [s for s in _PIPELINE if _PIPELINE_POS[s] > pos]
+    ahead.append(OrderStatus.CANCELLED)
+    return ahead
+
+
 def _allowed_next(order: Order, role: AdminRole) -> list[StatusOption]:
-    nxt = [t.to for t in fsm.allowed_next(order.status)]
+    nxt = _forward_statuses(order.status)
     if role != AdminRole.ADMIN:
         nxt = [s for s in nxt if s in DESIGNER_STATUSES]
     return [StatusOption(value=s, label=STATUS_LABELS.get(s, s)) for s in nxt]
@@ -325,10 +365,11 @@ async def change_status(
     order, _, _ = await _load(session, order_id)
     if user.role != AdminRole.ADMIN and payload.status not in DESIGNER_STATUSES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Дизайнеру недоступен этот статус")
-    if not fsm.can_transition(order.status, payload.status):
+    # Разрешаем прыжок на любой статус вперёд по воронке; назад — нельзя.
+    if payload.status != order.status and payload.status not in _forward_statuses(order.status):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"Недопустимый переход: {STATUS_LABELS.get(order.status)} → "
+            f"Назад по статусам нельзя: {STATUS_LABELS.get(order.status)} → "
             f"{STATUS_LABELS.get(payload.status)}",
         )
     await _record(session, order, payload.status, user)
