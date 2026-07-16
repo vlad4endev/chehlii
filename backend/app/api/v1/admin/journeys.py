@@ -36,7 +36,7 @@ async def list_journeys(
     rows = (
         await session.scalars(
             select(Client)
-            .where(Client.deleted_at.is_(None), Client.last_msg_code.is_not(None))
+            .where(Client.deleted_at.is_(None), Client.last_msg_at.is_not(None))
             .order_by(Client.last_msg_at.desc())
         )
     ).all()
