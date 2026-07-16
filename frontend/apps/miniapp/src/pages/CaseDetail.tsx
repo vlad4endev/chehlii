@@ -140,20 +140,26 @@ export function CaseDetail({
         </div>
       </div>
 
-      <div className="sheet__actions">
-        <button
-          className="btn btn--icon"
-          onClick={onToggleFavorite}
-          aria-pressed={isFavorite}
-          aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
-        >
-          <HeartIcon filled={isFavorite} />
-        </button>
-        <button className="btn btn--primary" onClick={order} disabled={!model || submitting}>
-          {submitting ? 'Оформляем…' : model ? 'Выбрать для заказа' : 'Выберите модель'}
-        </button>
-      </div>
-      {!isTelegram() && <p className="sheet__hint">Оформление заказа продолжится в боте</p>}
+      {/* В Telegram заказ оформляет нативная кнопка снизу — внутреннюю не дублируем.
+          В MAX и в браузере нативной кнопки нет, поэтому оставляем свою. */}
+      {!isTelegram() && (
+        <>
+          <div className="sheet__actions">
+            <button
+              className="btn btn--icon"
+              onClick={onToggleFavorite}
+              aria-pressed={isFavorite}
+              aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
+            >
+              <HeartIcon filled={isFavorite} />
+            </button>
+            <button className="btn btn--primary" onClick={order} disabled={!model || submitting}>
+              {submitting ? 'Оформляем…' : model ? 'Выбрать для заказа' : 'Выберите модель'}
+            </button>
+          </div>
+          <p className="sheet__hint">Оформление заказа продолжится в боте</p>
+        </>
+      )}
     </div>
   )
 }
