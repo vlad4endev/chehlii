@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { ApiError, mediaUrl } from '../api'
 import { useAuth } from '../auth'
@@ -23,6 +23,19 @@ const fmtDate = (iso: string) => {
 const money = (n: number) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 
+// Канбан-этапы (совпадают со сводкой на дашборде).
+const STAGES: { key: string; label: string; statuses: Set<string> }[] = [
+  { key: 'new', label: 'Оформление', statuses: new Set(['case_type_selected', 'model_selected', 'case_confirmed', 'materials_submitted']) },
+  { key: 'pay', label: 'Оплата', statuses: new Set(['prepayment_issued', 'prepayment_paid', 'postpayment_issued', 'postpayment_paid', 'delivery_payment']) },
+  { key: 'design', label: 'Дизайн', statuses: new Set(['handed_to_design', 'design_in_progress', 'mockup_sent', 'mockup_approval', 'mockup_revision']) },
+  { key: 'ship', label: 'Доставка', statuses: new Set(['delivery_service_selection', 'delivery_address_selection', 'shipped']) },
+  { key: 'done', label: 'Завершён', statuses: new Set(['delivered', 'review_offered', 'review_received']) },
+  { key: 'cancel', label: 'Отменён', statuses: new Set(['cancelled']) },
+]
+
+type SortKey = 'date_desc' | 'date_asc' | 'sum_desc' | 'sum_asc' | 'status'
+type ViewMode = 'table' | 'board'
+
 export function Orders() {
   const [items, setItems] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,6 +46,8 @@ export function Orders() {
   )
   const [channel, setChannel] = useState('')
   const [q, setQ] = useState('')
+  const [sort, setSort] = useState<SortKey>('date_desc')
+  const [view, setView] = useState<ViewMode>('table')
   const [openId, setOpenId] = useState<number | null>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -53,6 +68,31 @@ export function Orders() {
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, channel])
+
+  // Локальная сортировка (дата/сумма/статус). Индекс в STATUSES отражает порядок воронки.
+  const sorted = useMemo(() => {
+    const arr = [...items]
+    const statusRank: Record<string, number> = Object.fromEntries(
+      STATUSES.map((s, i) => [s.value, i]),
+    )
+    switch (sort) {
+      case 'date_asc':
+        arr.sort((a, b) => a.created_at.localeCompare(b.created_at))
+        break
+      case 'sum_desc':
+        arr.sort((a, b) => (b.final_price ?? -1) - (a.final_price ?? -1))
+        break
+      case 'sum_asc':
+        arr.sort((a, b) => (a.final_price ?? Infinity) - (b.final_price ?? Infinity))
+        break
+      case 'status':
+        arr.sort((a, b) => (statusRank[a.status] ?? 99) - (statusRank[b.status] ?? 99))
+        break
+      default: // date_desc
+        arr.sort((a, b) => b.created_at.localeCompare(a.created_at))
+    }
+    return arr
+  }, [items, sort])
 
   return (
     <div>
@@ -96,12 +136,69 @@ export function Orders() {
             </option>
           ))}
         </select>
+        <select className="input filters__sel" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+          <option value="date_desc">Сначала новые</option>
+          <option value="date_asc">Сначала старые</option>
+          {isAdmin && <option value="sum_desc">Сумма ↓</option>}
+          {isAdmin && <option value="sum_asc">Сумма ↑</option>}
+          <option value="status">По статусу</option>
+        </select>
+        <div className="segmented" style={{ marginBottom: 0 }}>
+          <button
+            className={`segmented__btn${view === 'table' ? ' segmented__btn--active' : ''}`}
+            onClick={() => setView('table')}
+          >
+            Таблица
+          </button>
+          <button
+            className={`segmented__btn${view === 'board' ? ' segmented__btn--active' : ''}`}
+            onClick={() => setView('board')}
+          >
+            Канбан
+          </button>
+        </div>
       </div>
 
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
 
-      {!loading && !error && (
+      {!loading && !error && view === 'board' && (
+        <div className="kanban">
+          {STAGES.map((st) => {
+            const cards = sorted.filter((o) => st.statuses.has(o.status))
+            return (
+              <div className="kanban__col" key={st.key}>
+                <div className="kanban__head">
+                  <span className={`dot dot--${st.key}`} />
+                  <span className="kanban__label">{st.label}</span>
+                  <span className="kanban__count">{cards.length}</span>
+                </div>
+                <div className="kanban__body">
+                  {cards.map((o) => (
+                    <button className="kanban__card" key={o.id} onClick={() => setOpenId(o.id)}>
+                      <div className="kanban__cardhead">
+                        <span className="mono strong">#{o.id}</span>
+                        <span className="muted">{fmtDate(o.created_at)}</span>
+                      </div>
+                      <div className="kanban__cardname">{o.case_name || '—'}</div>
+                      {o.model_name && <div className="muted" style={{ fontSize: 12 }}>{o.model_name}</div>}
+                      <div className="kanban__cardfoot">
+                        <span>{o.client_name || o.client_phone || '—'}</span>
+                        {isAdmin && o.final_price != null && (
+                          <span className="mono strong">{money(o.final_price)}</span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  {cards.length === 0 && <div className="kanban__empty">—</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!loading && !error && view === 'table' && (
         <div className="tablewrap"><table className="table">
           <thead>
             <tr>
@@ -115,7 +212,7 @@ export function Orders() {
             </tr>
           </thead>
           <tbody>
-            {items.map((o) => (
+            {sorted.map((o) => (
               <tr key={o.id} onClick={() => setOpenId(o.id)}>
                 <td className="strong mono">#{o.id}</td>
                 <td className="mono">{fmtDate(o.created_at)}</td>
@@ -136,7 +233,7 @@ export function Orders() {
                 {isAdmin && <td className="num mono">{o.final_price != null ? money(o.final_price) : '—'}</td>}
               </tr>
             ))}
-            {items.length === 0 && (
+            {sorted.length === 0 && (
               <tr>
                 <td colSpan={isAdmin ? 7 : 6} className="table__empty">
                   Заказов не найдено.
