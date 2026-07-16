@@ -369,3 +369,13 @@
 .review__who { display: flex; flex-direction: column; min-width: 0; }
 .review__name { font-weight: 600; font-size: 13px; }
 .review__date { font-size: 10px; margin-top: 1px; }
+
+/* Главная картинка мини-аппа (первый экран «Зачем вам») */
+.hero-image { position: relative; margin: 0 0 24px; border-radius: 20px; overflow: hidden; aspect-ratio: 4 / 3; background: #f0f0f2; }
+.hero-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-image__caption {
+  position: absolute; left: 20px; right: 20px; bottom: 20px;
+  color: #fff; font-family: var(--font-display, 'Unbounded', system-ui, sans-serif);
+  font-weight: 800; font-size: 28px; line-height: 1.1; letter-spacing: -0.02em;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}

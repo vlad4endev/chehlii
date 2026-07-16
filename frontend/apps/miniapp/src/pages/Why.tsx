@@ -1,5 +1,15 @@
-// «Зачем вам индивидуальный чехол»: ценность (текст + картинки) + раздел «О нас».
-// Картинки — плейсхолдеры-монограммы, заменяются реальными фото через AdminUI.
+// «Зачем вам индивидуальный чехол»: главная картинка (из AdminUI) + ценность + «О нас».
+import { useEffect, useState } from 'react'
+
+import { mediaUrl } from '@ui/api'
+
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
+
+interface Hero {
+  image_url: string | null
+  title: string | null
+}
+
 const REASONS = [
   {
     title: 'Он только ваш',
@@ -16,8 +26,23 @@ const REASONS = [
 ]
 
 export function Why() {
+  const [hero, setHero] = useState<Hero | null>(null)
+  useEffect(() => {
+    fetch(`${API_BASE}/miniapp/hero`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setHero)
+      .catch(() => {})
+  }, [])
+  const heroUrl = hero?.image_url ? mediaUrl(hero.image_url) : null
+
   return (
     <div className="why">
+      {heroUrl && (
+        <div className="hero-image">
+          <img src={heroUrl} alt={hero?.title ?? ''} />
+          {hero?.title && <div className="hero-image__caption">{hero.title}</div>}
+        </div>
+      )}
       <div className="pagehead">
         <span className="meta">Почему мы</span>
         <h1 className="pagehead__title pagehead__title--xl">

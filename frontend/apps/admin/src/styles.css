@@ -619,3 +619,6 @@ select.input { appearance: none; cursor: pointer; }
   .kpi__value { font-size: 26px; }
   .money__value { font-size: 26px; }
 }
+
+.miniapp-hero__preview { display: flex; align-items: flex-start; gap: 12px; }
+.miniapp-hero__preview img { max-width: 240px; max-height: 180px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }

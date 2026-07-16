@@ -11,6 +11,7 @@ from app.api.v1.admin.catalog import router as catalog_router
 from app.api.v1.admin.integrations import router as integrations_router
 from app.api.v1.admin.journeys import router as journeys_router
 from app.api.v1.admin.media import router as media_router
+from app.api.v1.admin.miniapp import router as miniapp_router
 from app.api.v1.admin.clients import router as clients_router
 from app.api.v1.admin.orders import router as orders_router
 from app.api.v1.admin.reviews import router as reviews_router
@@ -32,5 +33,6 @@ admin_router.include_router(broadcasts_router, prefix="/broadcasts", tags=["admi
 admin_router.include_router(users_router, prefix="/users", tags=["admin-users"])
 admin_router.include_router(integrations_router, prefix="/integrations", tags=["admin-integrations"])
 admin_router.include_router(media_router, prefix="/media", tags=["admin-media"])
+admin_router.include_router(miniapp_router, prefix="/miniapp", tags=["admin-miniapp"])
 admin_router.include_router(trash_router, prefix="/trash", tags=["admin-trash"])
 admin_router.include_router(journeys_router, prefix="/journeys", tags=["admin-journeys"])
