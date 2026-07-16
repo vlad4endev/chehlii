@@ -3,13 +3,14 @@ import { useRef, useEffect, useState } from 'react'
 import { ApiError, mediaUrl } from '../api'
 import {
   type Broadcast,
+  type MediaItem,
   type Segment,
   STATUS_OPTIONS,
   createBroadcast,
   fetchBroadcasts,
   previewSegment,
   sendBroadcast,
-  uploadBroadcastImage,
+  uploadBroadcastMedia,
 } from '../broadcastsApi'
 import { StatLine } from '../ui'
 
@@ -116,8 +117,15 @@ export function Broadcasts() {
               <tr key={b.id}>
                 <td className="cell-clip">
                   <span className="bcast-cell">
-                    {b.image_url && (
-                      <img className="bcast-thumb" src={mediaUrl(b.image_url) ?? b.image_url} alt="" />
+                    {b.media.length > 0 && (
+                      <span className="bcast-thumb-wrap">
+                        {b.media[0].type === 'video' ? (
+                          <video className="bcast-thumb" src={mediaUrl(b.media[0].url) ?? b.media[0].url} muted />
+                        ) : (
+                          <img className="bcast-thumb" src={mediaUrl(b.media[0].url) ?? b.media[0].url} alt="" />
+                        )}
+                        {b.media.length > 1 && <span className="bcast-thumb-badge">{b.media.length}</span>}
+                      </span>
                     )}
                     <span className="bcast-cell__text">{b.text}</span>
                   </span>
@@ -161,7 +169,7 @@ export function Broadcasts() {
 
 function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [text, setText] = useState('')
-  const [image, setImage] = useState<string | null>(null)
+  const [media, setMedia] = useState<MediaItem[]>([])
   const [imgBusy, setImgBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [channel, setChannel] = useState<'' | 'tg' | 'max'>('')
@@ -193,18 +201,29 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     }
   }
 
-  async function pickImage(file?: File) {
-    if (!file) return
+  async function pickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const room = 10 - media.length
+    const chosen = Array.from(files).slice(0, Math.max(0, room))
+    if (chosen.length === 0) {
+      setError('Можно прикрепить не более 10 файлов.')
+      return
+    }
     setError(null)
     setImgBusy(true)
     try {
-      setImage(await uploadBroadcastImage(file))
+      const uploaded = await Promise.all(chosen.map((f) => uploadBroadcastMedia(f)))
+      setMedia((prev) => [...prev, ...uploaded])
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить картинку')
+      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить файл')
     } finally {
       setImgBusy(false)
       if (fileRef.current) fileRef.current.value = ''
     }
+  }
+
+  function removeMedia(i: number) {
+    setMedia((prev) => prev.filter((_, idx) => idx !== i))
   }
 
   async function onSave() {
@@ -215,7 +234,7 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     setBusy(true)
     setError(null)
     try {
-      await createBroadcast(text, buildSegment(), image)
+      await createBroadcast(text, buildSegment(), media)
       onSaved()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось сохранить')
@@ -246,39 +265,48 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
           </label>
 
           <div className="field">
-            <span className="field__label">Картинка (необязательно)</span>
-            <div className="bcast-img">
-              {image ? (
-                <div className="bcast-img__preview">
-                  <img src={mediaUrl(image) ?? image} alt="" />
+            <span className="field__label">Фото и видео (необязательно)</span>
+            <div className="bcast-media">
+              {media.map((m, i) => (
+                <div className="bcast-media__item" key={m.url}>
+                  {m.type === 'video' ? (
+                    <video src={mediaUrl(m.url) ?? m.url} muted playsInline />
+                  ) : (
+                    <img src={mediaUrl(m.url) ?? m.url} alt="" />
+                  )}
+                  {m.type === 'video' && <span className="bcast-media__badge">▶</span>}
                   <button
                     type="button"
-                    className="bcast-img__rm"
-                    onClick={() => setImage(null)}
-                    aria-label="Убрать картинку"
+                    className="bcast-media__rm"
+                    onClick={() => removeMedia(i)}
+                    aria-label="Убрать"
                   >
                     ✕
                   </button>
                 </div>
-              ) : (
+              ))}
+              {media.length < 10 && (
                 <button
                   type="button"
-                  className="btn btn--ghost btn--sm"
+                  className="bcast-media__add"
                   onClick={() => fileRef.current?.click()}
                   disabled={imgBusy}
                 >
-                  {imgBusy ? 'Загрузка…' : 'Загрузить картинку'}
+                  {imgBusy ? '…' : '+'}
                 </button>
               )}
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
+                multiple
                 hidden
-                onChange={(e) => pickImage(e.target.files?.[0])}
+                onChange={(e) => pickFiles(e.target.files)}
               />
             </div>
-            <div className="field__hint">Уйдёт вложением к сообщению. Текст станет подписью.</div>
+            <div className="field__hint">
+              До 10 файлов. Уйдут одним сообщением (в Telegram — альбомом). Текст станет подписью.
+            </div>
           </div>
 
           <div className="field__label" style={{ marginTop: 8 }}>

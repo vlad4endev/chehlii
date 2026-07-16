@@ -9,7 +9,7 @@ import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile
+from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
 from bots.core.backend import backend
 from bots.core.config import settings
@@ -34,23 +34,49 @@ async def _fetch_media(path_or_url: str) -> bytes | None:
         return None
 
 
+def _media_of(item: dict) -> list[dict]:
+    """Список вложений рассылки. Старый одиночный photo нормализуем к списку."""
+    media = list(item.get("media") or [])
+    if not media and item.get("kind") == "photo" and item.get("attachment_url"):
+        media = [{"url": item["attachment_url"], "type": "image"}]
+    return media[:10]  # Telegram: не больше 10 в альбоме
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
-    url = item.get("attachment_url")
     kind = item.get("kind")
     chat_id = int(item["channel_user_id"])
 
-    # Рассылка с картинкой → отправляем фото (подпись до 1024 символов).
-    if kind == "photo" and url and (data := await _fetch_media(url)):
-        caption = text if 0 < len(text) <= 1024 else None
-        await bot.send_photo(
-            chat_id=chat_id, photo=BufferedInputFile(data, "image.jpg"), caption=caption
-        )
-        if text and caption is None:
-            await bot.send_message(chat_id=chat_id, text=text)
-        return
+    # Рассылка с медиа → фото/видео (одно — отдельно, несколько — альбомом).
+    media = _media_of(item)
+    if media:
+        files = []
+        for i, mm in enumerate(media):
+            data = await _fetch_media(mm.get("url", ""))
+            if data:
+                files.append((mm.get("type"), BufferedInputFile(data, f"m{i}")))
+        if files:
+            caption = text if 0 < len(text) <= 1024 else None
+            if len(files) == 1:
+                mtype, f = files[0]
+                if mtype == "video":
+                    await bot.send_video(chat_id=chat_id, video=f, caption=caption)
+                else:
+                    await bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+            else:
+                group = [
+                    InputMediaVideo(media=f, caption=(caption if idx == 0 else None))
+                    if mtype == "video"
+                    else InputMediaPhoto(media=f, caption=(caption if idx == 0 else None))
+                    for idx, (mtype, f) in enumerate(files)
+                ]
+                await bot.send_media_group(chat_id=chat_id, media=group)
+            if text and caption is None:  # подпись не влезла — отправим текст отдельно
+                await bot.send_message(chat_id=chat_id, text=text)
+            return
+        # если скачать не удалось — упадём на текст ниже
 
-    # Макет — ссылкой; обычный текст — как есть.
+    url = item.get("attachment_url")
     if url and kind == "mockup":
         text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
     kb = mockup_kb(item["order_id"]) if kind == "mockup" and item.get("order_id") else None

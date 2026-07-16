@@ -23,9 +23,10 @@ class OutboundMessage(Base, TimestampMixin):
     channel: Mapped[Channel] = mapped_column(String(8), nullable=False)
     channel_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # chat/user id
     order_id: Mapped[int | None] = mapped_column(BigInteger)
-    kind: Mapped[str] = mapped_column(String(32), default="text")  # text | mockup
+    kind: Mapped[str] = mapped_column(String(32), default="text")  # text | mockup | photo | album
     text: Mapped[str | None] = mapped_column(Text)
     attachment_url: Mapped[str | None] = mapped_column(String(1024))
+    media: Mapped[list | None] = mapped_column(JSON)  # список вложений [{url, type}] (для album)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -53,7 +54,8 @@ class Broadcast(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    image_url: Mapped[str | None] = mapped_column(String(1024))  # картинка рассылки (опц.)
+    image_url: Mapped[str | None] = mapped_column(String(1024))  # legacy: одиночная картинка
+    media: Mapped[list | None] = mapped_column(JSON)  # список вложений [{url, type}]
     segment: Mapped[dict | None] = mapped_column(JSON)  # фильтры сегмента
     created_by: Mapped[int | None] = mapped_column()  # admin_user.id
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

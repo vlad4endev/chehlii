@@ -36,22 +36,37 @@ async def _fetch_media(path_or_url: str) -> bytes | None:
         return None
 
 
+def _media_of(item: dict) -> list[dict]:
+    """Список вложений рассылки. Старый одиночный photo нормализуем к списку."""
+    media = list(item.get("media") or [])
+    if not media and item.get("kind") == "photo" and item.get("attachment_url"):
+        media = [{"url": item["attachment_url"], "type": "image"}]
+    return media[:10]
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
-    url = item.get("attachment_url")
     kind = item.get("kind")
     uid = int(item["channel_user_id"])
 
-    # Рассылка с картинкой → отправляем изображением-вложением.
-    if kind == "photo" and url and (data := await _fetch_media(url)):
-        media = InputMediaBuffer(buffer=data, filename="image.jpg", type=UploadType.IMAGE)
-        await bot.send_message(user_id=uid, text=(text or None), attachments=[media])
-        return
+    # Рассылка с медиа → одно сообщение с несколькими вложениями (фото/видео).
+    media = _media_of(item)
+    if media:
+        atts = []
+        for i, mm in enumerate(media):
+            data = await _fetch_media(mm.get("url", ""))
+            if data:
+                utype = UploadType.VIDEO if mm.get("type") == "video" else UploadType.IMAGE
+                atts.append(InputMediaBuffer(buffer=data, filename=f"m{i}", type=utype))
+        if atts:
+            await bot.send_message(user_id=uid, text=(text or None), attachments=atts)
+            return
 
+    url = item.get("attachment_url")
     if url and kind == "mockup":
         text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
-    atts = [mockup_kb(item["order_id"])] if kind == "mockup" and item.get("order_id") else None
-    await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts)
+    atts2 = [mockup_kb(item["order_id"])] if kind == "mockup" and item.get("order_id") else None
+    await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts2)
 
 
 async def _outbox_loop(bot: Bot) -> None:

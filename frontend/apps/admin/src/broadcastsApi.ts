@@ -10,10 +10,15 @@ export interface Segment {
   only_with_orders?: boolean
 }
 
+export interface MediaItem {
+  url: string
+  type: 'image' | 'video'
+}
+
 export interface Broadcast {
   id: number
   text: string
-  image_url: string | null
+  media: MediaItem[]
   segment: Segment
   recipients_count: number
   sent_at: string | null
@@ -39,12 +44,12 @@ export const fetchBroadcasts = () => apiGet<Broadcast[]>('/admin/broadcasts')
 export const previewSegment = (segment: Segment) =>
   apiSend<PreviewOut>('POST', '/admin/broadcasts/preview', { segment })
 
-export const createBroadcast = (text: string, segment: Segment, imageUrl?: string | null) =>
-  apiSend<Broadcast>('POST', '/admin/broadcasts', { text, segment, image_url: imageUrl ?? null })
+export const createBroadcast = (text: string, segment: Segment, media: MediaItem[]) =>
+  apiSend<Broadcast>('POST', '/admin/broadcasts', { text, segment, media })
 
-// Загружает картинку рассылки, возвращает относительный URL (/media/…).
-export const uploadBroadcastImage = (file: File) =>
-  apiUpload<{ url: string }>('/admin/media', file).then((r) => r.url)
+// Загружает фото или видео рассылки, возвращает {url, type}.
+export const uploadBroadcastMedia = (file: File) =>
+  apiUpload<MediaItem>('/admin/media', file)
 
 export const sendBroadcast = (id: number) =>
   apiSend<SendResult>('POST', `/admin/broadcasts/${id}/send`)

@@ -32,6 +32,7 @@ class OutboxItem(BaseModel):
     kind: str
     text: str | None
     attachment_url: str | None
+    media: list | None  # [{url, type}] для kind=album
 
 
 @router.get("", response_model=list[OutboxItem])
@@ -57,6 +58,7 @@ async def pending(
             kind=m.kind,
             text=m.text,
             attachment_url=m.attachment_url,
+            media=m.media,
         )
         for m in rows
     ]

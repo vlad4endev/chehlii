@@ -38,10 +38,15 @@ class Segment(BaseModel):
     only_with_orders: bool = False
 
 
+class MediaItem(BaseModel):
+    url: str
+    type: str  # image | video
+
+
 class BroadcastOut(BaseModel):
     id: int
     text: str
-    image_url: str | None
+    media: list[MediaItem]
     segment: Segment
     recipients_count: int
     sent_at: datetime | None
@@ -51,7 +56,7 @@ class BroadcastOut(BaseModel):
 
 class BroadcastCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    image_url: str | None = None
+    media: list[MediaItem] = Field(default_factory=list, max_length=10)
     segment: Segment = Field(default_factory=Segment)
 
 
@@ -93,11 +98,19 @@ def _segment_of(row: Broadcast) -> Segment:
     return Segment(**(row.segment or {}))
 
 
+def _media_of(row: Broadcast) -> list[MediaItem]:
+    items = list(row.media or [])
+    # Совместимость со старой одиночной картинкой.
+    if not items and row.image_url:
+        items = [{"url": row.image_url, "type": "image"}]
+    return [MediaItem(**m) for m in items]
+
+
 def _out(row: Broadcast) -> BroadcastOut:
     return BroadcastOut(
         id=row.id,
         text=row.text,
-        image_url=row.image_url,
+        media=_media_of(row),
         segment=_segment_of(row),
         recipients_count=row.recipients_count,
         sent_at=row.sent_at,
@@ -129,7 +142,7 @@ async def create_broadcast(
 ) -> BroadcastOut:
     row = Broadcast(
         text=body.text,
-        image_url=body.image_url,
+        media=[m.model_dump() for m in body.media],
         segment=body.segment.model_dump(mode="json"),
         created_by=admin.id,
         recipients_count=0,
@@ -151,7 +164,8 @@ async def send_broadcast(broadcast_id: int, _: AdminOnly, session: Session) -> S
         raise HTTPException(status.HTTP_409_CONFLICT, "Рассылка уже отправлена")
 
     recipients = (await session.scalars(_recipients_query(_segment_of(row)))).all()
-    kind = "photo" if row.image_url else "text"
+    media = [m.model_dump() for m in _media_of(row)]
+    kind = "album" if media else "text"
     queued = 0
     for c in recipients:
         session.add(
@@ -161,7 +175,7 @@ async def send_broadcast(broadcast_id: int, _: AdminOnly, session: Session) -> S
                 channel_user_id=c.channel_user_id,
                 kind=kind,
                 text=row.text,
-                attachment_url=row.image_url,
+                media=media or None,
             )
         )
         queued += 1
