@@ -19,6 +19,8 @@ export function AdminLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const [stats, setStats] = useState<Stats | null>(null)
+  // Мобильное меню: выезжающий сайдбар. На десктопе всегда виден (см. CSS).
+  const [navOpen, setNavOpen] = useState(false)
 
   // Метрики для бейджей в меню (только у Админа — эндпоинт admin-only).
   useEffect(() => {
@@ -32,13 +34,19 @@ export function AdminLayout() {
     }
   }, [user?.role, location.pathname])
 
+  // Закрывать выезжающее меню при переходе между разделами.
+  useEffect(() => {
+    setNavOpen(false)
+  }, [location.pathname])
+
   if (!user) return null
   const groups = groupsFor(user.role)
   const current = sectionByPath(location.pathname)
   const displayName = user.full_name || user.email
 
   return (
-    <div className="layout">
+    <div className={`layout${navOpen ? ' layout--nav-open' : ''}`}>
+      <div className="scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <aside className="sidebar">
         <div className="sidebar__brand">
           casetop <span className="sidebar__badge">admin</span>
@@ -84,6 +92,14 @@ export function AdminLayout() {
 
       <div className="main">
         <header className="topbar">
+          <button
+            className="hamburger"
+            onClick={() => setNavOpen((v) => !v)}
+            aria-label="Меню"
+            aria-expanded={navOpen}
+          >
+            <Icon name="menu" size={20} />
+          </button>
           <div className="crumbs">
             casetop <Icon name="chevron" size={14} /> <b>{current?.label ?? 'Панель'}</b>
           </div>

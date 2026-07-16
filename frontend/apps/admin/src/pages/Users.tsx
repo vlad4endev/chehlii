@@ -78,7 +78,7 @@ export function Users() {
       )}
 
       {!loading && !error && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th>Пользователь</th>
@@ -121,7 +121,7 @@ export function Users() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {creating && (

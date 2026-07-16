@@ -61,7 +61,7 @@ export function Catalog() {
       {error && <div className="empty">{error}</div>}
 
       {!loading && !error && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th className="th-thumb"></th>
@@ -127,7 +127,7 @@ export function Catalog() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {editing && (

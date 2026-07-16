@@ -111,7 +111,7 @@ export function Clients() {
       )}
 
       {!loading && !error && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th>Клиент</th>
@@ -160,7 +160,7 @@ export function Clients() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {openContact && (

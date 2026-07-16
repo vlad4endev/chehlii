@@ -74,7 +74,7 @@ export function Trash() {
       {data && data.clients.length > 0 && (
         <section className="trash-block">
           <div className="field__label">Клиенты · {data.clients.length}</div>
-          <table className="table">
+          <div className="tablewrap"><table className="table">
             <thead>
               <tr>
                 <th>Клиент</th>
@@ -113,14 +113,14 @@ export function Trash() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </section>
       )}
 
       {data && data.orders.length > 0 && (
         <section className="trash-block">
           <div className="field__label">Заказы · {data.orders.length}</div>
-          <table className="table">
+          <div className="tablewrap"><table className="table">
             <thead>
               <tr>
                 <th>№</th>
@@ -164,7 +164,7 @@ export function Trash() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </section>
       )}
     </div>

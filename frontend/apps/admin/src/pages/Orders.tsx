@@ -102,7 +102,7 @@ export function Orders() {
       {error && <div className="empty">{error}</div>}
 
       {!loading && !error && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th>№</th>
@@ -144,7 +144,7 @@ export function Orders() {
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {openId != null && (

@@ -208,7 +208,7 @@ function RecentTable({
     return <div className="table__empty">Заказов пока нет.</div>
   }
   return (
-    <table className="table table--flush" style={{ marginTop: 12 }}>
+    <div className="tablewrap"><table className="table table--flush" style={{ marginTop: 12 }}>
       <thead>
         <tr>
           <th>№</th>
@@ -233,6 +233,6 @@ function RecentTable({
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   )
 }

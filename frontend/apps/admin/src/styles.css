@@ -195,13 +195,21 @@ input, select, textarea { font-family: inherit; }
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-.crumbs { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-faint); }
+.crumbs { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-faint); margin-right: auto; }
 .crumbs b { color: var(--ink); font-weight: 600; }
 .crumbs svg { color: var(--ink-faint); }
 .topbar__right { display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--ink-faint); }
 .status-dot { display: inline-flex; align-items: center; gap: 7px; }
 .status-dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(47, 125, 78, 0.14); }
 .content { flex: 1; overflow-y: auto; padding: 28px 30px 40px; }
+
+/* Гамбургер и затемнение — включаются только на планшете/мобиле (см. @media). */
+.hamburger { display: none; align-items: center; justify-content: center; width: 38px; height: 38px; margin-left: -6px; margin-right: 6px; flex: 0 0 auto; border: none; background: none; color: var(--ink); border-radius: 10px; cursor: pointer; }
+.hamburger:hover { background: var(--panel-2); }
+.scrim { display: none; }
+
+/* Обёртка таблиц: горизонтальный скролл на узких экранах вместо «сплющивания». */
+.tablewrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ── Заголовки страниц ────────────────────────────── */
 .page__head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 22px; gap: 16px; }
@@ -496,3 +504,80 @@ select.input { appearance: none; cursor: pointer; }
 .contact-ch__meta { font-size: 12px; color: var(--ink-faint); font-family: var(--mono); }
 .contact-ch__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .filelinks { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+
+/* ═══════════════════════════════════════════════════════
+   Адаптивность: ПК (≥1024) · планшет и мобильный (<1024) · телефон (<640)
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Планшет и мобильный: сайдбар превращается в выезжающее меню ── */
+@media (max-width: 1023px) {
+  .layout { grid-template-columns: 1fr; }
+  .hamburger { display: inline-flex; }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 60;
+    width: 264px;
+    max-width: 84vw;
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-pop);
+  }
+  .layout--nav-open .sidebar { transform: none; }
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(18, 18, 20, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .layout--nav-open .scrim { opacity: 1; pointer-events: auto; }
+  .topbar { padding: 0 16px; }
+  .content { padding: 22px 20px 34px; }
+}
+
+/* ── Телефон: плотнее, всё в один столбец ── */
+@media (max-width: 640px) {
+  .content { padding: 16px 13px 28px; }
+  .topbar { padding: 0 12px; }
+  .status-dot { display: none; }
+
+  .page__head { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .page__head .btn { width: 100%; }
+  .page__title { font-size: 22px; }
+  .page__lead { margin-top: -6px; }
+
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters__sel { width: 100%; }
+
+  .grid2 { grid-template-columns: 1fr; }
+  .inline-form { flex-wrap: wrap; }
+  .inline-form .input, .inline-form select.input { flex: 1 1 100%; }
+  .inline-form .btn { flex: 1 1 auto; }
+
+  /* Модалка — на весь экран */
+  .modal { padding: 0; }
+  .modal__card, .modal__card--wide { max-width: 100%; width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .deflist { grid-template-columns: 104px 1fr; }
+  .orderhero { flex-direction: column; align-items: flex-start; }
+  .contact-ch { flex-direction: column; align-items: stretch; }
+  .contact-ch__actions { width: 100%; }
+  .contact-ch__actions .btn { flex: 1; }
+
+  /* Таблицы: держим минимальную ширину и скроллим по горизонтали */
+  .tablewrap > .table { min-width: 560px; }
+
+  .segmented { width: 100%; }
+  .segmented__btn { flex: 1; }
+}
+
+/* Мелкие телефоны */
+@media (max-width: 380px) {
+  .kpi__value { font-size: 26px; }
+  .money__value { font-size: 26px; }
+}

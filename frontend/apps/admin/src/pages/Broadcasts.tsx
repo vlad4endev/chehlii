@@ -100,7 +100,7 @@ export function Broadcasts() {
       )}
 
       {!loading && !error && items.length > 0 && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th>Сообщение</th>
@@ -135,7 +135,7 @@ export function Broadcasts() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {composing && (

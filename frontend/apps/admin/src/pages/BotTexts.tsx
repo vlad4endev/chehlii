@@ -51,7 +51,7 @@ export function BotTexts({ embedded = false }: { embedded?: boolean } = {}) {
       {error && <div className="empty">{error}</div>}
 
       {!loading && !error && (
-        <table className="table">
+        <div className="tablewrap"><table className="table">
           <thead>
             <tr>
               <th>Код</th>
@@ -76,7 +76,7 @@ export function BotTexts({ embedded = false }: { embedded?: boolean } = {}) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {editing && (
