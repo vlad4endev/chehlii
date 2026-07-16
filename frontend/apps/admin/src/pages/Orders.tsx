@@ -8,6 +8,7 @@ import {
   type OrderRow,
   STATUSES,
   changeStatus,
+  deleteOrder,
   downloadOrdersXlsx,
   fetchOrder,
   fetchOrders,
@@ -205,6 +206,20 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     }
   }
 
+  async function removeToTrash() {
+    if (!confirm(`Переместить заказ #${id} в корзину? Его можно будет восстановить.`)) return
+    setBusy(true)
+    try {
+      await deleteOrder(id)
+      onChanged()
+      onClose()
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Не удалось удалить заказ')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="modal" onClick={onClose}>
       <div className="modal__card modal__card--wide" onClick={(e) => e.stopPropagation()}>
@@ -337,6 +352,15 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                 ))}
               </ol>
             </div>
+
+            {isAdmin && (
+              <div className="block trash-action">
+                <button className="btn btn--danger btn--sm" onClick={removeToTrash} disabled={busy}>
+                  Переместить в корзину
+                </button>
+                <span className="card__hint">Заказ скроется из списка; восстановить можно в «Корзине».</span>
+              </div>
+            )}
           </div>
         )}
       </div>

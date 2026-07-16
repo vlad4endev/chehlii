@@ -4,7 +4,7 @@ import { ApiError } from '../api'
 import { type BotMessage, fetchBotMessages, updateBotMessage } from '../botTextsApi'
 import { StatLine } from '../ui'
 
-export function BotTexts() {
+export function BotTexts({ embedded = false }: { embedded?: boolean } = {}) {
   const [items, setItems] = useState<BotMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -28,9 +28,11 @@ export function BotTexts() {
 
   return (
     <div>
-      <div className="page__head">
-        <h1 className="page__title">Тексты бота</h1>
-      </div>
+      {!embedded && (
+        <div className="page__head">
+          <h1 className="page__title">Тексты бота</h1>
+        </div>
+      )}
       <p className="page__lead">
         Редактируются без перепрограммирования. Плейсхолдеры вида {'{price}'} подставляются ботом.
       </p>

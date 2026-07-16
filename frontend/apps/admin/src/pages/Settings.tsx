@@ -7,6 +7,7 @@ import {
   fetchIntegrations,
   saveIntegrations,
 } from '../integrationsApi'
+import { BotTexts } from './BotTexts'
 
 const GROUP_ICON: Record<string, string> = {
   yandex_disk: 'box',
@@ -15,7 +16,37 @@ const GROUP_ICON: Record<string, string> = {
   payment: 'ruble',
 }
 
+type SettingsTab = 'integrations' | 'bots'
+
 export function Settings() {
+  const [tab, setTab] = useState<SettingsTab>('integrations')
+
+  return (
+    <div>
+      <div className="page__head">
+        <h1 className="page__title">Настройки</h1>
+      </div>
+      <div className="segmented">
+        <button
+          className={`segmented__btn${tab === 'integrations' ? ' segmented__btn--active' : ''}`}
+          onClick={() => setTab('integrations')}
+        >
+          Интеграции
+        </button>
+        <button
+          className={`segmented__btn${tab === 'bots' ? ' segmented__btn--active' : ''}`}
+          onClick={() => setTab('bots')}
+        >
+          Боты
+        </button>
+      </div>
+
+      {tab === 'integrations' ? <IntegrationsPanel /> : <BotTexts embedded />}
+    </div>
+  )
+}
+
+function IntegrationsPanel() {
   const [groups, setGroups] = useState<IntegrationGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -67,12 +98,6 @@ export function Settings() {
 
   return (
     <div>
-      <div className="page__head">
-        <h1 className="page__title">Настройки</h1>
-      </div>
-      <div className="segmented">
-        <button className="segmented__btn segmented__btn--active">Интеграции</button>
-      </div>
       <p className="page__lead">
         Данные для подключения внешних сервисов. Секретные значения не показываются — если
         задано, отображается «задан»; чтобы изменить, введите новое.

@@ -8,19 +8,18 @@ total_discount = loyal_discount + discount_for_slave + discount_master_code — 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
 from app.core.database import get_session
 from app.enums import Channel
 from app.models.client import Client
-from app.models.engagement import PromoActivation
 from app.models.order import Order
 from app.services import pricing
 
@@ -131,7 +130,7 @@ async def list_clients(
     q: Annotated[str | None, Query()] = None,
     channel: Channel | None = None,
 ) -> list[ClientOut]:
-    stmt = select(Client).order_by(Client.id.desc())
+    stmt = select(Client).where(Client.deleted_at.is_(None)).order_by(Client.id.desc())
     if channel:
         stmt = stmt.where(Client.channel == channel)
     if q:
@@ -149,7 +148,7 @@ async def list_contacts(
     q: Annotated[str | None, Query()] = None,
 ) -> list[ContactOut]:
     """Клиенты, объединённые в контакты по номеру телефона (TG + MAX = один контакт)."""
-    stmt = select(Client).order_by(Client.id.desc())
+    stmt = select(Client).where(Client.deleted_at.is_(None)).order_by(Client.id.desc())
     if q:
         term = f"%{q.strip()}%"
         stmt = stmt.where(or_(Client.phone.ilike(term), Client.nickname.ilike(term)))
@@ -237,22 +236,10 @@ async def delete_client(
     _: AdminOnly,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
-    """Удалить запись клиента (в одном канале). Заказы блокируют удаление (история
-    заказов важна) — сначала их нужно закрыть. Избранное и активации промокодов
-    удаляются каскадом, отзывы отвязываются (SET NULL).
+    """Переместить клиента в корзину (мягкое удаление). Обратимо — восстановить
+    можно в разделе «Корзина». Заказы клиента остаются на месте.
     """
     c = await _get_or_404(session, client_id)
-    n = await session.scalar(select(func.count(Order.id)).where(Order.client_id == client_id))
-    if n:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Нельзя удалить: у клиента есть заказы. Сначала закройте или удалите его заказы.",
-        )
-    # Снять ссылку-владельца в чужих активациях промокода (FK без каскада иначе заблокирует).
-    await session.execute(
-        update(PromoActivation)
-        .where(PromoActivation.owner_client_id == client_id)
-        .values(owner_client_id=None)
-    )
-    await session.delete(c)
-    await session.commit()
+    if c.deleted_at is None:
+        c.deleted_at = datetime.now(UTC)
+        await session.commit()

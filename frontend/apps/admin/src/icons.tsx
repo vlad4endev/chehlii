@@ -25,6 +25,8 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   plug: <P d="M9 2v6M15 2v6M7 8h10v3a5 5 0 01-10 0zM12 16v6" />,
+  trash: <P d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
+  restore: <P d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 4v4h4" />,
   logout: <P d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   plus: <P d="M12 5v14M5 12h14" />,
   search: <P d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.3-4.3" />,

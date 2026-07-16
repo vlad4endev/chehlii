@@ -8,9 +8,9 @@
   --ink-faint: #a3a8b4;
   --line: #ebedf2;
   --line-2: #dde0e7;
-  --accent: #5b5fe0;         /* мягкий индиго — единственный акцент */
-  --accent-press: #4a4ecc;
-  --accent-soft: #ecedfb;    /* индиго-подложка */
+  --accent: #23262d;         /* графит — монохромный акцент (в тон логотипу) */
+  --accent-press: #101216;   /* глубже при нажатии */
+  --accent-soft: #eceef1;    /* нейтральная светло-серая подложка */
   --danger: #dc5757;
   --ok: #2f9e6a;
   --warn: #c08a2a;
@@ -76,7 +76,7 @@ input, select, textarea { font-family: inherit; }
   outline: none;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
-.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 95, 224, 0.16); }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(35, 38, 45, 0.14); }
 
 .btn {
   height: 42px;
@@ -224,7 +224,7 @@ input, select, textarea { font-family: inherit; }
 .kpi__value { font-family: var(--display); font-weight: 800; font-size: 30px; line-height: 1; letter-spacing: -0.03em; }
 .kpi__label { font-size: 12.5px; color: var(--ink-soft); }
 .kpi__sub { font-size: 11.5px; color: var(--ink-faint); font-family: var(--mono); }
-.kpi--dark { background: linear-gradient(135deg, #6d71ef, #5459db); border-color: transparent; color: #fff; box-shadow: 0 10px 26px rgba(91, 95, 224, 0.28); }
+.kpi--dark { background: linear-gradient(140deg, #2c2f37, #14161b); border-color: transparent; color: #fff; box-shadow: 0 10px 26px rgba(18, 20, 24, 0.28); }
 .kpi--dark .kpi__icon { background: rgba(255, 255, 255, 0.18); color: #fff; }
 .kpi--dark .kpi__label { color: rgba(255, 255, 255, 0.72); }
 .kpi--dark .kpi__sub { color: rgba(255, 255, 255, 0.55); }
@@ -335,6 +335,12 @@ select.input { appearance: none; cursor: pointer; }
 .cthumb--empty { display: grid; place-items: center; color: var(--ink-faint); border-style: dashed; }
 .cthumb__badge { position: absolute; bottom: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; }
 
+/* ── Корзина ──────────────────────────────────────── */
+.trash-block { margin-top: 22px; }
+.trash-block .field__label { margin-bottom: 10px; }
+.trash-block .row-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.trash-action { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
 /* ── Фото чехла в заказах ─────────────────────────── */
 .ordercase { display: inline-flex; align-items: center; gap: 10px; }
 .ordercase__text { display: flex; flex-direction: column; line-height: 1.25; }
@@ -394,7 +400,7 @@ select.input { appearance: none; cursor: pointer; }
 .count-badge { font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); padding: 3px 10px; border-radius: 999px; vertical-align: middle; margin-left: 8px; font-family: var(--mono); }
 .segmented { display: inline-flex; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-bottom: 18px; box-shadow: var(--shadow-sm); }
 .segmented__btn { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-soft); transition: background 0.12s, color 0.12s; }
-.segmented__btn:hover { color: var(--ink); }
+.segmented__btn:not(.segmented__btn--active):hover { color: var(--ink); }
 .segmented__btn--active { background: var(--accent); color: #fff; font-weight: 600; }
 
 .reviews-list { display: flex; flex-direction: column; gap: 12px; }

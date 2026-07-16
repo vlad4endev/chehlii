@@ -25,6 +25,8 @@ class Client(Base, TimestampMixin):
     channel_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # tg_id / max_id
     nickname: Mapped[str | None] = mapped_column(String(255))
     date_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Мягкое удаление: не NULL → клиент в корзине (скрыт из списков, можно восстановить).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Мастер-код (пришёл от друга)
     master_code: Mapped[str | None] = mapped_column(String(64))

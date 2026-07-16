@@ -4,7 +4,6 @@ import type { ReactNode } from 'react'
 
 import { useAuth } from './auth'
 import { AdminLayout } from './layout/AdminLayout'
-import { BotTexts } from './pages/BotTexts'
 import { Broadcasts } from './pages/Broadcasts'
 import { Catalog } from './pages/Catalog'
 import { Clients } from './pages/Clients'
@@ -14,6 +13,7 @@ import { Orders } from './pages/Orders'
 import { Placeholder } from './pages/Placeholder'
 import { Reviews } from './pages/Reviews'
 import { Settings } from './pages/Settings'
+import { Trash } from './pages/Trash'
 import { Users } from './pages/Users'
 import { SECTIONS } from './sections'
 
@@ -23,9 +23,9 @@ const PAGES: Record<string, ReactNode> = {
   '/orders': <Orders />,
   '/clients': <Clients />,
   '/reviews': <Reviews />,
-  '/bot-texts': <BotTexts />,
   '/broadcasts': <Broadcasts />,
   '/users': <Users />,
+  '/trash': <Trash />,
   '/settings': <Settings />,
 }
 

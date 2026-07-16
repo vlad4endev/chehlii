@@ -161,6 +161,7 @@ async def list_orders(
         .join(Client, Order.client_id == Client.id)
         .outerjoin(CaseType, Order.case_type_id == CaseType.id)
         .options(selectinload(CaseType.models))
+        .where(Order.deleted_at.is_(None))
         .order_by(Order.created_at.desc())
     )
     if status_filter:
@@ -195,6 +196,7 @@ async def export_xlsx(
         select(Order, Client, CaseType)
         .join(Client, Order.client_id == Client.id)
         .outerjoin(CaseType, Order.case_type_id == CaseType.id)
+        .where(Order.deleted_at.is_(None))
         .order_by(Order.id)
     )
     wb = Workbook()
@@ -332,6 +334,22 @@ async def change_status(
     await _record(session, order, payload.status, user)
     await session.commit()
     return await get_order(order_id, user, session)
+
+
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_order(
+    order_id: int,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Переместить заказ в корзину (мягкое удаление). Обратимо — восстановить
+    можно в разделе «Корзина». Только Админ."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
+    if order.deleted_at is None:
+        order.deleted_at = datetime.now(UTC)
+        await session.commit()
 
 
 _MOCKUP_DEFAULT_TEXT = (

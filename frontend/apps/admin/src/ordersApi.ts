@@ -94,6 +94,7 @@ export function fetchOrders(f: OrderFilters): Promise<OrderRow[]> {
 export const fetchOrder = (id: number) => apiGet<OrderDetail>(`/admin/orders/${id}`)
 export const changeStatus = (id: number, status: string) =>
   apiSend<OrderDetail>('PATCH', `/admin/orders/${id}/status`, { status })
+export const deleteOrder = (id: number) => apiSend<void>('DELETE', `/admin/orders/${id}`)
 export async function uploadMockup(id: number, file: File): Promise<OrderDetail> {
   const fd = new FormData()
   fd.append('file', file)

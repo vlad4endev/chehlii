@@ -72,7 +72,7 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
     admin = is_admin(user)
     today = datetime.now(UTC) - timedelta(days=1)
 
-    orders = (await session.scalars(select(Order))).all()
+    orders = (await session.scalars(select(Order).where(Order.deleted_at.is_(None)))).all()
     total = len(orders)
     active = sum(1 for o in orders if o.status not in _TERMINAL)
     cancelled = sum(1 for o in orders if o.status == OrderStatus.CANCELLED)
@@ -90,7 +90,12 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         for s, c in sorted(by_status.items(), key=lambda kv: kv[1], reverse=True)
     ]
 
-    clients_total = int(await session.scalar(select(func.count()).select_from(Client)) or 0)
+    clients_total = int(
+        await session.scalar(
+            select(func.count()).select_from(Client).where(Client.deleted_at.is_(None))
+        )
+        or 0
+    )
     reviews_pending = int(
         await session.scalar(
             select(func.count()).select_from(Review).where(Review.status == ReviewStatus.PENDING)
@@ -109,6 +114,7 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         await session.execute(
             select(Order, Client)
             .join(Client, Client.id == Order.client_id)
+            .where(Order.deleted_at.is_(None))
             .order_by(Order.id.desc())
             .limit(6)
         )

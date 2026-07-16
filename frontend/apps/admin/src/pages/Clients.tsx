@@ -200,7 +200,7 @@ function ContactModal({
   async function remove(ch: ContactChannel) {
     const label = CHANNEL_LABEL[ch.channel] ?? ch.channel
     const who = ch.nickname || contact.display_name || `#${ch.client_id}`
-    if (!confirm(`Удалить клиента «${who}» (${label})? Действие необратимо.`)) return
+    if (!confirm(`Переместить клиента «${who}» (${label}) в корзину? Его можно восстановить.`)) return
     setBusyId(ch.client_id)
     try {
       await deleteClient(ch.client_id)
@@ -255,11 +255,7 @@ function ContactModal({
                   className="btn btn--danger btn--sm"
                   onClick={() => remove(ch)}
                   disabled={busyId === ch.client_id}
-                  title={
-                    ch.number_orders > 0
-                      ? 'У клиента есть заказы — удаление недоступно'
-                      : 'Удалить клиента'
-                  }
+                  title="Переместить в корзину"
                 >
                   {busyId === ch.client_id ? '…' : 'Удалить'}
                 </button>

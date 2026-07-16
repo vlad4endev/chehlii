@@ -47,6 +47,9 @@ class Order(Base, TimestampMixin):
     tracking_code: Mapped[str | None] = mapped_column(String(128))
     payment_status: Mapped[PaymentStatus | None] = mapped_column(String(16))
 
+    # Мягкое удаление: не NULL → заказ в корзине (скрыт из списков, можно восстановить).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # Таймер авто-отмены: момент выставления последней ссылки на оплату.
     payment_link_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

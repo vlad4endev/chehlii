@@ -18,28 +18,35 @@ export const OVERVIEW: Section = {
 }
 
 // Разделы-страницы (используются и для роутинга в App.tsx).
+// «Тексты бота» переехали в Настройки → вкладка «Боты», поэтому в меню их нет.
 export const SECTIONS: Section[] = [
   { path: '/orders', label: 'Заказы', icon: 'orders', roles: ['admin', 'designer'], badge: 'orders_active' },
   { path: '/catalog', label: 'Каталог', icon: 'catalog', roles: ['admin'] },
   { path: '/clients', label: 'Клиенты', icon: 'clients', roles: ['admin'] },
   { path: '/reviews', label: 'Отзывы', icon: 'reviews', roles: ['admin'], badge: 'reviews_pending' },
-  { path: '/bot-texts', label: 'Тексты бота', icon: 'bot', roles: ['admin'] },
   { path: '/broadcasts', label: 'Рассылки', icon: 'broadcast', roles: ['admin'], badge: 'broadcasts_drafts' },
   { path: '/users', label: 'Пользователи', icon: 'users', roles: ['admin'] },
+  { path: '/trash', label: 'Корзина', icon: 'trash', roles: ['admin'] },
   { path: '/settings', label: 'Настройки', icon: 'settings', roles: ['admin'] },
 ]
+
+const byPath = (p: string): Section => {
+  const s = SECTIONS.find((x) => x.path === p)
+  if (!s) throw new Error(`Unknown section ${p}`)
+  return s
+}
 
 export interface NavGroup {
   label: string | null
   items: Section[]
 }
 
-// Сгруппированная навигация для сайдбара.
+// Сгруппированная навигация для сайдбара (явные группы — без хрупких срезов).
 const GROUPS: NavGroup[] = [
   { label: null, items: [OVERVIEW] },
-  { label: 'Работа', items: SECTIONS.slice(0, 3) }, // Заказы, Каталог, Клиенты
-  { label: 'Контент', items: SECTIONS.slice(3, 6) }, // Отзывы, Тексты, Рассылки
-  { label: 'Система', items: SECTIONS.slice(6) }, // Пользователи, Настройки
+  { label: 'Работа', items: [byPath('/orders'), byPath('/catalog'), byPath('/clients')] },
+  { label: 'Контент', items: [byPath('/reviews'), byPath('/broadcasts')] },
+  { label: 'Система', items: [byPath('/users'), byPath('/trash'), byPath('/settings')] },
 ]
 
 export function sectionsFor(role: Role): Section[] {
