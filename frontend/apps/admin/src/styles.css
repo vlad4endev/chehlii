@@ -509,8 +509,12 @@ select.input { appearance: none; cursor: pointer; }
 .bcast-media { display: flex; flex-wrap: wrap; gap: 8px; }
 .bcast-media__item { position: relative; width: 84px; height: 84px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
 .bcast-media__item img, .bcast-media__item video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.bcast-media__badge { position: absolute; left: 6px; bottom: 6px; width: 20px; height: 20px; border-radius: 999px; background: rgba(18,18,20,0.6); color: #fff; font-size: 9px; display: grid; place-items: center; }
+.bcast-media__badge { position: absolute; left: 6px; top: 6px; width: 20px; height: 20px; border-radius: 999px; background: rgba(18,18,20,0.6); color: #fff; font-size: 9px; display: grid; place-items: center; }
 .bcast-media__rm { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px; border: none; background: rgba(18,18,20,0.62); color: #fff; font-size: 11px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.bcast-media__circle { position: absolute; left: 4px; bottom: 4px; padding: 2px 7px; border-radius: 999px; border: none; background: rgba(18,18,20,0.62); color: #fff; font-size: 10px; font-weight: 600; cursor: pointer; }
+.bcast-media__circle.is-on { background: var(--accent); }
+.bcast-media__item--circle { border-radius: 999px; }
+.bcast-media__item--circle video { border-radius: 999px; }
 .bcast-media__add { width: 84px; height: 84px; border-radius: 12px; border: 1px dashed var(--line-2); background: var(--bg); color: var(--ink-faint); font-size: 24px; cursor: pointer; display: grid; place-items: center; transition: border-color 0.12s, color 0.12s; }
 .bcast-media__add:hover { border-color: var(--accent); color: var(--accent); }
 .bcast-media__add:disabled { cursor: default; opacity: 0.6; }

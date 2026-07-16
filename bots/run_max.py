@@ -56,7 +56,9 @@ async def _deliver(bot: Bot, item: dict) -> None:
         for i, mm in enumerate(media):
             data = await _fetch_media(mm.get("url", ""))
             if data:
-                utype = UploadType.VIDEO if mm.get("type") == "video" else UploadType.IMAGE
+                # В MAX кружков нет — video_note уходит обычным видео.
+                is_video = mm.get("type") in ("video", "video_note")
+                utype = UploadType.VIDEO if is_video else UploadType.IMAGE
                 atts.append(InputMediaBuffer(buffer=data, filename=f"m{i}", type=utype))
         if atts:
             await bot.send_message(user_id=uid, text=(text or None), attachments=atts)

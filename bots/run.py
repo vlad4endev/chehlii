@@ -47,11 +47,17 @@ async def _deliver(bot: Bot, item: dict) -> None:
     kind = item.get("kind")
     chat_id = int(item["channel_user_id"])
 
-    # Рассылка с медиа → фото/видео (одно — отдельно, несколько — альбомом).
+    # Рассылка с медиа: фото/видео — альбомом; кружки (video note) — отдельно.
     media = _media_of(item)
     if media:
+        notes = [m for m in media if m.get("type") == "video_note"]
+        rest = [m for m in media if m.get("type") in ("image", "video")]
+        sent_any = False
+        text_sent = False
+
+        # 1) Фото/обычные видео: одно — отдельно, несколько — альбомом (с подписью).
         files = []
-        for i, mm in enumerate(media):
+        for i, mm in enumerate(rest):
             data = await _fetch_media(mm.get("url", ""))
             if data:
                 files.append((mm.get("type"), BufferedInputFile(data, f"m{i}")))
@@ -71,10 +77,25 @@ async def _deliver(bot: Bot, item: dict) -> None:
                     for idx, (mtype, f) in enumerate(files)
                 ]
                 await bot.send_media_group(chat_id=chat_id, media=group)
-            if text and caption is None:  # подпись не влезла — отправим текст отдельно
+            sent_any = True
+            if caption:
+                text_sent = True
+
+        # 2) Видео-кружки: у video note подписи нет — шлём отдельными сообщениями.
+        for i, mm in enumerate(notes):
+            data = await _fetch_media(mm.get("url", ""))
+            if data:
+                await bot.send_video_note(
+                    chat_id=chat_id, video_note=BufferedInputFile(data, f"n{i}.mp4")
+                )
+                sent_any = True
+
+        # 3) Текст, если ещё не ушёл подписью.
+        if sent_any:
+            if text and not text_sent:
                 await bot.send_message(chat_id=chat_id, text=text)
             return
-        # если скачать не удалось — упадём на текст ниже
+        # если ничего не скачалось — упадём на текст ниже
 
     url = item.get("attachment_url")
     if url and kind == "mockup":

@@ -119,10 +119,10 @@ export function Broadcasts() {
                   <span className="bcast-cell">
                     {b.media.length > 0 && (
                       <span className="bcast-thumb-wrap">
-                        {b.media[0].type === 'video' ? (
-                          <video className="bcast-thumb" src={mediaUrl(b.media[0].url) ?? b.media[0].url} muted />
-                        ) : (
+                        {b.media[0].type === 'image' ? (
                           <img className="bcast-thumb" src={mediaUrl(b.media[0].url) ?? b.media[0].url} alt="" />
+                        ) : (
+                          <video className="bcast-thumb" src={mediaUrl(b.media[0].url) ?? b.media[0].url} muted />
                         )}
                         {b.media.length > 1 && <span className="bcast-thumb-badge">{b.media.length}</span>}
                       </span>
@@ -226,6 +226,14 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     setMedia((prev) => prev.filter((_, idx) => idx !== i))
   }
 
+  function toggleCircle(i: number) {
+    setMedia((prev) =>
+      prev.map((m, idx) =>
+        idx === i ? { ...m, type: m.type === 'video_note' ? 'video' : 'video_note' } : m,
+      ),
+    )
+  }
+
   async function onSave() {
     if (!text.trim()) {
       setError('Введите текст сообщения')
@@ -267,24 +275,41 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
           <div className="field">
             <span className="field__label">Фото и видео (необязательно)</span>
             <div className="bcast-media">
-              {media.map((m, i) => (
-                <div className="bcast-media__item" key={m.url}>
-                  {m.type === 'video' ? (
-                    <video src={mediaUrl(m.url) ?? m.url} muted playsInline />
-                  ) : (
-                    <img src={mediaUrl(m.url) ?? m.url} alt="" />
-                  )}
-                  {m.type === 'video' && <span className="bcast-media__badge">▶</span>}
-                  <button
-                    type="button"
-                    className="bcast-media__rm"
-                    onClick={() => removeMedia(i)}
-                    aria-label="Убрать"
+              {media.map((m, i) => {
+                const isVideo = m.type === 'video' || m.type === 'video_note'
+                const isCircle = m.type === 'video_note'
+                return (
+                  <div
+                    className={`bcast-media__item${isCircle ? ' bcast-media__item--circle' : ''}`}
+                    key={m.url}
                   >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                    {isVideo ? (
+                      <video src={mediaUrl(m.url) ?? m.url} muted playsInline />
+                    ) : (
+                      <img src={mediaUrl(m.url) ?? m.url} alt="" />
+                    )}
+                    {isVideo && <span className="bcast-media__badge">{isCircle ? '◯' : '▶'}</span>}
+                    {isVideo && (
+                      <button
+                        type="button"
+                        className={`bcast-media__circle${isCircle ? ' is-on' : ''}`}
+                        onClick={() => toggleCircle(i)}
+                        title={isCircle ? 'Обычное видео' : 'Отправить кружком (Telegram)'}
+                      >
+                        кружок
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="bcast-media__rm"
+                      onClick={() => removeMedia(i)}
+                      aria-label="Убрать"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )
+              })}
               {media.length < 10 && (
                 <button
                   type="button"
@@ -305,7 +330,9 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
               />
             </div>
             <div className="field__hint">
-              До 10 файлов. Уйдут одним сообщением (в Telegram — альбомом). Текст станет подписью.
+              До 10 файлов. Фото/видео уйдут одним сообщением (в Telegram — альбомом), текст —
+              подписью. «Кружок» — короткое квадратное видео: в Telegram отправится видео-кружком,
+              в MAX — обычным видео.
             </div>
           </div>
 

@@ -12,7 +12,7 @@ export interface Segment {
 
 export interface MediaItem {
   url: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'video_note' // video_note = кружок (Telegram)
 }
 
 export interface Broadcast {
