@@ -43,3 +43,8 @@ class Client(Base, TimestampMixin):
     number_orders: Mapped[int] = mapped_column(default=0)
     loyal_discount: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     total_discount: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+
+    # Клиентский путь: последнее коданное сообщение бота (msg_XXX) и когда оно ушло.
+    # См. services/journey.py — обновляется из ботов через backend API.
+    last_msg_code: Mapped[str | None] = mapped_column(String(32))
+    last_msg_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

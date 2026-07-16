@@ -50,12 +50,14 @@ async def on_start(msg: Message, state: FSMContext) -> None:
     # смотрит каталог; телефон запросим только при оформлении заказа.
     await state.clear()
     client = await _client(msg)
+    code = "welcome_back" if client.get("phone") else "msg_001"
     greeting = (
         texts.get("welcome_back", discount=int(client.get("total_discount", 0)))
         if client.get("phone")
         else texts.get("msg_001")
     )
     await msg.answer(greeting, reply_markup=main_menu_kb())
+    await backend.mark_journey(client["id"], code)
 
 
 @router.message(F.contact)
@@ -77,6 +79,7 @@ async def on_contact(msg: Message, state: FSMContext) -> None:
         )
         return
     await msg.answer(texts.get("msg_003"), reply_markup=main_menu_kb())
+    await backend.mark_journey(client["id"], "msg_003")
 
 
 # ── Приём выбора из мини-приложения ────────────────────
@@ -102,6 +105,7 @@ async def _begin_order(
         ),
         reply_markup=confirm_kb(),
     )
+    await backend.mark_journey(client_id, "msg_005аб")
 
 
 @router.message(F.web_app_data)
@@ -127,6 +131,7 @@ async def on_web_app_data(msg: Message, state: FSMContext) -> None:
             "Отличный выбор! 🎉\n\n" + texts.get("msg_002"),
             reply_markup=contact_kb(),
         )
+        await backend.mark_journey(client["id"], "msg_002")
         return
 
     await _begin_order(msg, state, client["id"], case_id, case_type, model)
@@ -149,9 +154,14 @@ async def on_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     if is_custom:
         await state.set_state(OrderFlow.waiting_materials)
         await cb.message.answer(texts.get("msg_006б"))
+        code = "msg_006б"
     else:
         await state.set_state(OrderFlow.waiting_name)
         await cb.message.answer(texts.get("msg_006а"))
+        code = "msg_006а"
+    u = cb.from_user
+    client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
+    await backend.mark_journey(client["id"], code)
     await cb.answer()
 
 
@@ -242,6 +252,9 @@ async def on_name(msg: Message, state: FSMContext) -> None:
         texts.get("msg_007а") + await _pay_line(order_id),
         reply_markup=main_menu_kb(),
     )
+    u = msg.from_user
+    client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
+    await backend.mark_journey(client["id"], "msg_007а")
 
 
 @router.message(OrderFlow.waiting_materials)
@@ -304,6 +317,9 @@ async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
         texts.get("msg_007б") + await _pay_line(order_id),
         reply_markup=main_menu_kb(),
     )
+    u = cb.from_user
+    client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
+    await backend.mark_journey(client["id"], "msg_007б")
 
 
 @router.callback_query(OrderFlow.confirming_materials, F.data == "materials:redo")
@@ -311,6 +327,9 @@ async def on_materials_redo(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OrderFlow.waiting_materials)
     await cb.message.edit_reply_markup(reply_markup=None)
     await cb.message.answer(texts.get("msg_006б"))
+    u = cb.from_user
+    client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
+    await backend.mark_journey(client["id"], "msg_006б")
     await cb.answer()
 
 

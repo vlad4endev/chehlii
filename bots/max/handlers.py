@@ -97,7 +97,7 @@ async def _pay_line(order_id: int) -> str:
         return "\n\n(ссылка на оплату появится после настройки Robokassa)"
 
 
-async def _ask_contact_for_order(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
     """Запрос контакта на моменте заказа: запоминаем заказ, просим телефон."""
     await context.set_state(OrderFlow.waiting_phone)
     await context.update_data(pending_order_id=order_id)
@@ -107,9 +107,10 @@ async def _ask_contact_for_order(bot, chat_id: int, order_id: int, context: Memo
         + "\n\nОтправьте номер в формате +7XXXXXXXXXX или нажмите кнопку ниже.",
         attachments=[contact_kb()],
     )
+    await backend.mark_journey(client_id, "msg_002")
 
 
-async def _show_order_confirm(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
     """Показать подтверждение заказа (тип+модель+цена)."""
     try:
         order = await backend.get_order(order_id)
@@ -132,6 +133,7 @@ async def _show_order_confirm(bot, chat_id: int, order_id: int, context: MemoryC
         ),
         attachments=[confirm_kb()],
     )
+    await backend.mark_journey(client_id, "msg_005аб")
 
 
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
@@ -144,18 +146,20 @@ async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload:
     if payload and (m := _PAYLOAD_ORDER_RE.search(payload)):
         order_id = int(m.group(1))
         if not client.get("phone"):
-            await _ask_contact_for_order(bot, chat_id, order_id, context)
+            await _ask_contact_for_order(bot, chat_id, order_id, client["id"], context)
         else:
-            await _show_order_confirm(bot, chat_id, order_id, context)
+            await _show_order_confirm(bot, chat_id, order_id, client["id"], context)
         return
 
     # Обычный вход — БЕЗ запроса контакта, чтобы не отпугивать: сразу меню/каталог.
+    code = "welcome_back" if client.get("phone") else "msg_001"
     greeting = (
         texts.get("welcome_back", discount=int(client.get("total_discount", 0)))
         if client.get("phone")
         else texts.get("msg_001")
     )
     await _send_menu(bot, chat_id, greeting)
+    await backend.mark_journey(client["id"], code)
 
 
 # ── Вход ───────────────────────────────────────────────
@@ -201,7 +205,7 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
             attachments=[contact_kb()],
         )
         return
-    await backend.upsert_client(
+    client = await backend.upsert_client(
         CHANNEL, str(sender.user_id), nickname=(sender.username or sender.full_name), phone=phone
     )
     # Контакт получен на моменте заказа → сразу показываем подтверждение заказа.
@@ -209,11 +213,12 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
     pending = data.get("pending_order_id")
     if pending:
         await _show_order_confirm(
-            event.bot, event.message.recipient.chat_id, int(pending), context
+            event.bot, event.message.recipient.chat_id, int(pending), client["id"], context
         )
         return
     await context.clear()
     await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_003"))
+    await backend.mark_journey(client["id"], "msg_003")
 
 
 # ── Подтверждение заказа ───────────────────────────────
@@ -225,9 +230,14 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
     if is_custom:
         await context.set_state(OrderFlow.waiting_materials)
         await event.message.answer(texts.get("msg_006б"))
+        code = "msg_006б"
     else:
         await context.set_state(OrderFlow.waiting_name)
         await event.message.answer(texts.get("msg_006а"))
+        code = "msg_006а"
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    await backend.mark_journey(client["id"], code)
 
 
 @dp.message_callback(F.callback.payload == CB_CANCEL)
@@ -303,6 +313,9 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
         event.message.recipient.chat_id,
         texts.get("msg_007а") + await _pay_line(order_id),
     )
+    s = event.message.sender
+    client = await backend.upsert_client(CHANNEL, str(s.user_id), nickname=(s.username or s.full_name))
+    await backend.mark_journey(client["id"], "msg_007а")
 
 
 @dp.message_created(OrderFlow.waiting_materials)
@@ -351,6 +364,9 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
         event.message.recipient.chat_id,
         texts.get("msg_007б") + await _pay_line(order_id),
     )
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    await backend.mark_journey(client["id"], "msg_007б")
 
 
 @dp.message_callback(F.callback.payload == CB_MAT_REDO)
@@ -358,6 +374,9 @@ async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> N
     await event.answer()
     await context.set_state(OrderFlow.waiting_materials)
     await event.message.answer(texts.get("msg_006б"))
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    await backend.mark_journey(client["id"], "msg_006б")
 
 
 # ── Ответ клиента на макет («Подтвердить» / «Переделать») ──

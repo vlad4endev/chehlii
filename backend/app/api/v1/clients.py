@@ -6,7 +6,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,3 +92,23 @@ async def upsert_client(
     await session.commit()
     await session.refresh(client)
     return _to_out(client, is_new=is_new)
+
+
+class JourneyIn(BaseModel):
+    code: str  # msg_XXX
+
+
+@router.post("/{client_id}/journey")
+async def mark_journey(
+    client_id: int,
+    body: JourneyIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Отметить последний коданный шаг клиента — что бот ему отправил и когда."""
+    c = await session.get(Client, client_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "client not found")
+    c.last_msg_code = body.code
+    c.last_msg_at = datetime.now(UTC)
+    await session.commit()
+    return {"ok": True}

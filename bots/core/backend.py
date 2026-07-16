@@ -30,6 +30,13 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def mark_journey(self, client_id: int, code: str) -> None:
+        """Best-effort: не роняем бота если не удалось записать шаг."""
+        try:
+            await self._client.post(f"/clients/{client_id}/journey", json={"code": code})
+        except httpx.HTTPError:
+            pass
+
     async def get_messages(self) -> list[dict]:
         r = await self._client.get("/bot-messages")
         r.raise_for_status()
