@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { ApiError } from '../api'
+import { ApiError, mediaUrl } from '../api'
 import { useAuth } from '../auth'
 import {
   CHANNELS,
@@ -118,8 +118,13 @@ export function Orders() {
                 <td>{o.client_name || o.client_phone || '—'}</td>
                 <td>{CHANNEL_LABEL[o.channel] ?? o.channel}</td>
                 <td>
-                  {o.case_name || '—'}
-                  {o.model_name && <span className="muted"> · {o.model_name}</span>}
+                  <span className="ordercase">
+                    <OrderThumb photo={o.case_photo_url} isCustom={o.is_custom} />
+                    <span className="ordercase__text">
+                      <span className="ordercase__name">{o.case_name || '—'}</span>
+                      {o.model_name && <span className="muted">{o.model_name}</span>}
+                    </span>
+                  </span>
                 </td>
                 <td>
                   <StatusPill status={o.status} label={o.status_label} />
@@ -221,40 +226,39 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
           <div className="modal__body">{error ?? 'Загрузка…'}</div>
         ) : (
           <div className="modal__body">
+            <div className="orderhero">
+              <OrderThumb photo={order.case_photo_url} isCustom={order.is_custom} large />
+              <div className="orderhero__info">
+                <span className={`chip${order.is_custom ? ' chip--accent' : ''}`}>
+                  {order.is_custom ? 'Кастом' : 'Стандарт'}
+                </span>
+                <h3 className="orderhero__name">{order.case_name || 'Чехол'}</h3>
+                {order.model_name && <div className="orderhero__model">{order.model_name}</div>}
+                {order.custom_text && (
+                  <div className="orderhero__engrave">Гравировка: «{order.custom_text}»</div>
+                )}
+              </div>
+            </div>
+
+            {(order.materials_text ||
+              (Array.isArray(order.materials_files) && order.materials_files.length > 0)) && (
+              <div className="block">
+                <div className="field__label">Материалы от клиента</div>
+                {order.materials_text && <p className="clientdesc">{order.materials_text}</p>}
+                {Array.isArray(order.materials_files) && order.materials_files.length > 0 && (
+                  <div className="photogrid">
+                    {order.materials_files.map((f, i) => (
+                      <ClientFile key={i} file={f} index={i} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="deflist">
               <Row label="Клиент" value={order.client_name || '—'} />
               <Row label="Телефон" value={order.client_phone || '—'} />
               <Row label="Канал" value={CHANNEL_LABEL[order.channel] ?? order.channel} />
-              <Row label="Чехол" value={`${order.case_name ?? '—'}${order.model_name ? ` · ${order.model_name}` : ''}`} />
-              <Row label="Тип" value={order.is_custom ? 'Кастом' : 'Стандарт'} />
-              {order.custom_text && <Row label="Имя/буква" value={order.custom_text} />}
-              {order.materials_text && <Row label="Материалы" value={order.materials_text} />}
-              {Array.isArray(order.materials_files) && order.materials_files.length > 0 && (
-                <div className="deflist__row">
-                  <span className="deflist__label">Файлы клиента</span>
-                  <span className="deflist__value">
-                    <span className="filelinks">
-                      {order.materials_files.map((f, i) =>
-                        typeof f === 'string' && f.startsWith('http') ? (
-                          <a
-                            key={i}
-                            className="chatbadge"
-                            href={f}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Файл {i + 1} ↗
-                          </a>
-                        ) : (
-                          <span key={i} className="chip muted">
-                            Файл {i + 1}
-                          </span>
-                        ),
-                      )}
-                    </span>
-                  </span>
-                </div>
-              )}
               {order.delivery_service && <Row label="Доставка" value={order.delivery_service} />}
               {order.delivery_address && <Row label="Адрес" value={order.delivery_address} />}
               {order.tracking_code && <Row label="Трек" value={order.tracking_code} />}
@@ -347,4 +351,55 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
       <span className={`deflist__value${strong ? ' strong' : ''}`}>{value}</span>
     </div>
   )
+}
+
+// Миниатюра чехла в заказе: фото из каталога, иначе плейсхолдер (✦ для кастома).
+function OrderThumb({
+  photo,
+  isCustom,
+  large,
+}: {
+  photo: string | null
+  isCustom: boolean | null
+  large?: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  const src = mediaUrl(photo || '')
+  const cls = `othumb${large ? ' othumb--lg' : ''}`
+  if (src && !failed) {
+    return (
+      <span className={cls}>
+        <img src={src} alt="" onError={() => setFailed(true)} />
+      </span>
+    )
+  }
+  return (
+    <span className={`${cls} othumb--empty`} aria-hidden="true">
+      {isCustom ? '✦' : '▢'}
+    </span>
+  )
+}
+
+// Файл клиента: фото показываем миниатюрой (клик — открыть), иначе ссылка.
+function ClientFile({ file, index }: { file: unknown; index: number }) {
+  const [failed, setFailed] = useState(false)
+  const url = typeof file === 'string' ? mediaUrl(file) : null
+  const isImage =
+    typeof file === 'string' && /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.split('?')[0])
+
+  if (url && isImage && !failed) {
+    return (
+      <a className="photocard" href={url} target="_blank" rel="noreferrer" title={`Фото ${index + 1}`}>
+        <img src={url} alt={`Фото ${index + 1}`} onError={() => setFailed(true)} />
+      </a>
+    )
+  }
+  if (url) {
+    return (
+      <a className="photocard photocard--file" href={url} target="_blank" rel="noreferrer">
+        <span>Файл {index + 1} ↗</span>
+      </a>
+    )
+  }
+  return <span className="photocard photocard--file photocard--muted">Файл {index + 1}</span>
 }

@@ -332,6 +332,31 @@ select.input { appearance: none; cursor: pointer; }
 .cthumb--empty { display: grid; place-items: center; color: var(--ink-faint); border-style: dashed; }
 .cthumb__badge { position: absolute; bottom: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; }
 
+/* ── Фото чехла в заказах ─────────────────────────── */
+.ordercase { display: inline-flex; align-items: center; gap: 10px; }
+.ordercase__text { display: flex; flex-direction: column; line-height: 1.25; }
+.ordercase__name { font-weight: 600; color: var(--ink); }
+.ordercase .muted { font-size: 12px; }
+.othumb { flex: 0 0 auto; display: grid; place-items: center; width: 36px; height: 44px; border-radius: 8px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.othumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.othumb--empty { color: var(--ink-faint); font-size: 15px; }
+.othumb--lg { width: 92px; height: 116px; border-radius: 12px; }
+.othumb--lg.othumb--empty { font-size: 34px; }
+
+.orderhero { display: flex; gap: 16px; align-items: center; padding: 14px; margin-bottom: 16px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.orderhero__info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.orderhero__name { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: var(--ink); }
+.orderhero__model { font-size: 14px; color: var(--ink-soft); }
+.orderhero__engrave { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+.clientdesc { margin: 4px 0 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
+.photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.photocard { position: relative; display: block; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); transition: border-color 0.12s, transform 0.08s; }
+.photocard:hover { border-color: var(--accent); transform: translateY(-1px); }
+.photocard img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photocard--file { display: grid; place-items: center; text-align: center; font-size: 12.5px; color: var(--accent); padding: 8px; aspect-ratio: auto; min-height: 64px; }
+.photocard--muted { color: var(--ink-soft); }
+
 /* ── Фильтры ──────────────────────────────────────── */
 .filters { display: flex; gap: 10px; margin-bottom: 16px; }
 .filters__search { flex: 1; position: relative; }

@@ -70,6 +70,7 @@ class OrderRow(BaseModel):
     client_phone: str | None
     case_name: str | None
     model_name: str | None
+    case_photo_url: str | None  # фото чехла: под модель → обложка типа
     is_custom: bool | None
     branch: CaseBranch | None
     status: OrderStatus
@@ -108,6 +109,17 @@ class OrderDetail(OrderRow):
     history: list[StatusEvent]
 
 
+def _case_photo(case: CaseType | None, model_name: str | None) -> str | None:
+    """Фото чехла для заказа: под конкретную модель iPhone → обложка типа."""
+    if case is None:
+        return None
+    if model_name:
+        for m in case.models:
+            if m.model_name == model_name and m.photo_url:
+                return m.photo_url
+    return case.photo_url
+
+
 def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) -> OrderRow:
     return OrderRow(
         id=order.id,
@@ -117,6 +129,7 @@ def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) ->
         client_phone=client.phone,
         case_name=case.name if case else None,
         model_name=order.model_name,
+        case_photo_url=_case_photo(case, order.model_name),
         is_custom=case.is_custom if case else order.branch == CaseBranch.CUSTOM,
         branch=order.branch,
         status=order.status,
@@ -147,6 +160,7 @@ async def list_orders(
         select(Order, Client, CaseType)
         .join(Client, Order.client_id == Client.id)
         .outerjoin(CaseType, Order.case_type_id == CaseType.id)
+        .options(selectinload(CaseType.models))
         .order_by(Order.created_at.desc())
     )
     if status_filter:
@@ -229,7 +243,15 @@ async def _load(session: AsyncSession, order_id: int) -> tuple[Order, Client, Ca
     if order is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
     client = await session.get(Client, order.client_id)
-    case = await session.get(CaseType, order.case_type_id) if order.case_type_id else None
+    case = (
+        await session.scalar(
+            select(CaseType)
+            .options(selectinload(CaseType.models))
+            .where(CaseType.id == order.case_type_id)
+        )
+        if order.case_type_id
+        else None
+    )
     return order, client, case
 
 

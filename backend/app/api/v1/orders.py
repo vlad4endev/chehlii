@@ -18,7 +18,7 @@ from app.enums import CaseBranch, OrderStatus
 from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations, pricing, yandex_disk
+from app.services import integrations, media, pricing, yandex_disk
 
 router = APIRouter()
 
@@ -133,8 +133,12 @@ async def add_client_file(
     session: Annotated[AsyncSession, Depends(get_session)],
     file: Annotated[UploadFile, File()],
 ) -> dict:
-    """Файл клиента (материалы для дизайнера) → Яндекс Диск /orders/{id}/client/.
-    Вызывает бот, скачав файл из мессенджера. Ссылка добавляется в materials_files.
+    """Файл клиента (материалы для дизайнера). Вызывает бот, скачав файл из мессенджера.
+
+    Сохраняем в локальное медиа (`/media/orders/{id}/…`) — прямая ссылка, чтобы
+    фото было видно миниатюрой в карточке заказа. Если настроен Яндекс.Диск —
+    дополнительно архивируем туда (не критично, ошибки не валят загрузку).
+    Ссылка добавляется в materials_files.
     """
     order = await session.get(Order, order_id)
     if order is None:
@@ -142,13 +146,24 @@ async def add_client_file(
     content = await file.read()
     filename = (file.filename or "file").replace("/", "_")
 
+    ext = media.ext_for(file.content_type, filename, allow_docs=True)
+    if ext is None:
+        raise HTTPException(status_code=415, detail="Поддерживаются фото (JPG/PNG/WEBP/HEIC) и PDF.")
+    if len(content) > media.MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Файл больше 12 МБ.")
+    url = media.save_bytes(content, ext, f"orders/{order_id}")
+
+    # Архивная копия на Яндекс.Диск — по возможности, без блокировки загрузки.
     token = await integrations.get(session, "yandex_disk.oauth_token")
-    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
-    if not token:
-        raise HTTPException(status_code=400, detail="Яндекс.Диск не настроен")
-    url = await yandex_disk.upload(
-        yandex_disk.client_path(root, order_id, filename), content, token=token
-    )
+    if token:
+        root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
+        try:
+            await yandex_disk.upload(
+                yandex_disk.client_path(root, order_id, filename), content, token=token
+            )
+        except yandex_disk.YandexDiskError:
+            pass
+
     files = [*(order.materials_files or []), url]
     order.materials_files = files
     await session.commit()

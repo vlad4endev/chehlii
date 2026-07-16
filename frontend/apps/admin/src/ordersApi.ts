@@ -13,6 +13,7 @@ export interface OrderRow {
   client_phone: string | null
   case_name: string | null
   model_name: string | null
+  case_photo_url: string | null
   is_custom: boolean | null
   branch: string | null
   status: string
