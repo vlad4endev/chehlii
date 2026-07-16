@@ -81,61 +81,52 @@ export function Dashboard() {
             )}
           </div>
 
-          <div className="dash__cols">
+          {isAdmin && stats.attention.length > 0 && (
             <div className="card">
               <div className="card__head">
-                <span className="card__title">Заказы по этапам</span>
-                <span className="card__hint">{stats.orders_total} всего</span>
+                <span className="card__title">Требует внимания</span>
               </div>
-              {stats.orders_total === 0 ? (
-                <div className="card__hint">Заказов пока нет.</div>
-              ) : (
-                <div className="funnel">
-                  {stats.stages.map((s) => {
-                    const share = stats.orders_total
-                      ? Math.round((s.count / stats.orders_total) * 100)
-                      : 0
-                    return (
-                      <div className="funnel__row" key={s.key}>
-                        <span className="funnel__head">
-                          <span className={`dot dot--${s.key}`} />
-                          <span className="funnel__label">{s.label}</span>
-                        </span>
-                        <span className="funnel__track">
-                          <span className="funnel__fill" style={{ width: `${share}%` }} />
-                        </span>
-                        <span className="funnel__count">
-                          {s.count}
-                          <span className="funnel__share">{share}%</span>
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <div className="attn attn--grid">
+                {stats.attention.map((a) => (
+                  <button className="attn__item" key={a.key} onClick={() => navigate(a.href)}>
+                    <span className="attn__count">{a.count}</span>
+                    <span className="attn__label">{a.label}</span>
+                    <Icon name="chevron" size={16} />
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
 
-            {isAdmin && (
-              <div className="card">
-                <div className="card__head">
-                  <span className="card__title">Требует внимания</span>
-                </div>
-                {stats.attention.length === 0 ? (
-                  <div className="allgood">
-                    <Icon name="check" size={18} />
-                    Всё под контролем
-                  </div>
-                ) : (
-                  <div className="attn">
-                    {stats.attention.map((a) => (
-                      <button className="attn__item" key={a.key} onClick={() => navigate(a.href)}>
-                        <span className="attn__count">{a.count}</span>
-                        <span className="attn__label">{a.label}</span>
-                        <Icon name="chevron" size={16} />
-                      </button>
-                    ))}
-                  </div>
-                )}
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">Заказы по этапам</span>
+              <span className="card__hint">{stats.orders_total} всего</span>
+            </div>
+            {stats.orders_total === 0 ? (
+              <div className="card__hint">Заказов пока нет.</div>
+            ) : (
+              <div className="funnel">
+                {stats.stages.map((s) => {
+                  const share = stats.orders_total
+                    ? Math.round((s.count / stats.orders_total) * 100)
+                    : 0
+                  return (
+                    <div className="funnel__row" key={s.key}>
+                      <span className="funnel__head">
+                        <span className={`dot dot--${s.key}`} />
+                        <span className="funnel__label">{s.label}</span>
+                      </span>
+                      <span className="funnel__track">
+                        <span className="funnel__fill" style={{ width: `${share}%` }} />
+                      </span>
+                      <span className="funnel__count">
+                        {s.count}
+                        <span className="funnel__share">{share}%</span>
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
