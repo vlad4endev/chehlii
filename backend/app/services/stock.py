@@ -31,3 +31,20 @@ async def deduct_for_order(session: AsyncSession, order: Order) -> None:
         .values(stock=CaseTypeModel.stock - 1)
     )
     order.stock_deducted = True
+
+
+async def restore_for_order(session: AsyncSession, order: Order) -> None:
+    """Вернуть 1 балванку при отмене — только если раньше её у этого заказа списали."""
+    if not order.stock_deducted:
+        return
+    if order.case_type_id is None or not order.model_name:
+        return
+    await session.execute(
+        update(CaseTypeModel)
+        .where(
+            CaseTypeModel.case_type_id == order.case_type_id,
+            CaseTypeModel.model_name == order.model_name,
+        )
+        .values(stock=CaseTypeModel.stock + 1)
+    )
+    order.stock_deducted = False

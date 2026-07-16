@@ -364,6 +364,8 @@ async def _record(
     order.status = new
     if new == OrderStatus.PREPAYMENT_PAID:
         await stock.deduct_for_order(session, order)
+    elif new == OrderStatus.CANCELLED:
+        await stock.restore_for_order(session, order)
     trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"
     session.add(
         OrderStatusHistory(
