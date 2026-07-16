@@ -13,15 +13,16 @@ import { Reviews } from './pages/Reviews'
 type Tab = 'catalog' | 'why' | 'reviews' | 'favorites'
 type Status = 'loading' | 'error' | 'ready'
 
+// Порядок вкладок: сначала инфо (Зачем вам, Отзывы), затем Каталог, потом Избранное.
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'catalog', label: 'Каталог' },
   { id: 'why', label: 'Зачем вам' },
   { id: 'reviews', label: 'Отзывы' },
+  { id: 'catalog', label: 'Каталог' },
   { id: 'favorites', label: 'Избранное' },
 ]
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('catalog')
+  const [tab, setTab] = useState<Tab>('why')
   const [items, setItems] = useState<CaseType[]>([])
   const [status, setStatus] = useState<Status>('loading')
   const [selected, setSelected] = useState<CaseType | null>(null)
