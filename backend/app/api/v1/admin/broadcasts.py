@@ -22,6 +22,7 @@ from app.enums import Channel, OrderStatus
 from app.models.client import Client
 from app.models.messaging import Broadcast, OutboundMessage
 from app.models.order import Order
+from app.services import video_note
 
 router = APIRouter()
 
@@ -165,6 +166,10 @@ async def send_broadcast(broadcast_id: int, _: AdminOnly, session: Session) -> S
 
     recipients = (await session.scalars(_recipients_query(_segment_of(row)))).all()
     media = [m.model_dump() for m in _media_of(row)]
+    # Автоподготовка кружков — один раз на рассылку, до постановки в outbox.
+    for m in media:
+        if m.get("type") == "video_note":
+            m["url"] = await video_note.prepare(m["url"])
     kind = "album" if media else "text"
     queued = 0
     for c in recipients:
