@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -47,5 +47,8 @@ class CaseTypeModel(Base):
     # Фото чехла именно на этой модели iPhone. Если пусто — в мини-аппе берётся
     # обложка типа (CaseType.photo_url), а если и её нет — рисуется вектор-мокап.
     photo_url: Mapped[str | None] = mapped_column(String(1024))
+    # Складской остаток балванок для этой (тип × модель) пары.
+    # Списывается на -1 при переходе заказа в prepayment_paid (см. services/stock.py).
+    stock: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     case_type: Mapped[CaseType] = relationship(back_populates="models")

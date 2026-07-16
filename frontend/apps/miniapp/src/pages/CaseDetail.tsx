@@ -126,16 +126,22 @@ export function CaseDetail({
         <div className="detail__models">
           <div className="meta detail__label">Выберите модель iPhone</div>
           <div className="chips">
-            {available.map((m) => (
-              <button
-                key={m.model_name}
-                className={`chip chip--select${model === m.model_name ? ' chip--on' : ''}`}
-                onClick={() => setModel(m.model_name)}
-                aria-pressed={model === m.model_name}
-              >
-                {m.model_name}
-              </button>
-            ))}
+            {available.map((m) => {
+              const out = !m.in_stock
+              return (
+                <button
+                  key={m.model_name}
+                  className={`chip chip--select${model === m.model_name ? ' chip--on' : ''}${out ? ' chip--out' : ''}`}
+                  onClick={() => !out && setModel(m.model_name)}
+                  disabled={out}
+                  aria-pressed={model === m.model_name}
+                  aria-disabled={out}
+                >
+                  {m.model_name}
+                  {out && <span className="chip__badge">нет в наличии</span>}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>

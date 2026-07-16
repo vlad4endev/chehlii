@@ -23,6 +23,7 @@ class CaseModelOut(BaseModel):
     model_name: str
     is_available: bool
     photo_url: str | None
+    in_stock: bool  # stock > 0 — гейт на выбор модели в мини-аппе
 
 
 class CaseTypeOut(BaseModel):
@@ -56,7 +57,10 @@ async def list_case_types(
             client_price=ct.client_price,
             models=[
                 CaseModelOut(
-                    model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url
+                    model_name=m.model_name,
+                    is_available=m.is_available,
+                    photo_url=m.photo_url,
+                    in_stock=m.stock > 0,
                 )
                 for m in ct.models
             ],

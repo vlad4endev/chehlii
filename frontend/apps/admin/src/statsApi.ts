@@ -13,6 +13,11 @@ export interface AttentionItem {
   href: string
 }
 
+export interface PopularModel {
+  model_name: string
+  count: number
+}
+
 export interface RecentOrder {
   id: number
   created_at: string
@@ -38,6 +43,7 @@ export interface Stats {
   avg_check: number | null
   stages: StageBucket[]
   attention: AttentionItem[]
+  popular_models: PopularModel[]
   recent_orders: RecentOrder[]
 }
 

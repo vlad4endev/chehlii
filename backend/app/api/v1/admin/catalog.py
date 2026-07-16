@@ -26,6 +26,7 @@ class ModelAvailability(BaseModel):
     model_name: str
     is_available: bool = True
     photo_url: str | None = None
+    stock: int = Field(default=0, ge=0)
 
 
 class CaseTypeIn(BaseModel):
@@ -67,7 +68,10 @@ def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
         orders_count=orders_count,
         models=[
             ModelAvailability(
-                model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url
+                model_name=m.model_name,
+                is_available=m.is_available,
+                photo_url=m.photo_url,
+                stock=m.stock,
             )
             for m in ct.models
         ],
@@ -134,7 +138,12 @@ async def create_case_type(
         is_active=payload.is_active,
     )
     ct.models = [
-        CaseTypeModel(model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url)
+        CaseTypeModel(
+            model_name=m.model_name,
+            is_available=m.is_available,
+            photo_url=m.photo_url,
+            stock=m.stock,
+        )
         for m in payload.models
     ]
     session.add(ct)
@@ -163,7 +172,12 @@ async def update_case_type(
     ct.models.clear()
     await session.flush()
     ct.models = [
-        CaseTypeModel(model_name=m.model_name, is_available=m.is_available, photo_url=m.photo_url)
+        CaseTypeModel(
+            model_name=m.model_name,
+            is_available=m.is_available,
+            photo_url=m.photo_url,
+            stock=m.stock,
+        )
         for m in payload.models
     ]
     await session.commit()

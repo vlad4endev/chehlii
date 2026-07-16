@@ -20,7 +20,7 @@ from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
-from app.services import integrations, pricing, robokassa
+from app.services import integrations, pricing, robokassa, stock
 
 router = APIRouter()
 
@@ -148,6 +148,8 @@ async def robokassa_result(request: Request, session: Session):
             new = _PAID_STATUS.get(payment.kind)
             if new is not None:
                 order.status = new
+                if new == OrderStatus.PREPAYMENT_PAID:
+                    await stock.deduct_for_order(session, order)
                 session.add(
                     OrderStatusHistory(
                         order_id=order.id,

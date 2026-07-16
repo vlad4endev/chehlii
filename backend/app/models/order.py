@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.enums import CaseBranch, DeliveryService, OrderStatus, PaymentStatus
@@ -55,6 +55,11 @@ class Order(Base, TimestampMixin):
 
     # Задел под этап 3 (автоматизация дизайнера / ИИ-анализ) — не используется в этапе 1.
     ai_analysis: Mapped[dict | None] = mapped_column(JSON)
+
+    # Идемпотентность списания балванки со склада (см. services/stock.py).
+    stock_deducted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     status_history: Mapped[list[OrderStatusHistory]] = relationship(
         back_populates="order", cascade="all, delete-orphan"

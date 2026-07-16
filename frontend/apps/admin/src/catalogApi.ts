@@ -4,6 +4,7 @@ export interface ModelAvailability {
   model_name: string
   is_available: boolean
   photo_url: string | null
+  stock: number
 }
 
 export interface CaseTypeAdmin {

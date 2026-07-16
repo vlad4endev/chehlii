@@ -60,6 +60,11 @@ class AttentionItem(BaseModel):
     href: str  # куда ведёт клик (раздел админки, при необходимости с фильтром)
 
 
+class PopularModel(BaseModel):
+    model_name: str
+    count: int
+
+
 class RecentOrder(BaseModel):
     id: int
     created_at: datetime
@@ -86,6 +91,7 @@ class StatsOut(BaseModel):
     avg_check: float | None
     stages: list[StageBucket]
     attention: list[AttentionItem]
+    popular_models: list[PopularModel]
     recent_orders: list[RecentOrder]
 
 
@@ -155,6 +161,21 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         or 0
     )
 
+    popular_rows = (
+        await session.execute(
+            select(Order.model_name, func.count(Order.id))
+            .where(
+                Order.deleted_at.is_(None),
+                Order.model_name.is_not(None),
+                Order.status != S.CANCELLED,
+            )
+            .group_by(Order.model_name)
+            .order_by(func.count(Order.id).desc())
+            .limit(8)
+        )
+    ).all()
+    popular_models = [PopularModel(model_name=n, count=c) for n, c in popular_rows]
+
     recent_rows = (
         await session.execute(
             select(Order, Client)
@@ -192,5 +213,6 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         avg_check=avg_check,
         stages=stages,
         attention=attention,
+        popular_models=popular_models,
         recent_orders=recent,
     )

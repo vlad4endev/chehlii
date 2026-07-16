@@ -71,6 +71,7 @@ export function Catalog() {
               <th className="num">Маржа</th>
               <th className="num">Цена</th>
               <th className="num">Модели</th>
+              <th className="num">Склад</th>
               <th className="num">Заказы</th>
               <th>Статус</th>
               <th></th>
@@ -104,6 +105,9 @@ export function Catalog() {
                 <td className="num mono">{money(it.margin)}</td>
                 <td className="num mono strong">{money(it.client_price)}</td>
                 <td className="num">{it.models.filter((m) => m.is_available).length}/{it.models.length}</td>
+                <td className={`num mono${it.models.reduce((s, m) => s + (m.stock || 0), 0) === 0 ? ' stock--empty' : ''}`}>
+                  {it.models.reduce((s, m) => s + (m.stock || 0), 0)}
+                </td>
                 <td className="num">{it.orders_count}</td>
                 <td>
                   <span className={`dot ${it.is_active ? 'dot--on' : 'dot--off'}`} />
@@ -121,7 +125,7 @@ export function Catalog() {
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={10} className="table__empty">
+                <td colSpan={11} className="table__empty">
                   Типов пока нет. Добавьте первый.
                 </td>
               </tr>
@@ -174,6 +178,9 @@ function CaseTypeEditor({
   const [modelPhotos, setModelPhotos] = useState<Record<string, string | null>>(() =>
     Object.fromEntries((item?.models ?? []).map((m) => [m.model_name, m.photo_url])),
   )
+  const [modelStock, setModelStock] = useState<Record<string, number>>(() =>
+    Object.fromEntries((item?.models ?? []).map((m) => [m.model_name, m.stock])),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -188,6 +195,10 @@ function CaseTypeEditor({
 
   function setModelPhoto(m: string, url: string | null) {
     setModelPhotos((prev) => ({ ...prev, [m]: url }))
+  }
+
+  function setStockFor(m: string, n: number) {
+    setModelStock((prev) => ({ ...prev, [m]: Math.max(0, n | 0) }))
   }
 
   async function save() {
@@ -209,6 +220,7 @@ function CaseTypeEditor({
         model_name: m,
         is_available: available.has(m),
         photo_url: modelPhotos[m] ?? null,
+        stock: modelStock[m] ?? 0,
       })),
     }
     try {
@@ -297,8 +309,8 @@ function CaseTypeEditor({
           </div>
 
           <div className="field">
-            <span className="field__label">Модели iPhone и фото под каждую</span>
-            <div className="field__hint">Отметьте доступные модели. Загрузите фото чехла на конкретной модели — оно покажется в мини-аппе при её выборе.</div>
+            <span className="field__label">Модели iPhone, склад и фото</span>
+            <div className="field__hint">Отметьте доступные модели, укажите остаток балванок (шт) и загрузите фото чехла на конкретной модели.</div>
             <div className="modelrows">
               {models.map((m) => {
                 const on = available.has(m)
@@ -307,6 +319,16 @@ function CaseTypeEditor({
                     <label className="modelrow__check">
                       <input type="checkbox" checked={on} onChange={() => toggleModel(m)} />
                       <span className="modelrow__name">{m}</span>
+                    </label>
+                    <label className="modelrow__stock" title="Складской остаток балванок">
+                      <input
+                        type="number"
+                        min={0}
+                        className="input"
+                        value={modelStock[m] ?? 0}
+                        onChange={(e) => setStockFor(m, Number(e.target.value))}
+                      />
+                      <span>шт</span>
                     </label>
                     <PhotoUpload
                       url={modelPhotos[m] ?? null}

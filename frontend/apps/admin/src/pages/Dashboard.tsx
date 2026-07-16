@@ -131,6 +131,36 @@ export function Dashboard() {
             )}
           </div>
 
+          <div className="card">
+            <div className="card__head">
+              <span className="card__title">Популярные модели iPhone</span>
+              <span className="card__hint">по числу заказов</span>
+            </div>
+            {stats.popular_models.length === 0 ? (
+              <div className="card__hint">Заказов пока нет.</div>
+            ) : (
+              <div className="funnel">
+                {(() => {
+                  const max = Math.max(...stats.popular_models.map((p) => p.count), 1)
+                  return stats.popular_models.map((p) => {
+                    const share = Math.round((p.count / max) * 100)
+                    return (
+                      <div className="funnel__row" key={p.model_name}>
+                        <span className="funnel__head">
+                          <span className="funnel__label">{p.model_name}</span>
+                        </span>
+                        <span className="funnel__track">
+                          <span className="funnel__fill" style={{ width: `${share}%` }} />
+                        </span>
+                        <span className="funnel__count">{p.count}</span>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            )}
+          </div>
+
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div className="card__head" style={{ padding: '18px 20px 0' }}>
               <span className="card__title">Последние заказы</span>

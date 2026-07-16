@@ -26,7 +26,7 @@ from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.services import integrations
 from app.services import order_state_machine as fsm
-from app.services import pricing
+from app.services import pricing, stock
 from app.services import yandex_disk
 
 router = APIRouter()
@@ -362,6 +362,8 @@ async def _record(
     session: AsyncSession, order: Order, new: OrderStatus, by: AdminUser, *, forced: bool = False
 ) -> None:
     order.status = new
+    if new == OrderStatus.PREPAYMENT_PAID:
+        await stock.deduct_for_order(session, order)
     trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"
     session.add(
         OrderStatusHistory(
