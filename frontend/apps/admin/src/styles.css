@@ -236,7 +236,7 @@ input, select, textarea { font-family: inherit; }
 .pipe__row { display: grid; grid-template-columns: 148px 1fr 34px; align-items: center; gap: 12px; }
 .pipe__label { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pipe__track { display: block; width: 100%; height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
-.pipe__fill { display: block; height: 100%; min-width: 8px; background: linear-gradient(90deg, #9092f0, var(--accent)); border-radius: 999px; transition: width 0.4s ease; }
+.pipe__fill { display: block; height: 100%; min-width: 8px; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
 .pipe__count { text-align: right; font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); }
 
 .qa { display: flex; flex-direction: column; gap: 8px; }
@@ -244,6 +244,43 @@ input, select, textarea { font-family: inherit; }
 .qa__item:hover { border-color: var(--ink-faint); background: var(--panel-2); }
 .qa__item svg { color: var(--ink-soft); }
 .qa__item .chev { margin-left: auto; color: var(--ink-faint); }
+
+/* ── Дашборд: деньги, воронка по этапам, требует внимания ── */
+.moneyrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 760px) { .moneyrow { grid-template-columns: 1fr; } }
+.money { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 6px; }
+.money__label { font-size: 12.5px; color: var(--ink-soft); }
+.money__value { font-family: var(--display); font-weight: 800; font-size: 30px; letter-spacing: -0.03em; line-height: 1.05; color: var(--ink); }
+.money__sub { font-size: 11.5px; color: var(--ink-faint); }
+.money--hero { background: linear-gradient(140deg, #2c2f37, #14161b); border-color: transparent; box-shadow: 0 10px 26px rgba(18, 20, 24, 0.28); }
+.money--hero .money__label { color: rgba(255, 255, 255, 0.72); }
+.money--hero .money__value { color: #fff; }
+.money--hero .money__sub { color: rgba(255, 255, 255, 0.55); }
+
+.funnel { display: flex; flex-direction: column; gap: 14px; }
+.funnel__row { display: grid; grid-template-columns: 132px 1fr 58px; align-items: center; gap: 14px; }
+.funnel__head { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.funnel__label { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.funnel__track { display: block; width: 100%; height: 10px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.funnel__fill { display: block; height: 100%; min-width: 4px; background: var(--accent); border-radius: 999px; transition: width 0.4s ease; }
+.funnel__count { text-align: right; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.funnel__share { font-size: 10.5px; font-weight: 400; color: var(--ink-faint); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--ink-faint); }
+.dot--new { background: #7a7c80; }
+.dot--pay { background: var(--warn); }
+.dot--design { background: #4a6fb0; }
+.dot--ship { background: #3a86a8; }
+.dot--done { background: var(--ok); }
+.dot--cancel { background: var(--danger); }
+
+.attn { display: flex; flex-direction: column; gap: 8px; }
+.attn__item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; text-align: left; width: 100%; transition: border-color 0.12s, background 0.12s, transform 0.1s; }
+.attn__item:hover { border-color: var(--ink-faint); background: var(--panel-2); transform: translateX(2px); }
+.attn__count { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 9px; background: var(--accent); color: #fff; font-family: var(--display); font-weight: 800; font-size: 14px; display: inline-grid; place-items: center; }
+.attn__label { flex: 1; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.attn__item svg { color: var(--ink-faint); }
+.allgood { display: flex; align-items: center; gap: 10px; padding: 18px 4px; color: var(--ink-soft); font-size: 13.5px; }
+.allgood svg { color: var(--ok); }
 
 /* ── Таблица ──────────────────────────────────────── */
 .table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }

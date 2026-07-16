@@ -27,7 +27,10 @@ export function Orders() {
   const [items, setItems] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState('')
+  // Стартовый фильтр статуса можно задать через URL (?status=…) — из «Требует внимания».
+  const [status, setStatus] = useState(
+    () => new URLSearchParams(window.location.search).get('status') ?? '',
+  )
   const [channel, setChannel] = useState('')
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)

@@ -26,6 +26,7 @@ from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.services import integrations
 from app.services import order_state_machine as fsm
+from app.services import pricing
 from app.services import yandex_disk
 
 router = APIRouter()
@@ -109,6 +110,19 @@ class OrderDetail(OrderRow):
     history: list[StatusEvent]
 
 
+def order_value(o: Order) -> float:
+    """Стоимость заказа со скидкой + доставка. Считается из зафиксированных при
+    оформлении cost/margin/discount (order.final_price в БД не хранится)."""
+    return float(
+        pricing.compute(
+            o.cost or 0,
+            o.margin or 0,
+            float(o.total_discount or 0),
+            float(o.delivery_cost or 0),
+        ).final_price
+    )
+
+
 def _case_photo(case: CaseType | None, model_name: str | None) -> str | None:
     """Фото чехла для заказа: под конкретную модель iPhone → обложка типа."""
     if case is None:
@@ -135,7 +149,7 @@ def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) ->
         status=order.status,
         status_label=STATUS_LABELS.get(order.status, order.status),
         payment_status=order.payment_status,
-        final_price=float(order.final_price) if admin and order.final_price is not None else None,
+        final_price=order_value(order) if admin else None,
     )
 
 
@@ -260,7 +274,7 @@ async def export_xlsx(
             float(o.margin) if o.margin is not None else "",
             float(o.total_discount) if o.total_discount is not None else "",
             float(o.delivery_cost) if o.delivery_cost is not None else "",
-            float(o.final_price) if o.final_price is not None else "",
+            order_value(o),
             o.payment_status or "",
         ])
     buffer = io.BytesIO()

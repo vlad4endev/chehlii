@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError } from '../api'
 import { useAuth } from '../auth'
 import { Icon } from '../icons'
-import { sectionsFor } from '../sections'
 import { type RecentOrder, type Stats, fetchStats } from '../statsApi'
 
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
@@ -23,7 +22,8 @@ export function StatusPill({ status, label }: { status: string; label: string })
   return <span className={`spill spill--${CAT[status] ?? 'new'}`}>{label}</span>
 }
 
-function money(v: number): string {
+function money(v: number | null): string {
+  if (v == null) return '—'
   return new Intl.NumberFormat('ru-RU').format(Math.round(v)) + ' ₽'
 }
 function fmtDate(iso: string): string {
@@ -43,11 +43,6 @@ export function Dashboard() {
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Не удалось загрузить сводку'))
   }, [])
 
-  const maxCount = useMemo(
-    () => Math.max(1, ...(stats?.status_distribution.map((s) => s.count) ?? [1])),
-    [stats],
-  )
-
   if (!user) return null
   const greeting = user.full_name || user.email
 
@@ -63,67 +58,86 @@ export function Dashboard() {
 
       {stats && (
         <div className="dash">
+          {isAdmin && (
+            <div className="moneyrow">
+              <MoneyCard hero label="Выручка" value={money(stats.revenue_paid)} sub="оплаченные заказы" />
+              <MoneyCard label="Сумма в работе" value={money(stats.pipeline_value)} sub="активные заказы" />
+              <MoneyCard label="Средний чек" value={money(stats.avg_check)} sub="без отменённых" />
+            </div>
+          )}
+
           <div className="kpi-grid">
-            <Kpi icon="box" label="Заказы всего" value={stats.orders_total} sub="за всё время" />
+            <Kpi icon="box" label="Заказов всего" value={stats.orders_total} sub="за всё время" />
             <Kpi icon="pulse" label="В работе" value={stats.orders_active} sub="активная воронка" />
-            <Kpi icon="calendar" label="Сегодня" value={stats.orders_today} sub="новых за 24 ч" />
-            {isAdmin && (
-              <Kpi
-                icon="ruble"
-                label="Сумма заказов"
-                value={stats.revenue_active != null ? money(stats.revenue_active) : '—'}
-                sub="активные, со скидками"
-                dark
-              />
-            )}
+            <Kpi icon="check" label="Завершено" value={stats.orders_done} sub="доставлено" />
+            <Kpi
+              icon="calendar"
+              label="Новых за 7 дней"
+              value={stats.orders_week}
+              sub={`сегодня: ${stats.orders_today}`}
+            />
             {isAdmin && (
               <Kpi icon="client" label="Клиенты" value={stats.clients_total} sub="в базе" />
-            )}
-            {isAdmin && (
-              <Kpi icon="star" label="На модерации" value={stats.reviews_pending} sub="отзывов ждут" />
             )}
           </div>
 
           <div className="dash__cols">
             <div className="card">
               <div className="card__head">
-                <span className="card__title">Воронка заказов</span>
-                <span className="card__hint">по статусам</span>
+                <span className="card__title">Заказы по этапам</span>
+                <span className="card__hint">{stats.orders_total} всего</span>
               </div>
-              {stats.status_distribution.length === 0 ? (
+              {stats.orders_total === 0 ? (
                 <div className="card__hint">Заказов пока нет.</div>
               ) : (
-                <div className="pipe">
-                  {stats.status_distribution.map((s) => (
-                    <div className="pipe__row" key={s.status}>
-                      <span className="pipe__label">{s.label}</span>
-                      <span className="pipe__track">
-                        <span
-                          className="pipe__fill"
-                          style={{ width: `${Math.round((s.count / maxCount) * 100)}%` }}
-                        />
-                      </span>
-                      <span className="pipe__count">{s.count}</span>
-                    </div>
-                  ))}
+                <div className="funnel">
+                  {stats.stages.map((s) => {
+                    const share = stats.orders_total
+                      ? Math.round((s.count / stats.orders_total) * 100)
+                      : 0
+                    return (
+                      <div className="funnel__row" key={s.key}>
+                        <span className="funnel__head">
+                          <span className={`dot dot--${s.key}`} />
+                          <span className="funnel__label">{s.label}</span>
+                        </span>
+                        <span className="funnel__track">
+                          <span className="funnel__fill" style={{ width: `${share}%` }} />
+                        </span>
+                        <span className="funnel__count">
+                          {s.count}
+                          <span className="funnel__share">{share}%</span>
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
 
-            <div className="card">
-              <div className="card__head">
-                <span className="card__title">Быстрые действия</span>
+            {isAdmin && (
+              <div className="card">
+                <div className="card__head">
+                  <span className="card__title">Требует внимания</span>
+                </div>
+                {stats.attention.length === 0 ? (
+                  <div className="allgood">
+                    <Icon name="check" size={18} />
+                    Всё под контролем
+                  </div>
+                ) : (
+                  <div className="attn">
+                    {stats.attention.map((a) => (
+                      <button className="attn__item" key={a.key} onClick={() => navigate(a.href)}>
+                        <span className="attn__count">{a.count}</span>
+                        <span className="attn__label">{a.label}</span>
+                        <Icon name="chevron" size={16} />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="qa">
-                {sectionsFor(user.role).map((s) => (
-                  <button className="qa__item" key={s.path} onClick={() => navigate(s.path)}>
-                    <Icon name={s.icon} size={18} />
-                    {s.label}
-                    <Icon name="chevron" size={16} />
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -145,21 +159,39 @@ export function Dashboard() {
   )
 }
 
+function MoneyCard({
+  label,
+  value,
+  sub,
+  hero,
+}: {
+  label: string
+  value: string
+  sub: string
+  hero?: boolean
+}) {
+  return (
+    <div className={`money${hero ? ' money--hero' : ''}`}>
+      <div className="money__label">{label}</div>
+      <div className="money__value">{value}</div>
+      <div className="money__sub">{sub}</div>
+    </div>
+  )
+}
+
 function Kpi({
   icon,
   label,
   value,
   sub,
-  dark,
 }: {
   icon: string
   label: string
   value: number | string
   sub: string
-  dark?: boolean
 }) {
   return (
-    <div className={`kpi${dark ? ' kpi--dark' : ''}`}>
+    <div className="kpi">
       <div className="kpi__icon">
         <Icon name={icon} size={20} />
       </div>
@@ -205,9 +237,7 @@ function RecentTable({
             <td>
               <StatusPill status={o.status} label={o.label} />
             </td>
-            {isAdmin && (
-              <td className="num">{o.client_price != null ? money(o.client_price) : '—'}</td>
-            )}
+            {isAdmin && <td className="num mono">{money(o.client_price)}</td>}
             <td className="num muted">{fmtDate(o.created_at)}</td>
           </tr>
         ))}
