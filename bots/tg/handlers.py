@@ -46,28 +46,64 @@ async def _client(msg: Message) -> dict:
 # ── Вход ───────────────────────────────────────────────
 @router.message(CommandStart())
 async def on_start(msg: Message, state: FSMContext) -> None:
+    # Контакт на входе НЕ просим — чтобы не отпугивать. Пользователь свободно
+    # смотрит каталог; телефон запросим только при оформлении заказа.
     await state.clear()
     client = await _client(msg)
-    if client.get("phone"):
-        await msg.answer(
-            texts.get("welcome_back", discount=int(client.get("total_discount", 0))),
-            reply_markup=main_menu_kb(),
-        )
-        return
-    await msg.answer(texts.get("msg_001"))
-    await msg.answer(texts.get("msg_002"), reply_markup=contact_kb())
+    greeting = (
+        texts.get("welcome_back", discount=int(client.get("total_discount", 0)))
+        if client.get("phone")
+        else texts.get("msg_001")
+    )
+    await msg.answer(greeting, reply_markup=main_menu_kb())
 
 
 @router.message(F.contact)
-async def on_contact(msg: Message) -> None:
+async def on_contact(msg: Message, state: FSMContext) -> None:
     u = msg.from_user
-    await backend.upsert_client(
+    client = await backend.upsert_client(
         CHANNEL, str(u.id), nickname=(u.username or u.full_name), phone=msg.contact.phone_number
     )
+    # Если контакт запрошен в момент заказа — продолжаем оформление сразу.
+    data = await state.get_data()
+    if data.get("pending_case_id") is not None:
+        await _begin_order(
+            msg,
+            state,
+            client["id"],
+            int(data["pending_case_id"]),
+            data["pending_case_type"],
+            data["pending_model"],
+        )
+        return
     await msg.answer(texts.get("msg_003"), reply_markup=main_menu_kb())
 
 
 # ── Приём выбора из мини-приложения ────────────────────
+async def _begin_order(
+    msg: Message, state: FSMContext, client_id: int, case_id: int, case_type: str, model: str
+) -> None:
+    """Создать заказ и показать подтверждение (тип+модель+цена)."""
+    order = await backend.create_order(client_id, case_id, case_type, model)
+    await state.set_state(OrderFlow.confirming)
+    await state.update_data(
+        order_id=order["id"],
+        is_custom=order["is_custom"],
+        pending_case_id=None,
+        pending_case_type=None,
+        pending_model=None,
+    )
+    await msg.answer(
+        texts.get(
+            "msg_005аб",
+            type=order["case_name"],
+            model=order["model_name"],
+            price=_fmt_price(order["client_price"]),
+        ),
+        reply_markup=confirm_kb(),
+    )
+
+
 @router.message(F.web_app_data)
 async def on_web_app_data(msg: Message, state: FSMContext) -> None:
     try:
@@ -80,18 +116,28 @@ async def on_web_app_data(msg: Message, state: FSMContext) -> None:
         return
 
     client = await _client(msg)
-    order = await backend.create_order(client["id"], case_id, case_type, model)
+    # Контакт просим именно здесь — на моменте заказа. Нет телефона → запоминаем
+    # выбор и просим поделиться контактом; заказ оформим сразу после этого.
+    if not client.get("phone"):
+        await state.set_state(OrderFlow.waiting_contact)
+        await state.update_data(
+            pending_case_id=case_id, pending_case_type=case_type, pending_model=model
+        )
+        await msg.answer(
+            "Отличный выбор! 🎉\n\n" + texts.get("msg_002"),
+            reply_markup=contact_kb(),
+        )
+        return
 
-    await state.set_state(OrderFlow.confirming)
-    await state.update_data(order_id=order["id"], is_custom=order["is_custom"])
+    await _begin_order(msg, state, client["id"], case_id, case_type, model)
+
+
+@router.message(OrderFlow.waiting_contact)
+async def on_waiting_contact_other(msg: Message) -> None:
+    # В ожидании контакта пришло не «поделиться контактом» — напоминаем про кнопку.
     await msg.answer(
-        texts.get(
-            "msg_005аб",
-            type=order["case_name"],
-            model=order["model_name"],
-            price=_fmt_price(order["client_price"]),
-        ),
-        reply_markup=confirm_kb(),
+        "Чтобы оформить заказ, нажмите кнопку «📱 Поделиться контактом» ниже.",
+        reply_markup=contact_kb(),
     )
 
 

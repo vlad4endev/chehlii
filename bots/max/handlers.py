@@ -97,46 +97,65 @@ async def _pay_line(order_id: int) -> str:
         return "\n\n(ссылка на оплату появится после настройки Robokassa)"
 
 
+async def _ask_contact_for_order(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+    """Запрос контакта на моменте заказа: запоминаем заказ, просим телефон."""
+    await context.set_state(OrderFlow.waiting_phone)
+    await context.update_data(pending_order_id=order_id)
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Отличный выбор! 🎉\n\n" + texts.get("msg_002")
+        + "\n\nОтправьте номер в формате +7XXXXXXXXXX или нажмите кнопку ниже.",
+        attachments=[contact_kb()],
+    )
+
+
+async def _show_order_confirm(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+    """Показать подтверждение заказа (тип+модель+цена)."""
+    try:
+        order = await backend.get_order(order_id)
+    except Exception:
+        order = None
+    if not order:
+        await _send_menu(bot, chat_id, "Не нашли заказ. Откройте каталог и выберите снова.")
+        return
+    await context.set_state(OrderFlow.confirming)
+    await context.update_data(
+        order_id=order["id"], is_custom=order["is_custom"], pending_order_id=None
+    )
+    await bot.send_message(
+        chat_id=chat_id,
+        text=texts.get(
+            "msg_005аб",
+            type=order["case_name"],
+            model=order["model_name"],
+            price=_fmt_price(order["client_price"]),
+        ),
+        attachments=[confirm_kb()],
+    )
+
+
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
                  context: MemoryContext) -> None:
     """Единый вход: /start, первый старт бота или возврат из мини-приложения."""
     client = await backend.upsert_client(CHANNEL, str(user_id), nickname=nickname)
 
-    # Возврат из мини-приложения: заказ уже создан, показываем подтверждение.
+    # Возврат из мини-приложения с заказом. Контакт просим ТОЛЬКО здесь (на заказе):
+    # нет телефона → просим поделиться, заказ покажем сразу после.
     if payload and (m := _PAYLOAD_ORDER_RE.search(payload)):
-        try:
-            order = await backend.get_order(int(m.group(1)))
-        except Exception:
-            order = None
-        if order:
-            await context.set_state(OrderFlow.confirming)
-            await context.update_data(order_id=order["id"], is_custom=order["is_custom"])
-            await bot.send_message(
-                chat_id=chat_id,
-                text=texts.get(
-                    "msg_005аб",
-                    type=order["case_name"],
-                    model=order["model_name"],
-                    price=_fmt_price(order["client_price"]),
-                ),
-                attachments=[confirm_kb()],
-            )
-            return
-
-    if not client.get("phone"):
-        await context.set_state(OrderFlow.waiting_phone)
-        await bot.send_message(chat_id=chat_id, text=texts.get("msg_001"))
-        await bot.send_message(
-            chat_id=chat_id,
-            text=texts.get("msg_002") + "\n\nОтправьте номер в формате +7XXXXXXXXXX "
-            "или нажмите кнопку ниже.",
-            attachments=[contact_kb()],
-        )
+        order_id = int(m.group(1))
+        if not client.get("phone"):
+            await _ask_contact_for_order(bot, chat_id, order_id, context)
+        else:
+            await _show_order_confirm(bot, chat_id, order_id, context)
         return
 
-    await _send_menu(
-        bot, chat_id, texts.get("welcome_back", discount=int(client.get("total_discount", 0)))
+    # Обычный вход — БЕЗ запроса контакта, чтобы не отпугивать: сразу меню/каталог.
+    greeting = (
+        texts.get("welcome_back", discount=int(client.get("total_discount", 0)))
+        if client.get("phone")
+        else texts.get("msg_001")
     )
+    await _send_menu(bot, chat_id, greeting)
 
 
 # ── Вход ───────────────────────────────────────────────
@@ -185,6 +204,14 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
     await backend.upsert_client(
         CHANNEL, str(sender.user_id), nickname=(sender.username or sender.full_name), phone=phone
     )
+    # Контакт получен на моменте заказа → сразу показываем подтверждение заказа.
+    data = await context.get_data()
+    pending = data.get("pending_order_id")
+    if pending:
+        await _show_order_confirm(
+            event.bot, event.message.recipient.chat_id, int(pending), context
+        )
+        return
     await context.clear()
     await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_003"))
 
