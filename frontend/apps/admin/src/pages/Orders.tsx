@@ -155,6 +155,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nextStatus, setNextStatus] = useState('')
+  const [forceStatus, setForceStatus] = useState('')
   const [mockupFile, setMockupFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const { user } = useAuth()
@@ -186,6 +187,25 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
       onChanged()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось сменить статус')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Ручная установка (только Админ): ставит любой статус в обход правила «только вперёд».
+  async function applyForce() {
+    if (!forceStatus) return
+    const label = STATUSES.find((s) => s.value === forceStatus)?.label ?? forceStatus
+    if (!confirm(`Установить статус «${label}» вручную, в обход порядка? Действие для исправления ошибок.`))
+      return
+    setBusy(true)
+    try {
+      const d = await changeStatus(id, forceStatus, true)
+      setOrder(d)
+      setForceStatus('')
+      onChanged()
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Не удалось установить статус')
     } finally {
       setBusy(false)
     }
@@ -335,6 +355,37 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                     Применить
                   </button>
                 </div>
+              )}
+
+              {isAdmin && (
+                <details className="manual-status">
+                  <summary>Ручная установка статуса</summary>
+                  <div className="inline-form">
+                    <select
+                      className="input"
+                      value={forceStatus}
+                      onChange={(e) => setForceStatus(e.target.value)}
+                    >
+                      <option value="">— любой статус —</option>
+                      {STATUSES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn btn--danger btn--sm"
+                      onClick={applyForce}
+                      disabled={busy || !forceStatus}
+                    >
+                      Установить
+                    </button>
+                  </div>
+                  <div className="card__hint">
+                    Только для админа: ставит любой статус в обход порядка (включая назад). Для
+                    исправления ошибок.
+                  </div>
+                </details>
               )}
             </div>
 

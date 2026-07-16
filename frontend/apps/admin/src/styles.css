@@ -341,6 +341,14 @@ select.input { appearance: none; cursor: pointer; }
 .trash-block .row-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .trash-action { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
+/* Ручная установка статуса (админ) */
+.manual-status { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 12px; }
+.manual-status > summary { cursor: pointer; font-size: 13px; color: var(--ink-soft); user-select: none; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.manual-status > summary::-webkit-details-marker { display: none; }
+.manual-status > summary::before { content: '⚙'; font-size: 12px; }
+.manual-status > summary:hover { color: var(--ink); }
+.manual-status[open] > summary { margin-bottom: 10px; color: var(--ink); font-weight: 500; }
+
 /* ── Фото чехла в заказах ─────────────────────────── */
 .ordercase { display: inline-flex; align-items: center; gap: 10px; }
 .ordercase__text { display: flex; flex-direction: column; line-height: 1.25; }

@@ -340,16 +340,21 @@ async def get_order(
 
 class StatusChangeIn(BaseModel):
     status: OrderStatus
+    # Только Админ: поставить любой статус в обход правила «только вперёд» (правка ошибки).
+    force: bool = False
 
 
-async def _record(session: AsyncSession, order: Order, new: OrderStatus, by: AdminUser) -> None:
+async def _record(
+    session: AsyncSession, order: Order, new: OrderStatus, by: AdminUser, *, forced: bool = False
+) -> None:
     order.status = new
+    trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"
     session.add(
         OrderStatusHistory(
             order_id=order.id,
             status=new,
             changed_by=str(by.id),
-            trigger=f"AdminUI: {by.full_name or by.email}",
+            trigger=trigger,
             created_at=datetime.now(UTC),
         )
     )
@@ -365,14 +370,20 @@ async def change_status(
     order, _, _ = await _load(session, order_id)
     if user.role != AdminRole.ADMIN and payload.status not in DESIGNER_STATUSES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Дизайнеру недоступен этот статус")
-    # Разрешаем прыжок на любой статус вперёд по воронке; назад — нельзя.
-    if payload.status != order.status and payload.status not in _forward_statuses(order.status):
+    # Обычно — только вперёд по воронке. Админ может форсировать любой статус
+    # (ручная установка, напр. откат ошибочного статуса). Дизайнеру force недоступен.
+    forced = payload.force and user.role == AdminRole.ADMIN
+    if (
+        not forced
+        and payload.status != order.status
+        and payload.status not in _forward_statuses(order.status)
+    ):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"Назад по статусам нельзя: {STATUS_LABELS.get(order.status)} → "
             f"{STATUS_LABELS.get(payload.status)}",
         )
-    await _record(session, order, payload.status, user)
+    await _record(session, order, payload.status, user, forced=forced)
     await session.commit()
     return await get_order(order_id, user, session)
 
