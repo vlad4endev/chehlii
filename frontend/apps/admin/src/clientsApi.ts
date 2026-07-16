@@ -57,3 +57,4 @@ export function fetchClients(q?: string): Promise<Client[]> {
 export const fetchClient = (id: number) => apiGet<Client>(`/admin/clients/${id}`)
 export const updateDiscounts = (id: number, body: DiscountsInput) =>
   apiSend<Client>('PATCH', `/admin/clients/${id}`, body)
+export const deleteClient = (id: number) => apiSend<void>('DELETE', `/admin/clients/${id}`)

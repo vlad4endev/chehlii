@@ -97,6 +97,9 @@ input, select, textarea { font-family: inherit; }
 .btn--primary:disabled { opacity: 0.55; cursor: default; }
 .btn--ghost { background: transparent; border-color: var(--line-2); color: var(--ink); }
 .btn--ghost:hover { background: var(--panel); border-color: var(--ink-faint); }
+.btn--danger { background: transparent; border-color: var(--line-2); color: var(--danger); }
+.btn--danger:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); border-color: var(--danger); }
+.btn--danger:disabled { opacity: 0.5; cursor: default; }
 .btn--sm { height: 34px; padding: 0 14px; font-size: 13px; }
 
 /* ── Layout ───────────────────────────────────────── */

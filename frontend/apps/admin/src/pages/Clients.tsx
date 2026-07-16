@@ -5,6 +5,7 @@ import {
   type Client,
   type Contact,
   type ContactChannel,
+  deleteClient,
   fetchClient,
   fetchContacts,
   updateDiscounts,
@@ -170,6 +171,10 @@ export function Clients() {
             setOpenContact(null)
             setEditId(clientId)
           }}
+          onDeleted={() => {
+            setOpenContact(null)
+            reload()
+          }}
         />
       )}
       {editId != null && (
@@ -183,11 +188,30 @@ function ContactModal({
   contact,
   onClose,
   onEdit,
+  onDeleted,
 }: {
   contact: Contact
   onClose: () => void
   onEdit: (clientId: number) => void
+  onDeleted: () => void
 }) {
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  async function remove(ch: ContactChannel) {
+    const label = CHANNEL_LABEL[ch.channel] ?? ch.channel
+    const who = ch.nickname || contact.display_name || `#${ch.client_id}`
+    if (!confirm(`Удалить клиента «${who}» (${label})? Действие необратимо.`)) return
+    setBusyId(ch.client_id)
+    try {
+      await deleteClient(ch.client_id)
+      onDeleted()
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Не удалось удалить клиента')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="modal" onClick={onClose}>
       <div className="modal__card" onClick={(e) => e.stopPropagation()}>
@@ -226,6 +250,18 @@ function ContactModal({
                 )}
                 <button className="btn btn--primary btn--sm" onClick={() => onEdit(ch.client_id)}>
                   Скидки
+                </button>
+                <button
+                  className="btn btn--danger btn--sm"
+                  onClick={() => remove(ch)}
+                  disabled={busyId === ch.client_id}
+                  title={
+                    ch.number_orders > 0
+                      ? 'У клиента есть заказы — удаление недоступно'
+                      : 'Удалить клиента'
+                  }
+                >
+                  {busyId === ch.client_id ? '…' : 'Удалить'}
                 </button>
               </div>
             </div>

@@ -13,13 +13,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
 from app.core.database import get_session
 from app.enums import Channel
 from app.models.client import Client
+from app.models.engagement import PromoActivation
 from app.models.order import Order
 from app.services import pricing
 
@@ -228,3 +229,30 @@ async def update_discounts(
     await session.commit()
     n = await session.scalar(select(func.count(Order.id)).where(Order.client_id == client_id))
     return _to_out(c, n or 0)
+
+
+@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_client(
+    client_id: int,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Удалить запись клиента (в одном канале). Заказы блокируют удаление (история
+    заказов важна) — сначала их нужно закрыть. Избранное и активации промокодов
+    удаляются каскадом, отзывы отвязываются (SET NULL).
+    """
+    c = await _get_or_404(session, client_id)
+    n = await session.scalar(select(func.count(Order.id)).where(Order.client_id == client_id))
+    if n:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Нельзя удалить: у клиента есть заказы. Сначала закройте или удалите его заказы.",
+        )
+    # Снять ссылку-владельца в чужих активациях промокода (FK без каскада иначе заблокирует).
+    await session.execute(
+        update(PromoActivation)
+        .where(PromoActivation.owner_client_id == client_id)
+        .values(owner_client_id=None)
+    )
+    await session.delete(c)
+    await session.commit()
