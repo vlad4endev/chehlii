@@ -1,4 +1,4 @@
-import { apiGet, apiSend } from './api'
+import { apiGet, apiSend, apiUpload } from './api'
 
 export type Channel = 'tg' | 'max'
 
@@ -13,6 +13,7 @@ export interface Segment {
 export interface Broadcast {
   id: number
   text: string
+  image_url: string | null
   segment: Segment
   recipients_count: number
   sent_at: string | null
@@ -38,8 +39,12 @@ export const fetchBroadcasts = () => apiGet<Broadcast[]>('/admin/broadcasts')
 export const previewSegment = (segment: Segment) =>
   apiSend<PreviewOut>('POST', '/admin/broadcasts/preview', { segment })
 
-export const createBroadcast = (text: string, segment: Segment) =>
-  apiSend<Broadcast>('POST', '/admin/broadcasts', { text, segment })
+export const createBroadcast = (text: string, segment: Segment, imageUrl?: string | null) =>
+  apiSend<Broadcast>('POST', '/admin/broadcasts', { text, segment, image_url: imageUrl ?? null })
+
+// Загружает картинку рассылки, возвращает относительный URL (/media/…).
+export const uploadBroadcastImage = (file: File) =>
+  apiUpload<{ url: string }>('/admin/media', file).then((r) => r.url)
 
 export const sendBroadcast = (id: number) =>
   apiSend<SendResult>('POST', `/admin/broadcasts/${id}/send`)

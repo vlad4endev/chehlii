@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import BufferedInputFile
 
 from bots.core.backend import backend
 from bots.core.config import settings
@@ -16,13 +18,43 @@ from bots.tg.handlers import router
 from bots.tg.keyboards import mockup_kb
 
 
+async def _fetch_media(path_or_url: str) -> bytes | None:
+    """Скачать изображение (из backend по внутреннему адресу) для отправки вложением."""
+    try:
+        if path_or_url.startswith("http"):
+            u = path_or_url
+        else:
+            origin = settings.backend_url.split("/api/")[0]  # http://backend:8000
+            u = f"{origin}{path_or_url}"
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get(u)
+            r.raise_for_status()
+            return r.content
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
-    text = item.get("text") or "Новое сообщение"
+    text = item.get("text") or ""
     url = item.get("attachment_url")
-    if url:
-        text = f"{text}\n\n📎 Макет: {url}"
-    kb = mockup_kb(item["order_id"]) if item.get("kind") == "mockup" and item.get("order_id") else None
-    await bot.send_message(chat_id=int(item["channel_user_id"]), text=text, reply_markup=kb)
+    kind = item.get("kind")
+    chat_id = int(item["channel_user_id"])
+
+    # Рассылка с картинкой → отправляем фото (подпись до 1024 символов).
+    if kind == "photo" and url and (data := await _fetch_media(url)):
+        caption = text if 0 < len(text) <= 1024 else None
+        await bot.send_photo(
+            chat_id=chat_id, photo=BufferedInputFile(data, "image.jpg"), caption=caption
+        )
+        if text and caption is None:
+            await bot.send_message(chat_id=chat_id, text=text)
+        return
+
+    # Макет — ссылкой; обычный текст — как есть.
+    if url and kind == "mockup":
+        text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
+    kb = mockup_kb(item["order_id"]) if kind == "mockup" and item.get("order_id") else None
+    await bot.send_message(chat_id=chat_id, text=text or "Новое сообщение", reply_markup=kb)
 
 
 async def _outbox_loop(bot: Bot) -> None:

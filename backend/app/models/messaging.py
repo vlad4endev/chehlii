@@ -53,6 +53,7 @@ class Broadcast(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String(1024))  # картинка рассылки (опц.)
     segment: Mapped[dict | None] = mapped_column(JSON)  # фильтры сегмента
     created_by: Mapped[int | None] = mapped_column()  # admin_user.id
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

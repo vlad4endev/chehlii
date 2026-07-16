@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -18,11 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.api.v1.admin.deps import AdminOnly
-from app.core.config import settings
 from app.core.database import get_session
 from app.enums import Channel, OrderStatus
 from app.models.client import Client
-from app.models.messaging import Broadcast
+from app.models.messaging import Broadcast, OutboundMessage
 from app.models.order import Order
 
 router = APIRouter()
@@ -43,6 +41,7 @@ class Segment(BaseModel):
 class BroadcastOut(BaseModel):
     id: int
     text: str
+    image_url: str | None
     segment: Segment
     recipients_count: int
     sent_at: datetime | None
@@ -52,6 +51,7 @@ class BroadcastOut(BaseModel):
 
 class BroadcastCreate(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    image_url: str | None = None
     segment: Segment = Field(default_factory=Segment)
 
 
@@ -97,6 +97,7 @@ def _out(row: Broadcast) -> BroadcastOut:
     return BroadcastOut(
         id=row.id,
         text=row.text,
+        image_url=row.image_url,
         segment=_segment_of(row),
         recipients_count=row.recipients_count,
         sent_at=row.sent_at,
@@ -128,6 +129,7 @@ async def create_broadcast(
 ) -> BroadcastOut:
     row = Broadcast(
         text=body.text,
+        image_url=body.image_url,
         segment=body.segment.model_dump(mode="json"),
         created_by=admin.id,
         recipients_count=0,
@@ -138,23 +140,10 @@ async def create_broadcast(
     return _out(row)
 
 
-async def _deliver_tg(chat_id: str, text: str, client: httpx.AsyncClient) -> bool:
-    token = settings.tg_bot_token
-    if not token:
-        return False
-    try:
-        resp = await client.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
-            timeout=10,
-        )
-        return resp.status_code == 200 and resp.json().get("ok", False)
-    except httpx.HTTPError:
-        return False
-
-
 @router.post("/{broadcast_id}/send", response_model=SendResult)
 async def send_broadcast(broadcast_id: int, _: AdminOnly, session: Session) -> SendResult:
+    """Ставит сообщения в очередь (outbox) — боты (у них доступ к мессенджерам через
+    прокси) доставят их в Telegram и MAX. Картинка уходит вложением (kind=photo)."""
     row = await session.get(Broadcast, broadcast_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Рассылка не найдена")
@@ -162,27 +151,29 @@ async def send_broadcast(broadcast_id: int, _: AdminOnly, session: Session) -> S
         raise HTTPException(status.HTTP_409_CONFLICT, "Рассылка уже отправлена")
 
     recipients = (await session.scalars(_recipients_query(_segment_of(row)))).all()
-    delivered = failed = skipped = 0
-    async with httpx.AsyncClient() as http:
-        for c in recipients:
-            if c.channel == Channel.TG:
-                ok = await _deliver_tg(c.channel_user_id, row.text, http)
-                delivered += int(ok)
-                failed += int(not ok)
-            else:
-                # МАКС Bot API — вне текущего скоупа; помечаем как пропущенные.
-                skipped += 1
+    kind = "photo" if row.image_url else "text"
+    queued = 0
+    for c in recipients:
+        session.add(
+            OutboundMessage(
+                client_id=c.id,
+                channel=c.channel,
+                channel_user_id=c.channel_user_id,
+                kind=kind,
+                text=row.text,
+                attachment_url=row.image_url,
+            )
+        )
+        queued += 1
 
-    row.recipients_count = delivered
+    row.recipients_count = queued
     row.sent_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(row)
 
-    note: str | None = None
-    if not settings.tg_bot_token:
-        note = "Токен Telegram не задан — доставка не выполнена."
-    elif skipped:
-        note = f"{skipped} получателей MAX пропущено (доставка MAX ещё не подключена)."
-    return SendResult(
-        broadcast=_out(row), delivered=delivered, failed=failed, skipped=skipped, note=note
+    note = (
+        "Поставлено в очередь — боты доставят в течение минуты."
+        if queued
+        else "В сегменте нет получателей."
     )
+    return SendResult(broadcast=_out(row), delivered=queued, failed=0, skipped=0, note=note)

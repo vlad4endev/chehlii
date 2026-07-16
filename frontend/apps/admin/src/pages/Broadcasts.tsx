@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 
-import { ApiError } from '../api'
+import { ApiError, mediaUrl } from '../api'
 import {
   type Broadcast,
   type Segment,
@@ -9,6 +9,7 @@ import {
   fetchBroadcasts,
   previewSegment,
   sendBroadcast,
+  uploadBroadcastImage,
 } from '../broadcastsApi'
 import { StatLine } from '../ui'
 
@@ -60,7 +61,7 @@ export function Broadcasts() {
     try {
       const res = await sendBroadcast(b.id)
       const note = res.note ? `\n${res.note}` : ''
-      alert(`Доставлено: ${res.delivered}. Ошибок: ${res.failed}. Пропущено: ${res.skipped}.${note}`)
+      alert(`Поставлено в очередь: ${res.delivered} получателей.${note}`)
       reload()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось отправить')
@@ -113,7 +114,14 @@ export function Broadcasts() {
           <tbody>
             {items.map((b) => (
               <tr key={b.id}>
-                <td className="cell-clip">{b.text}</td>
+                <td className="cell-clip">
+                  <span className="bcast-cell">
+                    {b.image_url && (
+                      <img className="bcast-thumb" src={mediaUrl(b.image_url) ?? b.image_url} alt="" />
+                    )}
+                    <span className="bcast-cell__text">{b.text}</span>
+                  </span>
+                </td>
                 <td className="muted">{segmentSummary(b.segment)}</td>
                 <td className="strong">{b.is_draft ? '—' : b.recipients_count}</td>
                 <td>
@@ -153,6 +161,9 @@ export function Broadcasts() {
 
 function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [text, setText] = useState('')
+  const [image, setImage] = useState<string | null>(null)
+  const [imgBusy, setImgBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [channel, setChannel] = useState<'' | 'tg' | 'max'>('')
   const [status, setStatus] = useState('')
   const [onlyWithOrders, setOnlyWithOrders] = useState(false)
@@ -182,6 +193,20 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     }
   }
 
+  async function pickImage(file?: File) {
+    if (!file) return
+    setError(null)
+    setImgBusy(true)
+    try {
+      setImage(await uploadBroadcastImage(file))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить картинку')
+    } finally {
+      setImgBusy(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
   async function onSave() {
     if (!text.trim()) {
       setError('Введите текст сообщения')
@@ -190,7 +215,7 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     setBusy(true)
     setError(null)
     try {
-      await createBroadcast(text, buildSegment())
+      await createBroadcast(text, buildSegment(), image)
       onSaved()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось сохранить')
@@ -219,6 +244,42 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
               placeholder="Например: Новая коллекция чехлов уже в каталоге ✨"
             />
           </label>
+
+          <div className="field">
+            <span className="field__label">Картинка (необязательно)</span>
+            <div className="bcast-img">
+              {image ? (
+                <div className="bcast-img__preview">
+                  <img src={mediaUrl(image) ?? image} alt="" />
+                  <button
+                    type="button"
+                    className="bcast-img__rm"
+                    onClick={() => setImage(null)}
+                    aria-label="Убрать картинку"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={imgBusy}
+                >
+                  {imgBusy ? 'Загрузка…' : 'Загрузить картинку'}
+                </button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                hidden
+                onChange={(e) => pickImage(e.target.files?.[0])}
+              />
+            </div>
+            <div className="field__hint">Уйдёт вложением к сообщению. Текст станет подписью.</div>
+          </div>
 
           <div className="field__label" style={{ marginTop: 8 }}>
             Сегмент

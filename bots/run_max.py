@@ -8,7 +8,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from maxapi import Bot
+from maxapi.enums.upload_type import UploadType
+from maxapi.types.input_media import InputMediaBuffer
 
 from bots.core.backend import backend
 from bots.core.config import settings
@@ -17,17 +20,38 @@ from bots.max.handlers import dp
 from bots.max.keyboards import mockup_kb
 
 
+async def _fetch_media(path_or_url: str) -> bytes | None:
+    """Скачать изображение (из backend по внутреннему адресу) для отправки вложением."""
+    try:
+        if path_or_url.startswith("http"):
+            u = path_or_url
+        else:
+            origin = settings.backend_url.split("/api/")[0]  # http://backend:8000
+            u = f"{origin}{path_or_url}"
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get(u)
+            r.raise_for_status()
+            return r.content
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
-    text = item.get("text") or "Новое сообщение"
+    text = item.get("text") or ""
     url = item.get("attachment_url")
-    if url:
-        text = f"{text}\n\n📎 Макет: {url}"
-    atts = (
-        [mockup_kb(item["order_id"])]
-        if item.get("kind") == "mockup" and item.get("order_id")
-        else None
-    )
-    await bot.send_message(user_id=int(item["channel_user_id"]), text=text, attachments=atts)
+    kind = item.get("kind")
+    uid = int(item["channel_user_id"])
+
+    # Рассылка с картинкой → отправляем изображением-вложением.
+    if kind == "photo" and url and (data := await _fetch_media(url)):
+        media = InputMediaBuffer(buffer=data, filename="image.jpg", type=UploadType.IMAGE)
+        await bot.send_message(user_id=uid, text=(text or None), attachments=[media])
+        return
+
+    if url and kind == "mockup":
+        text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
+    atts = [mockup_kb(item["order_id"])] if kind == "mockup" and item.get("order_id") else None
+    await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts)
 
 
 async def _outbox_loop(bot: Bot) -> None:

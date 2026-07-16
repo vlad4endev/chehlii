@@ -505,6 +505,15 @@ select.input { appearance: none; cursor: pointer; }
 .contact-ch__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .filelinks { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 
+/* ── Картинка рассылки ────────────────────────────── */
+.bcast-img { display: flex; align-items: flex-start; gap: 10px; }
+.bcast-img__preview { position: relative; width: 96px; height: 96px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
+.bcast-img__preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bcast-img__rm { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 999px; border: none; background: rgba(18,18,20,0.62); color: #fff; font-size: 12px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.bcast-cell { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.bcast-cell__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcast-thumb { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; border: 1px solid var(--line); }
+
 /* ═══════════════════════════════════════════════════════
    Адаптивность: ПК (≥1024) · планшет и мобильный (<1024) · телефон (<640)
    ═══════════════════════════════════════════════════════ */
