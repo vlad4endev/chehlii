@@ -238,7 +238,7 @@ async def _pay_line(order_id: int) -> str:
         p = await backend.payment_link(order_id, "prepayment")
         return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
     except Exception:
-        return "\n\n(ссылка на оплату появится после настройки Robokassa)"
+        return " Ссылка на оплату придёт следующим сообщением."
 
 
 # ── Ввод имени / материалов ────────────────────────────

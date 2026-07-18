@@ -49,8 +49,8 @@ export function Why() {
           Зачем вам <span className="serif-it">индивидуальный</span> чехол
         </h1>
         <p className="why__lead">
-          Чехол — то, что вы держите в руках сотни раз в день. Пусть он будет про вас, а не про
-          завод, где его отштамповали тысячным тиражом.
+          Смартфон — то, что мы держим в руках сотни раз в день. Пусть он напомнит о важном
+          и отразит вашу индивидуальность
         </p>
       </div>
 
@@ -81,7 +81,7 @@ export function Why() {
               <span className="monogram__letter">A</span>
               <span className="monogram__ring" />
             </div>
-            <h3 className="about__wayh">Стандарт</h3>
+            <h3 className="about__wayh">Минимализм</h3>
             <p className="about__wayt">Гравировка имени или буквы. Быстрый путь к вещи, которая выглядит как ваша.</p>
           </div>
           <div className="about__way">

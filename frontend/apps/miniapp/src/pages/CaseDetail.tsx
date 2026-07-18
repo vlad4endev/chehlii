@@ -96,7 +96,7 @@ export function CaseDetail({
           </svg>
         </button>
         <span className={`meta${item.is_custom ? ' meta--accent' : ''}`}>
-          {item.is_custom ? 'Кастом' : 'Стандарт'}
+          {item.is_custom ? 'Кастом' : 'Минимализм'}
         </span>
         <button
           className={`iconbtn${isFavorite ? ' iconbtn--on' : ''}`}

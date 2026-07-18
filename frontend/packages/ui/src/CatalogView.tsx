@@ -39,7 +39,7 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
 
             <div className="card__body" onClick={() => onOpen(item)}>
               <span className={`meta${item.is_custom ? ' meta--accent' : ''}`}>
-                {item.is_custom ? 'Кастом' : 'Стандарт'}
+                {item.is_custom ? 'Кастом' : 'Минимализм'}
               </span>
               <h3 className="card__name">{item.name}</h3>
               <div className="price card__price">{formatPrice(item.client_price)}</div>

@@ -45,7 +45,7 @@ export function App() {
       <header className="header">
         <div className="wordmark">casetop</div>
         <p className="tagline">
-          Индивидуальные чехлы, <span className="serif-it">сделанные под вас</span>
+          Индивидуальные чехлы <span className="serif-it">уникального дизайна</span> для вас и близких
         </p>
       </header>
 

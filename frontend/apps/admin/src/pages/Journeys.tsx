@@ -1,7 +1,35 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { ApiError } from '../api'
+import { fetchBotMessages } from '../botTextsApi'
 import { type JourneyRow, fetchJourneys } from '../journeysApi'
+
+// Tooltip через portal — не обрезается overflow родителя.
+function Tip({ text, children }: { text: string; children: React.ReactNode }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  return (
+    <>
+      <span
+        className="chip mono has-tip"
+        onMouseEnter={(e) => {
+          const r = e.currentTarget.getBoundingClientRect()
+          setPos({ x: r.left + r.width / 2, y: r.top })
+        }}
+        onMouseLeave={() => setPos(null)}
+      >
+        {children}
+      </span>
+      {pos &&
+        createPortal(
+          <div className="tip-pop" style={{ left: pos.x, top: pos.y }}>
+            {text}
+          </div>,
+          document.body,
+        )}
+    </>
+  )
+}
 
 const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 const fmtDate = (iso: string | null) =>
@@ -17,12 +45,19 @@ const fmtDate = (iso: string | null) =>
 
 export function Journeys() {
   const [items, setItems] = useState<JourneyRow[]>([])
+  const [msgText, setMsgText] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchJourneys()
-      .then(setItems)
+    Promise.all([
+      fetchJourneys(),
+      fetchBotMessages().catch(() => []),
+    ])
+      .then(([js, msgs]) => {
+        setItems(js)
+        setMsgText(Object.fromEntries(msgs.map((m) => [m.code, m.text])))
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Не удалось загрузить'))
       .finally(() => setLoading(false))
   }, [])
@@ -68,7 +103,13 @@ export function Journeys() {
                   <td>{CHANNEL_LABEL[j.channel] ?? j.channel}</td>
                   <td className="mono muted">{fmtDate(j.last_msg_at)}</td>
                   <td>
-                    <span className="chip mono">{j.last_msg_code ?? '—'}</span>
+                    {j.last_msg_code ? (
+                      <Tip text={msgText[j.last_msg_code] ?? '(текст не найден)'}>
+                        {j.last_msg_code}
+                      </Tip>
+                    ) : (
+                      <span className="chip mono">—</span>
+                    )}
                   </td>
                   <td className="mono">{j.master_code ?? '—'}</td>
                 </tr>

@@ -60,24 +60,25 @@ export function Dashboard() {
         <div className="dash">
           {isAdmin && (
             <div className="moneyrow">
-              <MoneyCard hero label="Выручка" value={money(stats.revenue_paid)} sub="оплаченные заказы" />
-              <MoneyCard label="Сумма в работе" value={money(stats.pipeline_value)} sub="активные заказы" />
-              <MoneyCard label="Средний чек" value={money(stats.avg_check)} sub="без отменённых" />
+              <MoneyCard hero label="Выручка" value={money(stats.revenue_paid)} sub="оплаченные заказы" onClick={() => navigate('/orders')} />
+              <MoneyCard label="Сумма в работе" value={money(stats.pipeline_value)} sub="активные заказы" onClick={() => navigate('/orders')} />
+              <MoneyCard label="Средний чек" value={money(stats.avg_check)} sub="без отменённых" onClick={() => navigate('/orders')} />
             </div>
           )}
 
           <div className="kpi-grid">
-            <Kpi icon="box" label="Заказов всего" value={stats.orders_total} sub="за всё время" />
-            <Kpi icon="pulse" label="В работе" value={stats.orders_active} sub="активная воронка" />
-            <Kpi icon="check" label="Завершено" value={stats.orders_done} sub="доставлено" />
+            <Kpi icon="box" label="Заказов всего" value={stats.orders_total} sub="за всё время" onClick={() => navigate('/orders')} />
+            <Kpi icon="pulse" label="В работе" value={stats.orders_active} sub="активная воронка" onClick={() => navigate('/orders')} />
+            <Kpi icon="check" label="Завершено" value={stats.orders_done} sub="доставлено" onClick={() => navigate('/orders?status=delivered')} />
             <Kpi
               icon="calendar"
               label="Новых за 7 дней"
               value={stats.orders_week}
               sub={`сегодня: ${stats.orders_today}`}
+              onClick={() => navigate('/orders')}
             />
             {isAdmin && (
-              <Kpi icon="client" label="Клиенты" value={stats.clients_total} sub="в базе" />
+              <Kpi icon="client" label="Клиенты" value={stats.clients_total} sub="в базе" onClick={() => navigate('/clients')} />
             )}
           </div>
 
@@ -185,14 +186,26 @@ function MoneyCard({
   value,
   sub,
   hero,
+  onClick,
 }: {
   label: string
   value: string
   sub: string
   hero?: boolean
+  onClick?: () => void
 }) {
+  const cls = `money${hero ? ' money--hero' : ''}${onClick ? ' money--link' : ''}`
+  if (onClick) {
+    return (
+      <button type="button" className={cls} onClick={onClick}>
+        <div className="money__label">{label}</div>
+        <div className="money__value">{value}</div>
+        <div className="money__sub">{sub}</div>
+      </button>
+    )
+  }
   return (
-    <div className={`money${hero ? ' money--hero' : ''}`}>
+    <div className={cls}>
       <div className="money__label">{label}</div>
       <div className="money__value">{value}</div>
       <div className="money__sub">{sub}</div>
@@ -205,14 +218,17 @@ function Kpi({
   label,
   value,
   sub,
+  onClick,
 }: {
   icon: string
   label: string
   value: number | string
   sub: string
+  onClick?: () => void
 }) {
-  return (
-    <div className="kpi">
+  const cls = `kpi${onClick ? ' kpi--link' : ''}`
+  const inner = (
+    <>
       <div className="kpi__icon">
         <Icon name={icon} size={20} />
       </div>
@@ -221,7 +237,12 @@ function Kpi({
         <div className="kpi__label">{label}</div>
         <div className="kpi__sub">{sub}</div>
       </div>
-    </div>
+    </>
+  )
+  return onClick ? (
+    <button type="button" className={cls} onClick={onClick}>{inner}</button>
+  ) : (
+    <div className={cls}>{inner}</div>
   )
 }
 

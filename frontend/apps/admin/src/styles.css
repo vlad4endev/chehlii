@@ -622,3 +622,21 @@ select.input { appearance: none; cursor: pointer; }
 
 .miniapp-hero__preview { display: flex; align-items: flex-start; gap: 12px; }
 .miniapp-hero__preview img { max-width: 240px; max-height: 180px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+
+/* Кликабельные карточки дашборда — сброс дефолтных стилей button */
+.kpi--link, .money--link { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+.money--link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+/* Тултип: элемент в portal у body, position:fixed по координатам чипа */
+.has-tip { cursor: help; }
+.tip-pop {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  background: var(--ink); color: #fff;
+  font-family: var(--font); font-weight: 400; font-size: 12.5px;
+  padding: 8px 12px; border-radius: 8px;
+  white-space: pre-wrap; max-width: 380px;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  z-index: 100;
+}
