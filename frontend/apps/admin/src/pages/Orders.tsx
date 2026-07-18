@@ -370,7 +370,10 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                 <h3 className="orderhero__name">{order.case_name || 'Чехол'}</h3>
                 {order.model_name && <div className="orderhero__model">{order.model_name}</div>}
                 {order.custom_text && (
-                  <div className="orderhero__engrave">Гравировка: «{order.custom_text}»</div>
+                  <div className="orderhero__engrave">
+                    <span className="orderhero__engrave-label">Гравировка</span>
+                    <span className="orderhero__engrave-value">{order.custom_text}</span>
+                  </div>
                 )}
               </div>
             </div>

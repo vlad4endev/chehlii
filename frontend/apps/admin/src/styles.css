@@ -335,7 +335,7 @@ input, select, textarea { font-family: inherit; }
 .modal__title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
 .modal__close { border: none; background: none; font-size: 18px; color: var(--ink-soft); width: 32px; height: 32px; border-radius: 8px; }
 .modal__close:hover { background: var(--bg); }
-.modal__body { padding: 20px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.modal__body { padding: 20px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: 1 1 auto; min-height: 0; }
 .modal__actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--line); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: end; }
@@ -414,7 +414,9 @@ select.input { appearance: none; cursor: pointer; }
 .orderhero__info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .orderhero__name { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: var(--ink); }
 .orderhero__model { font-size: 14px; color: var(--ink-soft); }
-.orderhero__engrave { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+.orderhero__engrave { display: inline-flex; align-items: baseline; gap: 8px; margin-top: 6px; padding: 4px 12px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 999px; align-self: flex-start; }
+.orderhero__engrave-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); font-weight: 600; }
+.orderhero__engrave-value { font-weight: 700; font-size: 14px; color: var(--ink); }
 
 .clientdesc { margin: 4px 0 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
 .photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
