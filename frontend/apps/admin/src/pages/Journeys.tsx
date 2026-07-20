@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { ApiError } from '../api'
 import { fetchBotMessages } from '../botTextsApi'
-import { type JourneyRow, fetchJourneys } from '../journeysApi'
+import { type JourneyRow, downloadJourneysXlsx, fetchJourneys } from '../journeysApi'
 
 // Tooltip через portal — не обрезается overflow родителя.
 function Tip({ text, children }: { text: string; children: React.ReactNode }) {
@@ -66,6 +66,13 @@ export function Journeys() {
     <div>
       <div className="page__head">
         <h1 className="page__title">Клиентские пути</h1>
+        <button
+          className="btn btn--ghost"
+          onClick={() => downloadJourneysXlsx().catch((e) => alert(String(e)))}
+          disabled={loading || items.length === 0}
+        >
+          Выгрузить в Excel
+        </button>
       </div>
       <p className="page__lead">
         Клиенты в диалоге бота: на каком коде сообщения остановились и когда.
@@ -84,9 +91,11 @@ export function Journeys() {
               <tr>
                 <th>Клиент</th>
                 <th>Канал</th>
+                <th>Первое сообщение</th>
                 <th>Последнее сообщение</th>
                 <th>Код сообщения</th>
                 <th>Промокод</th>
+                <th className="num">Успешные заказы</th>
               </tr>
             </thead>
             <tbody>
@@ -101,6 +110,7 @@ export function Journeys() {
                     )}
                   </td>
                   <td>{CHANNEL_LABEL[j.channel] ?? j.channel}</td>
+                  <td className="mono muted">{fmtDate(j.first_msg_at)}</td>
                   <td className="mono muted">{fmtDate(j.last_msg_at)}</td>
                   <td>
                     {j.last_msg_code ? (
@@ -112,6 +122,7 @@ export function Journeys() {
                     )}
                   </td>
                   <td className="mono">{j.master_code ?? '—'}</td>
+                  <td className="num strong">{j.successful_orders}</td>
                 </tr>
               ))}
             </tbody>
