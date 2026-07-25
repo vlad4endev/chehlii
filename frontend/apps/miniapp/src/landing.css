@@ -210,6 +210,12 @@ body:has(.lp) { background: var(--lp-paper); }
   transition: transform 0.3s ease-out;
   animation: lp-float 8s ease-in-out infinite;
 }
+/* SVG-мокап: собственные скругления в svg, тень снаружи */
+.lp-mockup {
+  border-radius: 0; box-shadow: none;
+  filter: drop-shadow(0 40px 60px rgba(0, 0, 0, 0.35));
+  object-fit: contain;
+}
 @keyframes lp-float {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -14px; }

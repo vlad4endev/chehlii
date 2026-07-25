@@ -133,9 +133,7 @@ export function Landing({ items }: { items: CaseType[] }) {
               {heroImg ? (
                 <img className="lp-hero__img" src={heroImg} alt={hero?.title ?? ''} />
               ) : (
-                <div className="lp-hero__placeholder">
-                  <span className="lp-serif">casetop</span>
-                </div>
+                <CaseMockupSVG />
               )}
               {hero?.title && <div className="lp-hero__caption">{hero.title}</div>}
               <div className="lp-hero__badge">
@@ -375,5 +373,123 @@ function GalleryCard({ item }: { item: CaseType }) {
         <h3 className="lp-gcard__name">{item.name}</h3>
       </div>
     </div>
+  )
+}
+
+// Векторный мокап чехла в стиле премиум-кожи: чёрный корпус, вырез камеры сверху,
+// боковые кнопки, тиснёный логотип casetop снизу. Скалируется без потерь.
+function CaseMockupSVG() {
+  return (
+    <svg
+      className="lp-hero__img lp-mockup"
+      viewBox="0 0 440 586"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label="Чехол casetop"
+      role="img"
+    >
+      <defs>
+        {/* Кожа: тёмная база с лёгким градиентом верх→низ */}
+        <linearGradient id="lp-leather" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#26262a" />
+          <stop offset="0.5" stopColor="#17171a" />
+          <stop offset="1" stopColor="#0f0f11" />
+        </linearGradient>
+        {/* Едва заметный блик на левой кромке */}
+        <linearGradient id="lp-shine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.09" />
+          <stop offset="0.15" stopColor="#ffffff" stopOpacity="0.02" />
+          <stop offset="0.6" stopColor="#ffffff" stopOpacity="0" />
+        </linearGradient>
+        {/* Тень внутри выреза камеры */}
+        <radialGradient id="lp-camera-well" cx="50%" cy="30%" r="80%">
+          <stop offset="0" stopColor="#040405" />
+          <stop offset="0.7" stopColor="#0a0a0c" />
+          <stop offset="1" stopColor="#050506" />
+        </radialGradient>
+        {/* Мягкий грейн-фильтр — тонкая текстура кожи */}
+        <filter id="lp-grain" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" />
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.055 0" />
+          <feComposite in2="SourceGraphic" operator="in" />
+        </filter>
+        {/* Тиснёный логотип: тёмная тень + светлый под-контур */}
+        <filter id="lp-emboss">
+          <feGaussianBlur stdDeviation="0.4" />
+        </filter>
+        <clipPath id="lp-body-clip">
+          <rect x="20" y="12" width="400" height="562" rx="52" />
+        </clipPath>
+      </defs>
+
+      {/* Отброс-тень под корпусом */}
+      <ellipse cx="220" cy="576" rx="150" ry="10" fill="#000" opacity="0.22" />
+
+      {/* Корпус */}
+      <g clipPath="url(#lp-body-clip)">
+        <rect x="20" y="12" width="400" height="562" rx="52" fill="url(#lp-leather)" />
+        {/* Грейн-текстура кожи поверх */}
+        <rect x="20" y="12" width="400" height="562" rx="52" filter="url(#lp-grain)" />
+        {/* Лёгкий блик слева */}
+        <rect x="20" y="12" width="180" height="562" rx="52" fill="url(#lp-shine)" />
+      </g>
+      {/* Тонкий внешний контур */}
+      <rect
+        x="20" y="12" width="400" height="562" rx="52"
+        fill="none" stroke="#0a0a0c" strokeWidth="1"
+      />
+      {/* Внутренний блик по верхней кромке */}
+      <path
+        d="M62 14 Q72 12 90 12 L360 12 Q385 12 400 22"
+        fill="none" stroke="#ffffff" strokeOpacity="0.09" strokeWidth="1.2"
+      />
+
+      {/* Вырез под камеру — «окно» с тёмной внутренней тенью */}
+      <g>
+        <rect x="120" y="40" width="200" height="200" rx="42" fill="url(#lp-camera-well)" />
+        {/* Внутренняя фаска-стенка (толщина корпуса) */}
+        <rect
+          x="120" y="40" width="200" height="200" rx="42"
+          fill="none" stroke="#000" strokeWidth="6" strokeOpacity="0.75"
+        />
+        <rect
+          x="123" y="43" width="194" height="194" rx="40"
+          fill="none" stroke="#ffffff" strokeOpacity="0.06" strokeWidth="1"
+        />
+        {/* Едва заметный внутренний блик */}
+        <path
+          d="M140 60 Q150 45 175 45 L280 45"
+          fill="none" stroke="#ffffff" strokeOpacity="0.08" strokeWidth="1"
+        />
+      </g>
+
+      {/* Боковые кнопки — слева громкость + беззвучный, справа питание */}
+      <g fill="#0a0a0c">
+        <rect x="18" y="120" width="4" height="14" rx="1.5" />
+        <rect x="18" y="150" width="4" height="42" rx="1.5" />
+        <rect x="18" y="200" width="4" height="42" rx="1.5" />
+        <rect x="418" y="180" width="4" height="70" rx="1.5" />
+      </g>
+      {/* Едва заметный блик на кнопках */}
+      <g fill="#ffffff" opacity="0.05">
+        <rect x="18" y="120" width="1" height="14" />
+        <rect x="18" y="150" width="1" height="42" />
+        <rect x="18" y="200" width="1" height="42" />
+        <rect x="418" y="180" width="1" height="70" />
+      </g>
+
+      {/* Тиснёный логотип: тёмная нижняя тень + светлый верхний под-контур */}
+      <g transform="translate(220 510)" textAnchor="middle" fontFamily="Unbounded, system-ui, sans-serif" fontWeight="800" letterSpacing="-0.02em">
+        <text y="0" fontSize="26" fill="#000" opacity="0.65">casetop</text>
+        <text y="-0.6" fontSize="26" fill="#ffffff" opacity="0.05">casetop</text>
+      </g>
+      {/* Подпись «by casetop» — микрокапс */}
+      <text
+        x="220" y="536" textAnchor="middle"
+        fontFamily="Onest, system-ui, sans-serif" fontSize="8" letterSpacing="0.28em"
+        fill="#000" opacity="0.55"
+      >
+        РУЧНАЯ РАБОТА · МОСКВА
+      </text>
+    </svg>
   )
 }
