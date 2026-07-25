@@ -4,11 +4,19 @@ import type { CaseType } from '@ui/types'
 import { fetchCatalog, plural } from '@ui/api'
 import { CatalogView } from '@ui/CatalogView'
 
+import { isMax } from './max'
+import { isTelegram } from './telegram'
 import { useFavorites } from './store'
 import { CaseDetail } from './pages/CaseDetail'
+import { Landing } from './pages/Landing'
 import { OrderHandoff } from './pages/OrderHandoff'
 import { Why } from './pages/Why'
 import { Reviews } from './pages/Reviews'
+import './landing.css'
+
+// В обычном браузере показываем полноценный лендинг.
+// В Telegram/MAX WebApp — исходный табовый интерфейс.
+const IN_BROWSER = !isTelegram() && !isMax()
 
 type Tab = 'catalog' | 'why' | 'reviews' | 'favorites'
 type Status = 'loading' | 'error' | 'ready'
@@ -39,6 +47,9 @@ export function App() {
   }, [])
 
   const favItems = useMemo(() => items.filter((i) => favorites.ids.has(i.id)), [items, favorites.ids])
+
+  // Обычный браузер → премиум-лендинг вместо мини-аппа.
+  if (IN_BROWSER) return <Landing items={items} />
 
   return (
     <div className="app">
