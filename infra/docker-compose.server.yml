@@ -65,6 +65,7 @@ services:
       TG_BOT_TOKEN: ${TG_BOT_TOKEN}
       TG_PROXY: ${TG_PROXY:-}   # socks5://… или http://… для обхода блокировки Telegram
       BACKEND_URL: http://backend:8000/api/v1   # внутри compose-сети, не через NPM
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}   # общий секрет бот → backend
       REDIS_URL: redis://redis:6379/1
       WEBAPP_URL: https://test.skypath.fun
     depends_on:
@@ -86,6 +87,7 @@ services:
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
       MAX_BOT_USERNAME: ${MAX_BOT_USERNAME}
       BACKEND_URL: http://backend:8000/api/v1
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}   # общий секрет бот → backend
       REDIS_URL: redis://redis:6379/1
     depends_on:
       backend:

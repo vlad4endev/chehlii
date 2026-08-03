@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.internal import require_internal
 from app.core.database import get_session
 from app.enums import OrderStatus, PaymentKind, PaymentStatus
 from app.models.client import Client
@@ -78,7 +79,7 @@ async def _robokassa_cfg(session: AsyncSession) -> dict:
     }
 
 
-@router.post("/link", response_model=LinkOut)
+@router.post("/link", response_model=LinkOut, dependencies=[Depends(require_internal)])
 async def create_link(body: LinkIn, session: Session) -> LinkOut:
     """Создать ссылку оплаты Robokassa для заказа (вызывает бот)."""
     order = await session.get(Order, body.order_id)

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.internal import require_internal
 from app.core.database import get_session
 from app.enums import OrderStatus
 from app.models.client import Client
@@ -59,7 +60,7 @@ class CalcOut(BaseModel):
     tariff_code: int
 
 
-@router.post("/calc", response_model=CalcOut)
+@router.post("/calc", response_model=CalcOut, dependencies=[Depends(require_internal)])
 async def calculate(body: CalcIn, session: Session) -> CalcOut:
     cfg = await _cfg(session)
     try:
@@ -79,7 +80,7 @@ class CreateIn(BaseModel):
     recipient_phone: str
 
 
-@router.post("/orders/{order_id}/create")
+@router.post("/orders/{order_id}/create", dependencies=[Depends(require_internal)])
 async def create_delivery(order_id: int, body: CreateIn, session: Session) -> dict:
     """Создать заявку СДЭК для заказа. Сохраняет службу/адрес/стоимость/трек."""
     order = await session.get(Order, order_id)

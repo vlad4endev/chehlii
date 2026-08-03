@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     max_bot_username: str | None = None
     # Единый backend обслуживает все платформы.
     backend_url: str = "http://localhost:8000/api/v1"
+    # Общий секрет для внутренних вызовов backend (заголовок X-Internal-Token).
+    internal_api_token: str | None = None
     # Публичный HTTPS-URL мини-приложения (Telegram WebApp требует HTTPS).
     webapp_url: str | None = None
     redis_url: str = "redis://localhost:6379/1"

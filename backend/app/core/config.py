@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
+    # Общий секрет для внутренних вызовов бот → backend (заголовок X-Internal-Token).
+    # Публичны только GET каталога/hero/отзывов; всё остальное (заказы, клиенты,
+    # outbox, ссылки оплаты) шлют только боты по внутренней сети. Пусто — проверка
+    # отключена (локальная разработка); на проде обязательно задать.
+    internal_api_token: str | None = None
+
     # Безопасность AdminUI
     jwt_secret: str = "change_me"
     jwt_access_ttl_minutes: int = 60

@@ -9,7 +9,14 @@ from bots.core.config import settings
 
 class Backend:
     def __init__(self) -> None:
-        self._client = httpx.AsyncClient(base_url=settings.backend_url, timeout=15.0)
+        headers = (
+            {"X-Internal-Token": settings.internal_api_token}
+            if settings.internal_api_token
+            else None
+        )
+        self._client = httpx.AsyncClient(
+            base_url=settings.backend_url, timeout=15.0, headers=headers
+        )
 
     async def close(self) -> None:
         await self._client.aclose()
