@@ -330,15 +330,15 @@ function GroupCard({
         ))}
       </div>
 
+      {/* Ответ шлюза бывает длинным (текст ошибки Пэй целиком) — отдельной строкой
+          с переносом, иначе в .badge (white-space: nowrap) он уезжает за карточку. */}
+      {status && (
+        <div className={`intcard__status${status.ok ? '' : ' intcard__status--bad'}`}>
+          <b>{status.ok ? 'Связь есть' : 'Нет связи'}</b> · {status.detail}
+        </div>
+      )}
+
       <div className="intcard__foot">
-        {status && (
-          <span
-            className={`badge ${status.ok ? 'badge--green' : 'badge--red'}`}
-            title={status.detail}
-          >
-            {status.ok ? 'связь есть' : 'нет связи'} · {status.detail}
-          </span>
-        )}
         {saved && <span className="badge badge--green">Сохранено</span>}
         {check && (
           <button className="btn btn--sm" onClick={runCheck} disabled={checking}>

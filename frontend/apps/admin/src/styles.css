@@ -513,6 +513,8 @@ select.input { appearance: none; cursor: pointer; }
 .intcard__head .badge { margin-left: auto; align-self: flex-start; }
 .intcard__fields { display: flex; flex-direction: column; gap: 12px; }
 .intcard__foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.intcard__status { margin-top: 12px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; background: var(--panel-2); color: var(--ink-2); overflow-wrap: anywhere; }
+.intcard__status--bad { background: #fbe6e6; color: var(--danger); }
 
 /* ── Открыть чат / объединённый контакт ───────────── */
 .chatcell { display: inline-flex; flex-wrap: wrap; gap: 6px; }

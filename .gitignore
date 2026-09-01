@@ -44,3 +44,7 @@ backend/alembic/versions/*.pyc
 # .claude/launch.json — командный конфиг дев-серверов, он остаётся в репозитории.
 /.claude/proven-config.json
 /.claude/.proven-config-version
+
+# Собранные SPA для серверного compose (infra/docker-compose.server.yml монтирует их томом).
+infra/webroot/
+infra/webroot-admin/
