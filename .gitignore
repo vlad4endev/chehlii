@@ -39,3 +39,8 @@ backend/alembic/versions/*.pyc
 
 # Локальное состояние claude-flow (pid'ы, метрики, статистика) — у каждой машины своё
 /.claude-flow/
+
+# Локальное состояние плагина ruflo (перезаписывается на каждой машине).
+# .claude/launch.json — командный конфиг дев-серверов, он остаётся в репозитории.
+/.claude/proven-config.json
+/.claude/.proven-config-version
