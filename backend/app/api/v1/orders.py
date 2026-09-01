@@ -148,7 +148,9 @@ async def add_client_file(
 
     ext = media.ext_for(file.content_type, filename, allow_docs=True)
     if ext is None:
-        raise HTTPException(status_code=415, detail="Поддерживаются фото (JPG/PNG/WEBP/HEIC) и PDF.")
+        raise HTTPException(
+            status_code=415, detail="Поддерживаются фото (JPG/PNG/WEBP/HEIC) и PDF."
+        )
     if len(content) > media.MAX_BYTES:
         raise HTTPException(status_code=413, detail="Файл больше 12 МБ.")
     url = media.save_bytes(content, ext, f"orders/{order_id}")
@@ -204,18 +206,14 @@ async def update_order(
     if payload.custom_text is not None:
         # Стандарт: имя/буква → выставляем предоплату.
         order.custom_text = payload.custom_text
-        await _record_status(
-            session, order, OrderStatus.PREPAYMENT_ISSUED, "Получены имя/буква"
-        )
+        await _record_status(session, order, OrderStatus.PREPAYMENT_ISSUED, "Получены имя/буква")
     if payload.materials_text is not None or payload.materials_files is not None:
         # Кастом: материалы получены → выставляем предоплату.
         if payload.materials_text is not None:
             order.materials_text = payload.materials_text
         if payload.materials_files is not None:
             order.materials_files = payload.materials_files
-        await _record_status(
-            session, order, OrderStatus.MATERIALS_SUBMITTED, "Получены материалы"
-        )
+        await _record_status(session, order, OrderStatus.MATERIALS_SUBMITTED, "Получены материалы")
         await _record_status(
             session, order, OrderStatus.PREPAYMENT_ISSUED, "Бот выставил ссылку предоплаты"
         )

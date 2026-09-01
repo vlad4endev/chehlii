@@ -66,9 +66,7 @@ async def _request(
     return r.json()
 
 
-async def calculate(
-    cfg: dict, *, to_postal: str, weight_g: int, tariff_code: int
-) -> dict:
+async def calculate(cfg: dict, *, to_postal: str, weight_g: int, tariff_code: int) -> dict:
     """Расчёт стоимости и срока доставки до индекса получателя (один тариф)."""
     body = {
         "type": 1,  # интернет-магазин
@@ -86,9 +84,17 @@ async def calculate(
     }
 
 
-async def create_order(cfg: dict, *, order_id: int, to_postal: str, to_address: str,
-                       recipient_name: str, recipient_phone: str, weight_g: int,
-                       tariff_code: int) -> dict:
+async def create_order(
+    cfg: dict,
+    *,
+    order_id: int,
+    to_postal: str,
+    to_address: str,
+    recipient_name: str,
+    recipient_phone: str,
+    weight_g: int,
+    tariff_code: int,
+) -> dict:
     """Создать заявку на доставку. Возвращает uuid заявки СДЭК."""
     body = {
         "type": 1,

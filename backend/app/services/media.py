@@ -40,7 +40,15 @@ def media_kind(content_type: str | None, filename: str | None) -> tuple[str, str
         return VIDEO_EXT[ct], "video"
     if filename and "." in filename:
         tail = filename.rsplit(".", 1)[1].lower()
-        img = {"jpg": "jpg", "jpeg": "jpg", "png": "png", "webp": "webp", "gif": "gif", "heic": "heic", "heif": "heif"}
+        img = {
+            "jpg": "jpg",
+            "jpeg": "jpg",
+            "png": "png",
+            "webp": "webp",
+            "gif": "gif",
+            "heic": "heic",
+            "heif": "heif",
+        }
         vid = {"mp4": "mp4", "m4v": "mp4", "mov": "mov", "webm": "webm"}
         if tail in img:
             return img[tail], "image"
@@ -49,7 +57,9 @@ def media_kind(content_type: str | None, filename: str | None) -> tuple[str, str
     return None
 
 
-def ext_for(content_type: str | None, filename: str | None, *, allow_docs: bool = False) -> str | None:
+def ext_for(
+    content_type: str | None, filename: str | None, *, allow_docs: bool = False
+) -> str | None:
     ct = (content_type or "").lower()
     if ct in IMAGE_EXT:
         return IMAGE_EXT[ct]

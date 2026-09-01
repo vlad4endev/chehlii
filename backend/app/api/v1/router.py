@@ -14,10 +14,10 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.clients import router as clients_router
 from app.api.v1.delivery import router as delivery_router
 from app.api.v1.internal import require_internal
+from app.api.v1.miniapp import router as miniapp_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.outbox import router as outbox_router
 from app.api.v1.payments import router as payments_router
-from app.api.v1.miniapp import router as miniapp_router
 from app.api.v1.reviews import router as reviews_router
 
 # Бот-только роутеры: требуют X-Internal-Token (см. internal.py).
@@ -29,7 +29,9 @@ api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(reviews_router, prefix="/reviews", tags=["reviews"])
 api_router.include_router(miniapp_router, prefix="/miniapp", tags=["miniapp"])
 # Внутренние (только боты). payments/delivery смешанные — защита на уровне эндпоинтов.
-api_router.include_router(clients_router, prefix="/clients", tags=["clients"], dependencies=_internal)
+api_router.include_router(
+    clients_router, prefix="/clients", tags=["clients"], dependencies=_internal
+)
 api_router.include_router(orders_router, prefix="/orders", tags=["orders"], dependencies=_internal)
 api_router.include_router(outbox_router, prefix="/outbox", tags=["outbox"], dependencies=_internal)
 api_router.include_router(

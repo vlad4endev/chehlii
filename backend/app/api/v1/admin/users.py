@@ -99,17 +99,14 @@ async def create_user(body: UserCreate, _: AdminOnly, session: Session) -> UserO
 
 
 @router.patch("/{user_id}", response_model=UserOut)
-async def update_user(
-    user_id: int, body: UserPatch, _: AdminOnly, session: Session
-) -> UserOut:
+async def update_user(user_id: int, body: UserPatch, _: AdminOnly, session: Session) -> UserOut:
     user = await session.get(AdminUser, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
 
     # Проверка: не оставить систему без активного Админа.
     demoting = user.role == AdminRole.ADMIN and (
-        (body.role is not None and body.role != AdminRole.ADMIN)
-        or (body.is_active is False)
+        (body.role is not None and body.role != AdminRole.ADMIN) or (body.is_active is False)
     )
     if demoting and user.is_active and await _active_admins(session) <= 1:
         raise HTTPException(
@@ -137,11 +134,7 @@ async def delete_user(user_id: int, admin: AdminOnly, session: Session) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_409_CONFLICT, "Нельзя удалить самого себя")
-    if (
-        user.role == AdminRole.ADMIN
-        and user.is_active
-        and await _active_admins(session) <= 1
-    ):
+    if user.role == AdminRole.ADMIN and user.is_active and await _active_admins(session) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "Нельзя удалить последнего Админа")
     await session.delete(user)
     await session.commit()

@@ -123,3 +123,73 @@ def test_missing_station_is_rejected():
 )
 def test_map_status(platform_status, expected):
     assert yd.map_status(platform_status) == expected
+
+
+class _FakeResponse:
+    """Минимальный ответ httpx: нужен только код и текст (см. yd._request)."""
+
+    def __init__(self, status_code: int, payload: dict | None = None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = "Access denied" if status_code >= 400 else ""
+
+    def json(self):
+        return self._payload
+
+
+def _fake_client(routes: dict[str, _FakeResponse], monkeypatch):
+    """Подменяет httpx.AsyncClient: путь запроса → заранее заданный ответ."""
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            for path, resp in routes.items():
+                if url.endswith(path):
+                    return resp
+            raise AssertionError(f"неожиданный запрос: {url}")
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+
+
+async def test_check_connection_survives_forbidden_warehouses(monkeypatch):
+    # Раздел складов открыт не всякому токену: 401 на нём не значит «нет связи».
+    _fake_client(
+        {
+            "/location/detect": _FakeResponse(200, {"variants": [{"geo_id": 213}]}),
+            "/warehouses/list": _FakeResponse(401),
+        },
+        monkeypatch,
+    )
+    ok, detail = await yd.check_connection(CFG)
+    assert ok is True
+    assert "ID склада возьмите в ЛК" in detail
+
+
+async def test_check_connection_reports_bad_token(monkeypatch):
+    _fake_client({"/location/detect": _FakeResponse(401)}, monkeypatch)
+    ok, detail = await yd.check_connection(CFG)
+    assert ok is False
+    assert "тестовый токен из документации" in detail  # подсказка про тестовый режим
+
+
+async def test_check_connection_lists_warehouses(monkeypatch):
+    _fake_client(
+        {
+            "/location/detect": _FakeResponse(200, {"variants": [{"geo_id": 213}]}),
+            "/warehouses/list": _FakeResponse(
+                200, {"warehouses": [{"station_id": "st-1", "name": "Склад МСК"}]}
+            ),
+        },
+        monkeypatch,
+    )
+    ok, detail = await yd.check_connection(CFG)
+    assert ok is True
+    assert "Склад МСК [st-1]" in detail

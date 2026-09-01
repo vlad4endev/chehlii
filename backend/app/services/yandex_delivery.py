@@ -381,16 +381,31 @@ async def warehouses(cfg: dict) -> list[dict]:
 
 
 async def check_connection(cfg: dict) -> tuple[bool, str]:
-    """Проба связи без побочных эффектов: список складов (только чтение).
+    """Проба связи без побочных эффектов.
 
-    Заодно показывает `station_id` складов — его нужно вписать в настройки, а в ЛК
-    он на глаза не попадается.
+    Токен проверяем самым базовым методом (`location/detect`): он нужен любой
+    интеграции. `warehouses/list` для этого не годится — раздел управления
+    складами открыт не всякому токену и отвечает 401 даже на рабочих кредах.
+    Склады показываем сверх того, если доступ есть: их `station_id` нужен в
+    настройках, а в ЛК он на глаза не попадается.
     """
     mode = "тест" if cfg["is_test"] else "продакшен"
     try:
-        found = await warehouses(cfg)
+        await detect_geo_id(cfg, "Москва")
     except YandexDeliveryError as e:
-        return False, f"токен отклонён ({mode}): {str(e)[:180]}"
+        detail = str(e)[:160]
+        if cfg["is_test"] and "401" in detail:
+            detail += (
+                ". В тестовом режиме нужен тестовый токен из документации — "
+                "токен из ЛК действует только на продакшене"
+            )
+        return False, f"токен отклонён ({mode}): {detail}"
+
+    try:
+        found = await warehouses(cfg)
+    except YandexDeliveryError:
+        # Нет доступа к разделу складов — на саму доставку это не влияет.
+        return True, f"связь есть, токен принят ({mode}). ID склада возьмите в ЛК Доставки"
     if not found:
         return True, f"токен принят ({mode}), но складов нет — создайте склад в ЛК Доставки"
     listed = ", ".join(f"{w['name'] or '—'} [{w['station_id']}]" for w in found[:5])

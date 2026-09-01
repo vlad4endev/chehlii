@@ -38,9 +38,33 @@ _TERMINAL = {S.DELIVERED, S.CANCELLED, S.REVIEW_RECEIVED}
 
 # Этапы воронки: статус → (ключ этапа, порядок). Порядок задаёт вывод.
 _STAGES: list[tuple[str, str, set[OrderStatus]]] = [
-    ("new", "Оформление", {S.CASE_TYPE_SELECTED, S.MODEL_SELECTED, S.CASE_CONFIRMED, S.MATERIALS_SUBMITTED}),
-    ("pay", "Оплата", {S.PREPAYMENT_ISSUED, S.PREPAYMENT_PAID, S.POSTPAYMENT_ISSUED, S.POSTPAYMENT_PAID, S.DELIVERY_PAYMENT}),
-    ("design", "Дизайн", {S.HANDED_TO_DESIGN, S.DESIGN_IN_PROGRESS, S.MOCKUP_SENT, S.MOCKUP_APPROVAL, S.MOCKUP_REVISION}),
+    (
+        "new",
+        "Оформление",
+        {S.CASE_TYPE_SELECTED, S.MODEL_SELECTED, S.CASE_CONFIRMED, S.MATERIALS_SUBMITTED},
+    ),
+    (
+        "pay",
+        "Оплата",
+        {
+            S.PREPAYMENT_ISSUED,
+            S.PREPAYMENT_PAID,
+            S.POSTPAYMENT_ISSUED,
+            S.POSTPAYMENT_PAID,
+            S.DELIVERY_PAYMENT,
+        },
+    ),
+    (
+        "design",
+        "Дизайн",
+        {
+            S.HANDED_TO_DESIGN,
+            S.DESIGN_IN_PROGRESS,
+            S.MOCKUP_SENT,
+            S.MOCKUP_APPROVAL,
+            S.MOCKUP_REVISION,
+        },
+    ),
     ("ship", "Доставка", {S.DELIVERY_SERVICE_SELECTION, S.DELIVERY_ADDRESS_SELECTION, S.SHIPPED}),
     ("done", "Завершён", {S.DELIVERED, S.REVIEW_OFFERED, S.REVIEW_RECEIVED}),
     ("cancel", "Отменён", {S.CANCELLED}),
@@ -117,7 +141,9 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         revenue_paid = sum(order_value(o) for o in orders if o.payment_status == PaymentStatus.PAID)
         pipeline_value = sum(order_value(o) for o in active_orders)
         billable = [o for o in orders if o.status != S.CANCELLED]
-        avg_check = round(sum(order_value(o) for o in billable) / len(billable), 2) if billable else 0.0
+        avg_check = (
+            round(sum(order_value(o) for o in billable) / len(billable), 2) if billable else 0.0
+        )
 
     # Этапы воронки (сгруппировано, в порядке пути заказа).
     stages = []
@@ -137,9 +163,24 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         return sum(1 for o in orders if o.status in statuses)
 
     attention_raw = [
-        ("pay", "Ждут оплаты", _count({S.PREPAYMENT_ISSUED, S.POSTPAYMENT_ISSUED}), "/orders?status=prepayment_issued"),
-        ("design", "Передать в дизайн", _count({S.PREPAYMENT_PAID}), "/orders?status=prepayment_paid"),
-        ("mockup", "Ждут макет/ответ", _count({S.HANDED_TO_DESIGN, S.DESIGN_IN_PROGRESS, S.MOCKUP_SENT, S.MOCKUP_REVISION}), "/orders?status=design_in_progress"),
+        (
+            "pay",
+            "Ждут оплаты",
+            _count({S.PREPAYMENT_ISSUED, S.POSTPAYMENT_ISSUED}),
+            "/orders?status=prepayment_issued",
+        ),
+        (
+            "design",
+            "Передать в дизайн",
+            _count({S.PREPAYMENT_PAID}),
+            "/orders?status=prepayment_paid",
+        ),
+        (
+            "mockup",
+            "Ждут макет/ответ",
+            _count({S.HANDED_TO_DESIGN, S.DESIGN_IN_PROGRESS, S.MOCKUP_SENT, S.MOCKUP_REVISION}),
+            "/orders?status=design_in_progress",
+        ),
         ("review", "Отзывы на модерации", reviews_pending, "/reviews"),
     ]
     attention = [

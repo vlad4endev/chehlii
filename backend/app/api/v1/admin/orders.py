@@ -24,10 +24,8 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations
+from app.services import integrations, pricing, stock, yandex_disk
 from app.services import order_state_machine as fsm
-from app.services import pricing, stock
-from app.services import yandex_disk
 
 router = APIRouter()
 
@@ -257,26 +255,42 @@ async def export_xlsx(
     ws = wb.active
     ws.title = "Заказы"
     ws.append(
-        ["ID", "Дата", "Канал", "Клиент", "Телефон", "Тип", "Модель", "Статус",
-         "Себес", "Маржа", "Скидка %", "Доставка", "Итог", "Оплата"]
+        [
+            "ID",
+            "Дата",
+            "Канал",
+            "Клиент",
+            "Телефон",
+            "Тип",
+            "Модель",
+            "Статус",
+            "Себес",
+            "Маржа",
+            "Скидка %",
+            "Доставка",
+            "Итог",
+            "Оплата",
+        ]
     )
     for o, c, ct in rows.all():
-        ws.append([
-            o.id,
-            o.created_at.strftime("%d.%m.%Y %H:%M") if o.created_at else "",
-            c.channel,
-            c.nickname or "",
-            c.phone or "",
-            ct.name if ct else "",
-            o.model_name or "",
-            STATUS_LABELS.get(o.status, o.status),
-            float(o.cost) if o.cost is not None else "",
-            float(o.margin) if o.margin is not None else "",
-            float(o.total_discount) if o.total_discount is not None else "",
-            float(o.delivery_cost) if o.delivery_cost is not None else "",
-            order_value(o),
-            o.payment_status or "",
-        ])
+        ws.append(
+            [
+                o.id,
+                o.created_at.strftime("%d.%m.%Y %H:%M") if o.created_at else "",
+                c.channel,
+                c.nickname or "",
+                c.phone or "",
+                ct.name if ct else "",
+                o.model_name or "",
+                STATUS_LABELS.get(o.status, o.status),
+                float(o.cost) if o.cost is not None else "",
+                float(o.margin) if o.margin is not None else "",
+                float(o.total_discount) if o.total_discount is not None else "",
+                float(o.delivery_cost) if o.delivery_cost is not None else "",
+                order_value(o),
+                o.payment_status or "",
+            ]
+        )
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)

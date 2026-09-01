@@ -22,7 +22,5 @@ async def require_internal(
     # ponytail: fail-open, когда токен не задан (dev/тесты). Прод задаёт токен в
     # .env → проверка включается. Сравнение постоянного времени против таймингов.
     expected = settings.internal_api_token
-    if expected and not (
-        x_internal_token and secrets.compare_digest(x_internal_token, expected)
-    ):
+    if expected and not (x_internal_token and secrets.compare_digest(x_internal_token, expected)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Недействительный внутренний токен")
