@@ -1,7 +1,8 @@
-"""Настройки → Интеграции (только Админ): креды внешних сервисов.
+"""Настройки → Интеграции (только Админ): креды внешних сервисов и статус связи.
 
 Секретные значения наружу не отдаются — только признак «задано». При сохранении
-пустой секрет = «не менять».
+пустой секрет = «не менять». Бейдж «подключено» на карточке — это лишь «ключ задан»;
+живую связь с банком показывает кнопка проверки (см. check_yandex_pay).
 """
 
 from __future__ import annotations
@@ -13,8 +14,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
+from app.api.v1.payments import yandexpay_cfg
 from app.core.database import get_session
-from app.services import integrations
+from app.services import integrations, yandex_pay
 
 router = APIRouter()
 
@@ -39,6 +41,11 @@ class GroupOut(BaseModel):
 
 class IntegrationsPatch(BaseModel):
     values: dict[str, str]
+
+
+class ConnectionOut(BaseModel):
+    ok: bool
+    detail: str
 
 
 @router.get("", response_model=list[GroupOut])
@@ -72,3 +79,10 @@ async def save_integrations(
 ) -> list[GroupOut]:
     await integrations.set_many(session, body.values)
     return await get_integrations(admin, session)
+
+
+@router.post("/yandex-pay/check", response_model=ConnectionOut)
+async def check_yandex_pay(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи с Яндекс Пэй: проба по сохранённым кредам, заказов не создаёт."""
+    ok, detail = await yandex_pay.check_connection(await yandexpay_cfg(session))
+    return ConnectionOut(ok=ok, detail=detail)

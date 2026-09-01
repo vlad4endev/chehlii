@@ -3,7 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, apiGet, apiSend, apiUpload, mediaUrl } from '../api'
 import { Icon } from '../icons'
 import {
+  type ConnectionStatus,
   type IntegrationGroup,
+  checkYandexPay,
   fetchIntegrations,
   saveIntegrations,
 } from '../integrationsApi'
@@ -14,6 +16,12 @@ const GROUP_ICON: Record<string, string> = {
   cdek: 'broadcast',
   ozon: 'broadcast',
   payment: 'ruble',
+  yandex_pay: 'ruble',
+}
+
+// Шлюзы, у которых есть проба живой связи (см. admin/integrations.py).
+const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
+  yandex_pay: checkYandexPay,
 }
 
 type SettingsTab = 'integrations' | 'bots' | 'miniapp'
@@ -224,6 +232,7 @@ function IntegrationsPanel() {
               key={g.id}
               group={g}
               icon={GROUP_ICON[g.id] ?? 'plug'}
+              check={GROUP_CHECK[g.id]}
               edits={edits}
               onEdit={(k, v) => setEdits((p) => ({ ...p, [k]: v }))}
               onSave={() => saveGroup(g)}
@@ -240,6 +249,7 @@ function IntegrationsPanel() {
 function GroupCard({
   group,
   icon,
+  check,
   edits,
   onEdit,
   onSave,
@@ -248,12 +258,29 @@ function GroupCard({
 }: {
   group: IntegrationGroup
   icon: string
+  check?: () => Promise<ConnectionStatus>
   edits: Record<string, string>
   onEdit: (key: string, value: string) => void
   onSave: () => void
   saving: boolean
   saved: boolean
 }) {
+  const [checking, setChecking] = useState(false)
+  const [status, setStatus] = useState<ConnectionStatus | null>(null)
+
+  async function runCheck() {
+    if (!check) return
+    setChecking(true)
+    setStatus(null)
+    try {
+      setStatus(await check())
+    } catch (e) {
+      setStatus({ ok: false, detail: e instanceof ApiError ? e.message : 'Проверка не удалась' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
   const dirty = useMemo(
     () => group.fields.some((f) => f.key in edits),
     [group.fields, edits],
@@ -301,7 +328,20 @@ function GroupCard({
       </div>
 
       <div className="intcard__foot">
+        {status && (
+          <span
+            className={`badge ${status.ok ? 'badge--green' : 'badge--red'}`}
+            title={status.detail}
+          >
+            {status.ok ? 'связь есть' : 'нет связи'} · {status.detail}
+          </span>
+        )}
         {saved && <span className="badge badge--green">Сохранено</span>}
+        {check && (
+          <button className="btn btn--sm" onClick={runCheck} disabled={checking}>
+            {checking ? 'Проверяем…' : 'Проверить связь'}
+          </button>
+        )}
         <button className="btn btn--primary btn--sm" onClick={onSave} disabled={saving || !dirty}>
           {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>

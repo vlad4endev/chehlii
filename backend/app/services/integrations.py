@@ -83,10 +83,17 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (
-            "Приём предоплаты и постоплаты. В ЛК Robokassa укажите ResultURL, Success и "
+            "Приём предоплаты и постоплаты. Поле «Платёжный шлюз» выбирает, по какому "
+            "провайдеру бот выдаёт ссылку. В ЛК Robokassa укажите ResultURL, Success и "
             "Fail (см. подсказку под полями)."
         ),
         "fields": [
+            {
+                "key": "payment.provider",
+                "label": "Платёжный шлюз (robokassa / yandex_pay)",
+                "secret": False,
+                "placeholder": "robokassa",
+            },
             {
                 "key": "payment.robokassa_login",
                 "label": "MerchantLogin (идентификатор магазина)",
@@ -116,6 +123,44 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "label": "Размер предоплаты, %",
                 "secret": False,
                 "placeholder": "50",
+            },
+        ],
+    },
+    {
+        "id": "yandex_pay",
+        "title": "Оплата (Яндекс Пэй)",
+        "hint": (
+            "Альтернативный шлюз: ссылка на форму Яндекс Пэй. API-ключ выпускается в ЛК "
+            "pay.yandex.ru — если он выдан (вид «мерчант-без-дефисов.секрет»), вписывайте "
+            "целиком. В песочнице ключ можно не выпускать: подойдёт сам Merchant ID. "
+            "В ЛК укажите Callback URL = {публичный адрес}/api/v1/payments/yandex-pay/webhook. "
+            "Чтобы включить шлюз, поставьте «Платёжный шлюз» = yandex_pay. Кнопка "
+            "«Проверить связь» опрашивает Пэй сохранёнными кредами и заказов не создаёт."
+        ),
+        "fields": [
+            {
+                "key": "payment.yandexpay_api_key",
+                "label": "API-ключ (Authorization: Api-Key)",
+                "secret": True,
+                "placeholder": "",
+            },
+            {
+                "key": "payment.yandexpay_merchant_id",
+                "label": "Merchant ID",
+                "secret": False,
+                "placeholder": "af0b0c8f-de95-4246-9f3c-36c16464ffeb",
+            },
+            {
+                "key": "payment.yandexpay_test",
+                "label": "Песочница (true/false)",
+                "secret": False,
+                "placeholder": "true",
+            },
+            {
+                "key": "payment.yandexpay_public_base_url",
+                "label": "Публичный адрес backend (для страниц после оплаты)",
+                "secret": False,
+                "placeholder": "https://casetop.example.ru",
             },
         ],
     },

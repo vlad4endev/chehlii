@@ -20,3 +20,12 @@ export const fetchIntegrations = () => apiGet<IntegrationGroup[]>('/admin/integr
 
 export const saveIntegrations = (values: Record<string, string>) =>
   apiSend<IntegrationGroup[]>('PATCH', '/admin/integrations', { values })
+
+/** Статус живой связи со шлюзом (проба по сохранённым кредам, заказов не создаёт). */
+export interface ConnectionStatus {
+  ok: boolean
+  detail: string
+}
+
+export const checkYandexPay = () =>
+  apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-pay/check')
