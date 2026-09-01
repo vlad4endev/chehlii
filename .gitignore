@@ -36,3 +36,6 @@ scratchpad/
 
 # Alembic local
 backend/alembic/versions/*.pyc
+
+# Локальное состояние claude-flow (pid'ы, метрики, статистика) — у каждой машины своё
+/.claude-flow/
