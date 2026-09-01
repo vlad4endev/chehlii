@@ -5,6 +5,7 @@ import { Icon } from '../icons'
 import {
   type ConnectionStatus,
   type IntegrationGroup,
+  checkYandexDelivery,
   checkYandexPay,
   fetchIntegrations,
   saveIntegrations,
@@ -13,6 +14,7 @@ import { BotTexts } from './BotTexts'
 
 const GROUP_ICON: Record<string, string> = {
   yandex_disk: 'box',
+  yandex_delivery: 'orders',
   cdek: 'broadcast',
   ozon: 'broadcast',
   payment: 'ruble',
@@ -22,6 +24,7 @@ const GROUP_ICON: Record<string, string> = {
 // Шлюзы, у которых есть проба живой связи (см. admin/integrations.py).
 const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
   yandex_pay: checkYandexPay,
+  yandex_delivery: checkYandexDelivery,
 }
 
 type SettingsTab = 'integrations' | 'bots' | 'miniapp'

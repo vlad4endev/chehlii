@@ -80,6 +80,78 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "yandex_delivery",
+        "title": "Яндекс Доставка",
+        "hint": (
+            "Служба доставки: ПВЗ и курьер до двери. Токен — в личном кабинете "
+            "dostavka.yandex.ru → «Интеграция». Ключ Геокодера нужен только для доставки "
+            "до двери (координаты адреса); для ПВЗ он не требуется. Кнопка «Проверить "
+            "связь» показывает ID складов — его и нужно вписать в поле склада отправителя."
+        ),
+        "fields": [
+            {
+                "key": "yandex.oauth_token",
+                "label": "OAuth-токен (Bearer)",
+                "secret": True,
+                "placeholder": "y0_AgAA...",
+            },
+            {
+                "key": "yandex.test",
+                "label": "Тестовый режим (true/false)",
+                "secret": False,
+                "placeholder": "true",
+            },
+            {
+                "key": "yandex.merchant_id",
+                "label": "ID магазина (merchant_id)",
+                "secret": False,
+                "placeholder": "290587090cfc4943856851c8c3b2eebf",
+            },
+            {
+                "key": "yandex.platform_station_id",
+                "label": "ID склада отправителя (platform_id)",
+                "secret": False,
+                "placeholder": "e1139f6d-e34f-47a9-a55f-31f032a861a6",
+            },
+            {
+                "key": "yandex.last_mile_policy",
+                "label": "Последняя миля (time_interval / self_pickup)",
+                "secret": False,
+                "placeholder": "time_interval",
+            },
+            {
+                "key": "yandex.payment_method",
+                "label": "Оплата (already_paid / card_on_receipt / postpay)",
+                "secret": False,
+                "placeholder": "already_paid",
+            },
+            {
+                "key": "yandex.weight",
+                "label": "Вес посылки, г",
+                "secret": False,
+                "placeholder": "300",
+            },
+            {
+                "key": "yandex.pickup_delay_hours",
+                "label": "Забор со склада через, ч",
+                "secret": False,
+                "placeholder": "24 (интервал должен совпадать с отгрузками в ЛК)",
+            },
+            {
+                "key": "yandex.nds",
+                "label": "Ставка НДС для позиций, %",
+                "secret": False,
+                "placeholder": "0 (без НДС)",
+            },
+            {
+                "key": "yandex.geocoder_apikey",
+                "label": "API-ключ Геокодера (только для курьера до двери)",
+                "secret": True,
+                "placeholder": "",
+            },
+        ],
+    },
+    {
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (

@@ -14,9 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
+from app.api.v1.delivery import yandex_cfg
 from app.api.v1.payments import yandexpay_cfg
 from app.core.database import get_session
-from app.services import integrations, yandex_pay
+from app.services import integrations, yandex_delivery, yandex_pay
 
 router = APIRouter()
 
@@ -85,4 +86,11 @@ async def save_integrations(
 async def check_yandex_pay(_: AdminOnly, session: Session) -> ConnectionOut:
     """Статус связи с Яндекс Пэй: проба по сохранённым кредам, заказов не создаёт."""
     ok, detail = await yandex_pay.check_connection(await yandexpay_cfg(session))
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+@router.post("/yandex-delivery/check", response_model=ConnectionOut)
+async def check_yandex_delivery(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи с Яндекс Доставкой: список складов (чтение) + их station_id."""
+    ok, detail = await yandex_delivery.check_connection(await yandex_cfg(session))
     return ConnectionOut(ok=ok, detail=detail)

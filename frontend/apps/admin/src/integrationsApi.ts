@@ -29,3 +29,6 @@ export interface ConnectionStatus {
 
 export const checkYandexPay = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-pay/check')
+
+export const checkYandexDelivery = () =>
+  apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-delivery/check')
