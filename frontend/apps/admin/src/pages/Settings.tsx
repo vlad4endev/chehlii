@@ -5,6 +5,7 @@ import { Icon } from '../icons'
 import {
   type ConnectionStatus,
   type IntegrationGroup,
+  checkCdek,
   checkYandexDelivery,
   checkYandexPay,
   fetchIntegrations,
@@ -25,6 +26,7 @@ const GROUP_ICON: Record<string, string> = {
 const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
   yandex_pay: checkYandexPay,
   yandex_delivery: checkYandexDelivery,
+  cdek: checkCdek,
 }
 
 type SettingsTab = 'integrations' | 'bots' | 'miniapp'

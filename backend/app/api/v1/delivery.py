@@ -1,9 +1,9 @@
 """Доставка: СДЭК и Яндекс Доставка.
 
-СДЭК: расчёт стоимости, создание заявки, вебхук статуса ORDER_STATUS.
-Яндекс: ПВЗ, варианты доставки (offers/create) и бронь (offers/confirm). У служб
-разный набор входных данных, поэтому у Яндекса свои маршруты `/yandex/*`, а не
-общий эндпоинт с опциональными полями.
+СДЭК: ПВЗ, расчёт, регистрация отправки (`POST /v2/orders`), ярлык, вебхук
+ORDER_STATUS. Яндекс: ПВЗ, варианты (offers/create) и бронь (offers/confirm).
+У служб разный набор входных данных, поэтому маршруты раздельные (`/cdek/*`,
+`/yandex/*`), а не общий эндпоинт с опциональными полями.
 
 Креды и параметры отправителя — из «Настройки → Интеграции».
 """
@@ -28,16 +28,6 @@ from app.services import cdek, integrations, pricing, yandex_delivery
 router = APIRouter()
 
 Session = Annotated[AsyncSession, Depends(get_session)]
-
-# Коды статусов СДЭК → статус заказа.
-_DELIVERED = {"DELIVERED"}
-_SHIPPED = {
-    "RECEIVED_AT_SHIPMENT_WAREHOUSE",
-    "ACCEPTED_AT_PICK_UP_POINT",
-    "IN_TRANSIT",
-    "ACCEPTED_AT_TRANSIT_WAREHOUSE",
-    "RECEIVED_AT_TRANSIT_WAREHOUSE",
-}
 
 # Значения настроек-флагов, которые считаем «да».
 _TRUE = ("1", "true", "yes", "да")
@@ -89,7 +79,7 @@ def _int(value: str | None, default: int) -> int:
         return default
 
 
-async def _cfg(session: AsyncSession) -> dict:
+async def cdek_cfg(session: AsyncSession) -> dict:
     account = await integrations.get(session, "cdek.account")
     secret = await integrations.get(session, "cdek.secret")
     if not (account and secret):
@@ -100,14 +90,19 @@ async def _cfg(session: AsyncSession) -> dict:
         "secret": secret,
         "is_test": test in _TRUE,
         "from_postal": await integrations.get(session, "cdek.from_postal", "101000"),
-        "tariff_code": int(await integrations.get(session, "cdek.tariff_code", "137") or 137),
-        "weight": int(await integrations.get(session, "cdek.weight", "300") or 300),
+        "from_address": await integrations.get(session, "cdek.from_address"),
+        "shipment_point": await integrations.get(session, "cdek.shipment_point"),
+        "tariff_code": _int(await integrations.get(session, "cdek.tariff_code", "137"), 137),
+        "tariff_pickup": _int(await integrations.get(session, "cdek.tariff_pickup", "136"), 136),
+        "weight": _int(await integrations.get(session, "cdek.weight", "300"), 300),
         "sender_name": await integrations.get(session, "cdek.sender_name", "casetop"),
+        "sender_phone": await integrations.get(session, "cdek.sender_phone"),
     }
 
 
 class CalcIn(BaseModel):
-    to_postal: str
+    to_postal: str | None = None
+    pickup_point_id: str | None = None
     weight: int | None = None
 
 
@@ -120,55 +115,183 @@ class CalcOut(BaseModel):
 
 @router.post("/calc", response_model=CalcOut, dependencies=[Depends(require_internal)])
 async def calculate(body: CalcIn, session: Session) -> CalcOut:
-    cfg = await _cfg(session)
+    if not (body.to_postal or body.pickup_point_id):
+        raise HTTPException(400, "Укажите индекс (to_postal) или ПВЗ (pickup_point_id).")
+    cfg = await cdek_cfg(session)
     try:
         res = await cdek.calculate(
             cfg,
             to_postal=body.to_postal,
+            delivery_point=body.pickup_point_id,
             weight_g=body.weight or cfg["weight"],
-            tariff_code=cfg["tariff_code"],
         )
     except cdek.CdekError as e:
         raise HTTPException(400, f"СДЭК: {e}") from e
     return CalcOut(**res)
 
 
+class CdekPickupPointOut(BaseModel):
+    id: str
+    name: str | None
+    type: str | None = None
+    address: str | None
+    city: str | None = None
+    postal_code: str | None = None
+    work_time: str | None = None
+    latitude: float | None
+    longitude: float | None
+
+
+@router.get(
+    "/cdek/pickup-points",
+    response_model=list[CdekPickupPointOut],
+    dependencies=[Depends(require_internal)],
+)
+async def cdek_pickup_points(
+    session: Session,
+    location: Annotated[str | None, Query(description="Город или индекс")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> list[CdekPickupPointOut]:
+    """ПВЗ СДЭК для выдачи заказа. Без `location` — все доступные точки (медленно)."""
+    cfg = await cdek_cfg(session)
+    try:
+        points = await cdek.pickup_points(cfg, location=location, limit=limit)
+    except cdek.CdekError as e:
+        raise HTTPException(400, f"СДЭК: {e}") from e
+    return [CdekPickupPointOut(**p) for p in points if p.get("id")]
+
+
 class CreateIn(BaseModel):
-    to_postal: str
-    to_address: str
-    recipient_name: str
-    recipient_phone: str
+    # Либо ПВЗ, либо адрес до двери. Получателя по умолчанию берём из карточки клиента.
+    pickup_point_id: str | None = None
+    to_postal: str | None = None
+    to_address: str | None = None
+    recipient_name: str | None = None
+    recipient_phone: str | None = None
+    recipient_email: str | None = None
+
+
+async def _cdek_recipient(
+    session: AsyncSession, order: Order, body: CreateIn
+) -> tuple[str, str, str | None]:
+    client = await session.get(Client, order.client_id)
+    name = body.recipient_name or (client.nickname if client else None)
+    phone = body.recipient_phone or (client.phone if client else None)
+    if not phone:
+        raise HTTPException(400, "У клиента нет телефона — передайте recipient_phone.")
+    if not (body.pickup_point_id or body.to_address):
+        raise HTTPException(400, "Укажите ПВЗ (pickup_point_id) или адрес (to_address).")
+    return name or "Получатель", phone, body.recipient_email
 
 
 @router.post("/orders/{order_id}/create", dependencies=[Depends(require_internal)])
+@router.post("/cdek/orders/{order_id}/create", dependencies=[Depends(require_internal)])
 async def create_delivery(order_id: int, body: CreateIn, session: Session) -> dict:
-    """Создать заявку СДЭК для заказа. Сохраняет службу/адрес/стоимость/трек."""
+    """Зарегистрировать отправку СДЭК. Сохраняет службу/адрес/стоимость/трек."""
     order = await session.get(Order, order_id)
     if order is None:
         raise HTTPException(404, "Заказ не найден")
-    cfg = await _cfg(session)
+    cfg = await cdek_cfg(session)
+    name, phone, email = await _cdek_recipient(session, order, body)
+    item_price = float(
+        pricing.compute(
+            order.cost or 0, order.margin or 0, float(order.total_discount or 0)
+        ).price_with_discount
+    )
     try:
         calc = await cdek.calculate(
-            cfg, to_postal=body.to_postal, weight_g=cfg["weight"], tariff_code=cfg["tariff_code"]
+            cfg,
+            to_postal=body.to_postal,
+            delivery_point=body.pickup_point_id,
+            weight_g=cfg["weight"],
         )
         created = await cdek.create_order(
             cfg,
             order_id=order_id,
+            item_price_rub=item_price,
+            recipient_name=name,
+            recipient_phone=phone,
+            recipient_email=email,
+            delivery_point=body.pickup_point_id,
             to_postal=body.to_postal,
             to_address=body.to_address,
-            recipient_name=body.recipient_name,
-            recipient_phone=body.recipient_phone,
-            weight_g=cfg["weight"],
-            tariff_code=cfg["tariff_code"],
         )
     except cdek.CdekError as e:
         raise HTTPException(400, f"СДЭК: {e}") from e
     order.delivery_service = "cdek"
-    order.delivery_address = body.to_address
+    order.delivery_address = body.to_address or f"ПВЗ {body.pickup_point_id}"
     order.delivery_cost = calc["delivery_sum"]
-    order.tracking_code = created["uuid"]
+    order.tracking_code = created.get("cdek_number") or created["uuid"]
     await session.commit()
-    return {"uuid": created["uuid"], "delivery_cost": calc["delivery_sum"]}
+    return {
+        "uuid": created["uuid"],
+        "cdek_number": created.get("cdek_number"),
+        "delivery_cost": calc["delivery_sum"],
+        "tariff_code": calc["tariff_code"],
+    }
+
+
+async def _cdek_order(session: AsyncSession, order_id: int) -> Order:
+    """Заказ с созданной доставкой СДЭК. tracking_code = uuid или номер накладной."""
+    order = await session.get(Order, order_id)
+    if order is None or not order.tracking_code or order.delivery_service != "cdek":
+        raise HTTPException(404, "Доставка СДЭК для заказа не создана")
+    return order
+
+
+@router.get("/cdek/orders/{order_id}/status", dependencies=[Depends(require_internal)])
+async def cdek_status(order_id: int, session: Session) -> dict:
+    """Статус заявки в СДЭК; двигает заказ в «Отправлен»/«Доставлен», как вебхук."""
+    order = await _cdek_order(session, order_id)
+    cfg = await cdek_cfg(session)
+    try:
+        raw = await cdek.get_order(cfg, order.tracking_code or f"casetop-{order_id}")
+    except cdek.CdekError as e:
+        raise HTTPException(400, f"СДЭК: {e}") from e
+    info = cdek.order_info(raw)
+    if info.get("cdek_number"):
+        order.tracking_code = str(info["cdek_number"])
+    mapped = cdek.map_status(info.get("status"))
+    changed = False
+    if mapped:
+        new = OrderStatus.DELIVERED if mapped == "delivered" else OrderStatus.SHIPPED
+        trigger = f"СДЭК: {info.get('status')}"
+        changed = await _advance(session, order, new, trigger)
+        info["order_status_changed"] = changed
+    if not changed:
+        await session.commit()
+    return info
+
+
+@router.post("/cdek/orders/{order_id}/cancel", dependencies=[Depends(require_internal)])
+async def cdek_cancel(order_id: int, session: Session) -> dict:
+    """Отменить заявку в СДЭК. Наш статус заказа не меняем — это решение оператора."""
+    order = await _cdek_order(session, order_id)
+    cfg = await cdek_cfg(session)
+    try:
+        return await cdek.delete_order(cfg, order.tracking_code or "")
+    except cdek.CdekError as e:
+        raise HTTPException(400, f"СДЭК: {e}") from e
+
+
+@router.get("/cdek/orders/{order_id}/label", dependencies=[Depends(require_internal)])
+async def cdek_label(
+    order_id: int,
+    session: Session,
+    fmt: Annotated[Literal["A4", "A5", "A6"], Query(description="Формат ярлыка")] = "A4",
+) -> Response:
+    """PDF штрихкода места — без него посылку не примут на складе СДЭК."""
+    order = await _cdek_order(session, order_id)
+    cfg = await cdek_cfg(session)
+    try:
+        pdf = await cdek.generate_label(cfg, order.tracking_code or "", fmt=fmt)
+    except cdek.CdekError as e:
+        raise HTTPException(400, f"СДЭК: {e}") from e
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="cdek-{order_id}.pdf"'},
+    )
 
 
 # ── Яндекс Доставка ────────────────────────────────────
@@ -436,10 +559,11 @@ async def cdek_webhook(request: Request, session: Session) -> dict:
     if order is None:
         return {"ok": True}
 
+    mapped = cdek.map_status(code)
     new = None
-    if code in _DELIVERED:
+    if mapped == "delivered":
         new = OrderStatus.DELIVERED
-    elif code in _SHIPPED:
+    elif mapped == "shipped":
         new = OrderStatus.SHIPPED
     if new is None:
         return {"ok": True}

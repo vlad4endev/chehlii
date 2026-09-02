@@ -14,10 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
-from app.api.v1.delivery import yandex_cfg
+from app.api.v1.delivery import cdek_cfg, yandex_cfg
 from app.api.v1.payments import yandexpay_cfg
 from app.core.database import get_session
-from app.services import integrations, yandex_delivery, yandex_pay
+from app.services import cdek, integrations, yandex_delivery, yandex_pay
 
 router = APIRouter()
 
@@ -93,4 +93,11 @@ async def check_yandex_pay(_: AdminOnly, session: Session) -> ConnectionOut:
 async def check_yandex_delivery(_: AdminOnly, session: Session) -> ConnectionOut:
     """Статус связи с Яндекс Доставкой: список складов (чтение) + их station_id."""
     ok, detail = await yandex_delivery.check_connection(await yandex_cfg(session))
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+@router.post("/cdek/check", response_model=ConnectionOut)
+async def check_cdek(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи со СДЭК: OAuth + справочник городов, заказов не создаёт."""
+    ok, detail = await cdek.check_connection(await cdek_cfg(session))
     return ConnectionOut(ok=ok, detail=detail)
