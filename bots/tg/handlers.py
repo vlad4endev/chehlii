@@ -14,6 +14,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from bots.core import payments
 from bots.core.backend import backend
 from bots.core.texts import texts
 from bots.tg.keyboards import (
@@ -26,6 +27,7 @@ from bots.tg.keyboards import (
     contact_kb,
     main_menu_kb,
     materials_confirm_kb,
+    pay_kb,
 )
 from bots.tg.states import OrderFlow
 
@@ -189,11 +191,12 @@ async def on_mockup_response(cb: CallbackQuery) -> None:
         await cb.answer("Не получилось сохранить, попробуйте ещё раз", show_alert=True)
         return
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer(
-        "Спасибо! Макет согласован — переходим к оплате."
-        if approved
-        else "Принято! Дизайнер доработает макет и пришлёт заново."
-    )
+    if approved:
+        await cb.message.answer("Спасибо! Макет согласован — переходим к оплате.")
+        b = await payments.block(order_id, "postpayment")
+        await cb.message.answer(b.text, reply_markup=pay_kb(b.buttons) if b.buttons else None)
+    else:
+        await cb.message.answer("Принято! Дизайнер доработает макет и пришлёт заново.")
     await cb.answer()
 
 
@@ -232,13 +235,14 @@ async def on_help(msg: Message) -> None:
     await msg.answer("Скоро поможем подобрать лучший вариант ✨ (в разработке).")
 
 
-async def _pay_line(order_id: int) -> str:
-    """Ссылка на предоплату (Robokassa) для сообщения клиенту; фолбэк если не настроено."""
-    try:
-        p = await backend.payment_link(order_id, "prepayment")
-        return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
-    except Exception:
-        return " Ссылка на оплату придёт следующим сообщением."
+async def _send_pay(message: Message, order_id: int, code: str) -> None:
+    """«Заказ принят» + отдельная карточка оплаты с кнопкой.
+
+    Двумя сообщениями: reply-меню и inline-кнопку Telegram в одном не отдаёт.
+    """
+    await message.answer(texts.get(code), reply_markup=main_menu_kb())
+    b = await payments.block(order_id)
+    await message.answer(b.text, reply_markup=pay_kb(b.buttons) if b.buttons else None)
 
 
 # ── Ввод имени / материалов ────────────────────────────
@@ -248,10 +252,7 @@ async def on_name(msg: Message, state: FSMContext) -> None:
     order_id = data["order_id"]
     await backend.update_order(order_id, custom_text=msg.text)
     await state.clear()
-    await msg.answer(
-        texts.get("msg_007а") + await _pay_line(order_id),
-        reply_markup=main_menu_kb(),
-    )
+    await _send_pay(msg, order_id, "msg_007а")
     u = msg.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
     await backend.mark_journey(client["id"], "msg_007а")
@@ -313,10 +314,7 @@ async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
         materials_files=links,
     )
     await state.clear()
-    await cb.message.answer(
-        texts.get("msg_007б") + await _pay_line(order_id),
-        reply_markup=main_menu_kb(),
-    )
+    await _send_pay(cb.message, order_id, "msg_007б")
     u = cb.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
     await backend.mark_journey(client["id"], "msg_007б")

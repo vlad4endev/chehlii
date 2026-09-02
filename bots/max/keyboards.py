@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from maxapi.types import (
     CallbackButton,
+    LinkButton,
     OpenAppButton,
     RequestContactButton,
 )
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
+
+from bots.core.payments import PayButton
 
 # Подписи кнопок меню.
 BTN_CATALOG = "🛍 Каталог чехлов"
@@ -67,6 +72,15 @@ def materials_confirm_kb():
         CallbackButton(text="✅ Подтвердить", payload=CB_MAT_CONFIRM),
         CallbackButton(text="🔄 Прислать заново", payload=CB_MAT_REDO),
     )
+    return b.as_markup()
+
+
+def pay_kb(buttons: Sequence[PayButton]):
+    """Кнопки оплаты — по одной на шлюз. Ссылка в кнопке, а не в тексте (иначе
+    мессенджер рисует превью страницы шлюза)."""
+    b = InlineKeyboardBuilder()
+    for btn in buttons:
+        b.row(LinkButton(text=btn.label, url=btn.url))
     return b.as_markup()
 
 

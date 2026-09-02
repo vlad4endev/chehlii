@@ -1,8 +1,8 @@
 """Оплата: генерация ссылки (для бота), вебхуки шлюзов, страницы Success/Fail.
 
-Шлюз выбирается настройкой `payment.provider` (robokassa | yandex_pay) — бот всегда
-зовёт один и тот же POST /payments/link. Модель платежей двухступенчатая: предоплата
-(% от цены со скидкой) и постоплата (остаток).
+POST /payments/link отдаёт по ссылке на каждый настроенный шлюз (robokassa, yandex_pay) —
+клиент выбирает способ кнопкой в боте; `payment.provider` задаёт лишь порядок. Модель
+платежей двухступенчатая: предоплата (% от цены со скидкой) и постоплата (остаток).
 
 Подтверждение оплаты: Robokassa — вебхук с подписью (Пароль №2); Яндекс Пэй — вебхук
 без проверки подписи, статус перечитывается по API (см. services/yandex_pay.py).
@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.internal import require_internal
@@ -46,10 +47,23 @@ class LinkIn(BaseModel):
     kind: PaymentKind = PaymentKind.PREPAYMENT
 
 
-class LinkOut(BaseModel):
+class PayOption(BaseModel):
+    """Один способ оплаты = одна кнопка в боте и своя строка в payments."""
+
+    provider: str
     url: str
-    amount: float
     inv_id: int
+
+
+class LinkOut(BaseModel):
+    amount: float
+    # Доля предоплаты — боту, чтобы подписать блок («Предоплата 50%») без похода в настройки.
+    percent: float = 0
+    # Все настроенные шлюзы; первым — выбранный в `payment.provider`.
+    options: list[PayOption]
+    # Первая ссылка — для старых ботов, которые ещё читают `url`, а не `options`.
+    url: str = ""
+    inv_id: int = 0
 
 
 def _discounted(order: Order) -> float:
@@ -100,6 +114,10 @@ async def yandexpay_cfg(session: AsyncSession) -> dict:
     }
 
 
+# Все поддерживаемые шлюзы: клиент видит кнопку на каждый настроенный.
+PROVIDERS = ("robokassa", "yandex_pay")
+
+
 async def _provider(session: AsyncSession) -> str:
     return (await integrations.get(session, "payment.provider", "robokassa") or "robokassa").strip()
 
@@ -138,34 +156,61 @@ async def _robokassa_link(
 
 @router.post("/link", response_model=LinkOut, dependencies=[Depends(require_internal)])
 async def create_link(body: LinkIn, session: Session) -> LinkOut:
-    """Создать ссылку оплаты для заказа (вызывает бот). Шлюз — из `payment.provider`."""
+    """Ссылки оплаты для заказа (вызывает бот) — по одной на каждый настроенный шлюз.
+
+    Клиент выбирает способ сам, поэтому создаём свою строку `payments` под каждый:
+    у Robokassa и Пэй свои идентификаторы платежа, общей строкой их не развести.
+    Ненастроенный (или не ответивший) шлюз просто выпадает из списка.
+    `payment.provider` больше не единственный шлюз, а лишь тот, что показываем первым.
+    """
     order = await session.get(Order, body.order_id)
     if order is None:
         raise HTTPException(404, "Заказ не найден")
-    provider = await _provider(session)
     percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
     amount = _amount(order, body.kind, percent)
     if amount <= 0:
         raise HTTPException(400, "Сумма оплаты равна нулю")
 
-    payment = Payment(
-        order_id=order.id,
-        kind=body.kind,
-        gateway=provider,
-        amount=amount,
-        status=PaymentStatus.PENDING,
-    )
-    session.add(payment)
-    await session.flush()
-
+    default = await _provider(session)
     description = f"casetop заказ #{order.id} ({_KIND_RU.get(body.kind, body.kind)})"
-    if provider == "yandex_pay":
-        url = await _yandexpay_link(session, payment, description)
-    else:
-        url = await _robokassa_link(session, payment, order, description)
-    payment.payment_url = url
+    options: list[PayOption] = []
+    errors: list[str] = []
+    for provider in sorted(PROVIDERS, key=lambda p: p != default):
+        payment = Payment(
+            order_id=order.id,
+            kind=body.kind,
+            gateway=provider,
+            amount=amount,
+            status=PaymentStatus.PENDING,
+        )
+        session.add(payment)
+        await session.flush()  # нужен payment.id: он же InvId у Robokassa и orderId у Пэй
+        try:
+            if provider == "yandex_pay":
+                url = await _yandexpay_link(session, payment, description)
+            else:
+                url = await _robokassa_link(session, payment, order, description)
+        except HTTPException as e:
+            # Шлюз не настроен или не ответил — строку не держим, чтобы в оплатах
+            # не копились «висяки» без ссылки.
+            await session.delete(payment)
+            errors.append(f"{provider}: {e.detail}")
+            continue
+        payment.payment_url = url
+        options.append(PayOption(provider=provider, url=url, inv_id=payment.id))
+
+    if not options:
+        await session.rollback()
+        raise HTTPException(400, " ".join(errors) or "Платёжные шлюзы не настроены")
     await session.commit()
-    return LinkOut(url=url, amount=amount, inv_id=payment.id)
+    first = options[0]
+    return LinkOut(
+        amount=amount,
+        percent=percent,
+        options=options,
+        url=first.url,
+        inv_id=first.inv_id,
+    )
 
 
 async def _params(request: Request) -> dict[str, str]:
@@ -264,6 +309,18 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
         return
     payment.status = PaymentStatus.PAID
     payment.paid_at = datetime.now(UTC)
+    # На заказ выставлено по счёту на каждый шлюз — оставшиеся закрываем, иначе в
+    # оплатах висят дубли на ту же сумму и клиент может заплатить дважды.
+    await session.execute(
+        update(Payment)
+        .where(
+            Payment.order_id == payment.order_id,
+            Payment.kind == payment.kind,
+            Payment.id != payment.id,
+            Payment.status == PaymentStatus.PENDING,
+        )
+        .values(status=PaymentStatus.CANCELLED)
+    )
     order = await session.get(Order, payment.order_id)
     if order is not None:
         order.payment_status = PaymentStatus.PAID

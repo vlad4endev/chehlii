@@ -38,7 +38,11 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
     {
         "id": "cdek",
         "title": "СДЭК",
-        "hint": "Служба доставки: расчёт стоимости, заявка, статус. Отправитель — ваш склад.",
+        "hint": (
+            "Служба доставки: расчёт, ПВЗ, заявка, статус, ярлык. Ключи — в ЛК СДЭК → "
+            "Интеграция (не логин кабинета). Для тарифа «склад-дверь» обязателен код "
+            "ПВЗ отгрузки. В тестовом режиме — ключи песочницы api.edu.cdek.ru."
+        ),
         "fields": [
             {
                 "key": "cdek.account",
@@ -54,16 +58,34 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "placeholder": "true",
             },
             {
+                "key": "cdek.shipment_point",
+                "label": "Код ПВЗ отгрузки (склад)",
+                "secret": False,
+                "placeholder": "MSK1",
+            },
+            {
                 "key": "cdek.from_postal",
-                "label": "Индекс отправителя (склад)",
+                "label": "Индекс отправителя (для расчёта, если ПВЗ не задан)",
                 "secret": False,
                 "placeholder": "101000",
             },
             {
+                "key": "cdek.from_address",
+                "label": "Адрес отправителя (только тарифы «от двери»)",
+                "secret": False,
+                "placeholder": "",
+            },
+            {
                 "key": "cdek.tariff_code",
-                "label": "Код тарифа",
+                "label": "Код тарифа до двери",
                 "secret": False,
                 "placeholder": "137 (склад-дверь)",
+            },
+            {
+                "key": "cdek.tariff_pickup",
+                "label": "Код тарифа до ПВЗ",
+                "secret": False,
+                "placeholder": "136 (склад-склад)",
             },
             {
                 "key": "cdek.weight",
@@ -76,6 +98,12 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "label": "Имя отправителя",
                 "secret": False,
                 "placeholder": "casetop",
+            },
+            {
+                "key": "cdek.sender_phone",
+                "label": "Телефон отправителя",
+                "secret": False,
+                "placeholder": "+79990000000",
             },
         ],
     },
@@ -156,14 +184,14 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (
-            "Приём предоплаты и постоплаты. Поле «Платёжный шлюз» выбирает, по какому "
-            "провайдеру бот выдаёт ссылку. В ЛК Robokassa укажите ResultURL, Success и "
-            "Fail (см. подсказку под полями)."
+            "Приём предоплаты и постоплаты. Бот показывает кнопку на каждый настроенный "
+            "шлюз, а поле «Платёжный шлюз» задаёт, какой из них идёт первым. В ЛК "
+            "Robokassa укажите ResultURL, Success и Fail (см. подсказку под полями)."
         ),
         "fields": [
             {
                 "key": "payment.provider",
-                "label": "Платёжный шлюз (robokassa / yandex_pay)",
+                "label": "Шлюз по умолчанию, первый в списке (robokassa / yandex_pay)",
                 "secret": False,
                 "placeholder": "robokassa",
             },
@@ -203,11 +231,11 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "yandex_pay",
         "title": "Оплата (Яндекс Пэй)",
         "hint": (
-            "Альтернативный шлюз: ссылка на форму Яндекс Пэй. API-ключ выпускается в ЛК "
+            "Второй шлюз: ссылка на форму Яндекс Пэй. API-ключ выпускается в ЛК "
             "pay.yandex.ru — если он выдан (вид «мерчант-без-дефисов.секрет»), вписывайте "
             "целиком. В песочнице ключ можно не выпускать: подойдёт сам Merchant ID. "
             "В ЛК укажите Callback URL = {публичный адрес}/api/v1/payments/yandex-pay/webhook. "
-            "Чтобы включить шлюз, поставьте «Платёжный шлюз» = yandex_pay. Кнопка "
+            "Заполненный ключ сам добавляет кнопку «Яндекс Пэй» в блок оплаты. Кнопка "
             "«Проверить связь» опрашивает Пэй сохранёнными кредами и заказов не создаёт."
         ),
         "fields": [

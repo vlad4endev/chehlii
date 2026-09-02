@@ -120,15 +120,34 @@ async def _outbox_loop(bot: Bot) -> None:
         await asyncio.sleep(5)
 
 
+async def _make_bot() -> Bot:
+    """Собрать Telegram-клиент. Прокси — best-effort: если он мёртв, идём напрямую.
+
+    На VPS в РФ api.telegram.org иногда недоступен, поэтому в TG_PROXY кладут
+    socks/http. Но мёртвый прокси раньше ронял процесс на getMe (таймаут 60с) и
+    docker restart: unless-stopped крутил это сотни раз — бот молчал. Прямой
+    доступ с этого же хоста при этом мог уже работать.
+    """
+    proxy = settings.tg_proxy
+    if not proxy:
+        return Bot(settings.tg_bot_token)
+    logging.info("Telegram: пробуем прокси")
+    bot = Bot(settings.tg_bot_token, session=AiohttpSession(proxy=proxy))
+    try:
+        await asyncio.wait_for(bot.get_me(), timeout=15)
+        logging.info("Telegram: прокси работает")
+        return bot
+    except Exception as e:  # noqa: BLE001
+        logging.warning("Прокси недоступен (%s), подключаемся к Telegram напрямую", e)
+        await bot.session.close()
+        return Bot(settings.tg_bot_token)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await texts.load()
 
-    # api.telegram.org заблокирован в РФ — при наличии TG_PROXY ходим через прокси.
-    session = AiohttpSession(proxy=settings.tg_proxy) if settings.tg_proxy else None
-    if settings.tg_proxy:
-        logging.info("Telegram: используется прокси")
-    bot = Bot(settings.tg_bot_token, session=session)
+    bot = await _make_bot()
     dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
     dp.include_router(router)
 

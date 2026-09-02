@@ -24,6 +24,7 @@ from maxapi.types import (
     MessageCreated,
 )
 
+from bots.core import payments
 from bots.core.backend import backend
 from bots.core.texts import texts
 from bots.max.keyboards import (
@@ -40,6 +41,7 @@ from bots.max.keyboards import (
     contact_kb,
     main_menu_kb,
     materials_confirm_kb,
+    pay_kb,
 )
 from bots.max.states import OrderFlow
 
@@ -88,13 +90,16 @@ async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     return links
 
 
-async def _pay_line(order_id: int) -> str:
-    """Ссылка на предоплату (Robokassa); фолбэк если оплата не настроена."""
-    try:
-        p = await backend.payment_link(order_id, "prepayment")
-        return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
-    except Exception:
-        return " Ссылка на оплату придёт следующим сообщением."
+async def _send_pay(bot, chat_id: int, order_id: int, code: str) -> None:
+    """«Заказ принят» + отдельная карточка оплаты с кнопкой (меню и кнопка оплаты —
+    разные вложения, в одно сообщение их не кладём)."""
+    await _send_menu(bot, chat_id, texts.get(code))
+    b = await payments.block(order_id)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=b.text,
+        attachments=[pay_kb(b.buttons)] if b.buttons else None,
+    )
 
 
 async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
@@ -308,11 +313,7 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
     order_id = data["order_id"]
     await backend.update_order(order_id, custom_text=event.message.body.text or "")
     await context.clear()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        texts.get("msg_007а") + await _pay_line(order_id),
-    )
+    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007а")
     s = event.message.sender
     client = await backend.upsert_client(CHANNEL, str(s.user_id), nickname=(s.username or s.full_name))
     await backend.mark_journey(client["id"], "msg_007а")
@@ -359,11 +360,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
         materials_files=links,
     )
     await context.clear()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        texts.get("msg_007б") + await _pay_line(order_id),
-    )
+    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007б")
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_007б")
@@ -395,13 +392,19 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
         await event.answer(notification="Не получилось, попробуйте ещё раз")
         return
     await event.answer(notification="Принято ✅")
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Спасибо! Макет согласован — переходим к оплате."
-        if approved
-        else "Принято! Дизайнер доработает макет и пришлёт заново.",
-    )
+    chat_id = event.message.recipient.chat_id
+    if approved:
+        await _send_menu(event.bot, chat_id, "Спасибо! Макет согласован — переходим к оплате.")
+        b = await payments.block(order_id, "postpayment")
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text=b.text,
+            attachments=[pay_kb(b.buttons)] if b.buttons else None,
+        )
+    else:
+        await _send_menu(
+            event.bot, chat_id, "Принято! Дизайнер доработает макет и пришлёт заново."
+        )
 
 
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -11,6 +13,7 @@ from aiogram.types import (
 )
 
 from bots.core.config import settings
+from bots.core.payments import PayButton
 
 # Тексты кнопок главного меню (по ним же ловим нажатия).
 BTN_CATALOG = "🛍 Каталог чехлов"
@@ -55,6 +58,15 @@ def confirm_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="↩️ Назад", callback_data="order:cancel"),
             ]
         ]
+    )
+
+
+def pay_kb(buttons: Sequence[PayButton]) -> InlineKeyboardMarkup:
+    """Кнопки оплаты — по одной на шлюз, каждая своей строкой. Ссылка живёт в кнопке,
+    а не в тексте: иначе Telegram подтягивает превью страницы шлюза и сообщение
+    выглядит мусорно."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=b.label, url=b.url)] for b in buttons]
     )
 
 
