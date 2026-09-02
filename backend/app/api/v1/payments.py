@@ -83,7 +83,8 @@ def _amount(order: Order, kind: PaymentKind, percent: float) -> float:
     return 0.0
 
 
-async def _robokassa_cfg(session: AsyncSession) -> dict:
+async def robokassa_cfg(session: AsyncSession) -> dict:
+    """Креды Robokassa из настроек. Публичная — админка использует её для проверки связи."""
     login = await integrations.get(session, "payment.robokassa_login")
     pass1 = await integrations.get(session, "payment.robokassa_pass1")
     pass2 = await integrations.get(session, "payment.robokassa_pass2")
@@ -142,7 +143,7 @@ async def _yandexpay_link(session: AsyncSession, payment: Payment, description: 
 async def _robokassa_link(
     session: AsyncSession, payment: Payment, order: Order, description: str
 ) -> str:
-    cfg = await _robokassa_cfg(session)
+    cfg = await robokassa_cfg(session)
     return robokassa.payment_url(
         login=cfg["login"],
         password1=cfg["pass1"],
@@ -230,7 +231,7 @@ async def _robokassa_result(request: Request, session: AsyncSession):
     if payment is None:
         return PlainTextResponse("bad invoice", status_code=400)
 
-    cfg = await _robokassa_cfg(session)
+    cfg = await robokassa_cfg(session)
     if not robokassa.verify_result(
         password2=cfg["pass2"], out_sum=out_sum, inv_id=inv_id, signature=sig, shp=shp
     ):

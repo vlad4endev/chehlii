@@ -2,22 +2,22 @@
 
 Секретные значения наружу не отдаются — только признак «задано». При сохранении
 пустой секрет = «не менять». Бейдж «подключено» на карточке — это лишь «ключ задан»;
-живую связь с банком показывает кнопка проверки (см. check_yandex_pay).
+живую связь показывает кнопка проверки на каждой карточке.
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
 from app.api.v1.delivery import cdek_cfg, yandex_cfg
-from app.api.v1.payments import yandexpay_cfg
+from app.api.v1.payments import robokassa_cfg, yandexpay_cfg
 from app.core.database import get_session
-from app.services import cdek, integrations, yandex_delivery, yandex_pay
+from app.services import cdek, integrations, robokassa, yandex_delivery, yandex_disk, yandex_pay
 
 router = APIRouter()
 
@@ -100,4 +100,27 @@ async def check_yandex_delivery(_: AdminOnly, session: Session) -> ConnectionOut
 async def check_cdek(_: AdminOnly, session: Session) -> ConnectionOut:
     """Статус связи со СДЭК: OAuth + справочник городов, заказов не создаёт."""
     ok, detail = await cdek.check_connection(await cdek_cfg(session))
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+@router.post("/yandex-disk/check", response_model=ConnectionOut)
+async def check_yandex_disk(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи с Яндекс.Диском: метаданные диска, папок не создаёт."""
+    token = await integrations.get(session, "yandex_disk.oauth_token")
+    if not token:
+        raise HTTPException(
+            400, "Яндекс.Диск не настроен — задайте токен в «Настройки → Интеграции»."
+        )
+    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
+    ok, detail = await yandex_disk.check_connection(token=token, root=root)
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+@router.post("/robokassa/check", response_model=ConnectionOut)
+async def check_robokassa(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи с Robokassa: OpStateExt по чужому счёту, платежей не создаёт."""
+    cfg = await robokassa_cfg(session)
+    ok, detail = await robokassa.check_connection(
+        login=cfg["login"], password2=cfg["pass2"], is_test=cfg["is_test"]
+    )
     return ConnectionOut(ok=ok, detail=detail)

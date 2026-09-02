@@ -35,3 +35,9 @@ export const checkYandexDelivery = () =>
 
 export const checkCdek = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/cdek/check')
+
+export const checkYandexDisk = () =>
+  apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-disk/check')
+
+export const checkRobokassa = () =>
+  apiSend<ConnectionStatus>('POST', '/admin/integrations/robokassa/check')

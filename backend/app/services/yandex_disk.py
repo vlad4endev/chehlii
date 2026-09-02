@@ -2,6 +2,7 @@
 
 Материалы клиента → /orders/{id}/client/, макеты дизайнера → /orders/{id}/design/.
 Возвращает публичную ссылку на файл (для отправки клиенту и хранения в БД).
+Проба связи — GET /v1/disk (метаданные диска), папок и файлов не создаёт.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import httpx
 
 _API = "https://cloud-api.yandex.net/v1/disk"
+_TIMEOUT = 15.0
 
 
 class YandexDiskError(RuntimeError):
@@ -75,3 +77,50 @@ def design_path(root: str, order_id: int, filename: str) -> str:
 
 def client_path(root: str, order_id: int, filename: str) -> str:
     return f"{root.rstrip('/')}/{order_id}/client/{filename}"
+
+
+def _space_hint(data: dict) -> str:
+    used, total = data.get("used_space"), data.get("total_space")
+    if not isinstance(used, int | float) or not isinstance(total, int | float) or total <= 0:
+        return ""
+    return f", занято {used / 1024**3:.1f} из {total / 1024**3:.0f} ГБ"
+
+
+async def check_connection(*, token: str, root: str | None = None) -> tuple[bool, str]:
+    """Статус связи с Диском: метаданные аккаунта + наличие корневой папки.
+
+    Файлов и папок не создаёт — 404 на корне означает «токен принят, папка
+    появится при первой загрузке», а не «нет связи».
+    """
+    try:
+        headers = _headers(token)
+    except YandexDiskError as e:
+        return False, str(e)
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(_API, headers=headers)
+            if r.status_code in (401, 403):
+                return False, f"токен отклонён: {r.text[:160]}"
+            if r.status_code != 200:
+                return False, f"нет связи: {r.status_code} {r.text[:160]}"
+            data = r.json() if r.content else {}
+            user = data.get("user") if isinstance(data, dict) else None
+            login = "диск"
+            if isinstance(user, dict):
+                login = str(user.get("display_name") or user.get("login") or login)
+            extra = _space_hint(data) if isinstance(data, dict) else ""
+            if root:
+                folder = await client.get(
+                    f"{_API}/resources",
+                    params={"path": root, "fields": "type,path"},
+                    headers=headers,
+                )
+                if folder.status_code == 404:
+                    extra += f". Папка {root} ещё не создана — появится при первой загрузке"
+                elif folder.status_code == 200:
+                    extra += f". Папка {root} есть"
+                else:
+                    extra += f". Папка {root}: {folder.status_code} {folder.text[:80]}"
+    except httpx.HTTPError as e:
+        return False, f"нет связи: {e}"[:200]
+    return True, f"связь есть, токен принят ({login}){extra}"

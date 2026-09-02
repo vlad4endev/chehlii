@@ -6,7 +6,9 @@ import {
   type ConnectionStatus,
   type IntegrationGroup,
   checkCdek,
+  checkRobokassa,
   checkYandexDelivery,
+  checkYandexDisk,
   checkYandexPay,
   fetchIntegrations,
   saveIntegrations,
@@ -22,11 +24,13 @@ const GROUP_ICON: Record<string, string> = {
   yandex_pay: 'ruble',
 }
 
-// Шлюзы, у которых есть проба живой связи (см. admin/integrations.py).
+// Живая связь: проба по сохранённым кредам, заказов/платежей не создаёт.
 const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
+  yandex_disk: checkYandexDisk,
   yandex_pay: checkYandexPay,
   yandex_delivery: checkYandexDelivery,
   cdek: checkCdek,
+  payment: checkRobokassa,
 }
 
 type SettingsTab = 'integrations' | 'bots' | 'miniapp'
