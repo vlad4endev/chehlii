@@ -4,11 +4,14 @@ const TOKEN_KEY = 'casetop:yandex-disk:oauth-token'
 const CODE_KEY = 'casetop:yandex-disk:oauth-code'
 const ERROR_KEY = 'casetop:yandex-disk:oauth-error'
 
-export function yandexDiskAuthorizeUrl(clientId: string, redirectUri: string): string {
+/** Redirect URI из quickstart Диска. Свой URL не передаём — иначе Яндекс отвечает
+ *  «redirect_uri не совпадает с Callback URL». */
+export const YANDEX_DISK_REDIRECT_URI = 'https://oauth.yandex.ru/verification_code'
+
+export function yandexDiskAuthorizeUrl(clientId: string): string {
   const params = new URLSearchParams({
     response_type: 'token',
     client_id: clientId.trim(),
-    redirect_uri: redirectUri,
     force_confirm: 'yes',
     scope: 'cloud_api:disk.write cloud_api:disk.read cloud_api:disk.info',
   })

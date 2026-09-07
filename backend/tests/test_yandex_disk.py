@@ -73,13 +73,18 @@ def test_sanitize_extracts_token_from_yandex_redirect():
 
 
 def test_authorize_url_matches_quickstart():
-    url = yd.authorize_url("client-123", redirect_uri="http://localhost:5174/settings")
+    url = yd.authorize_url("client-123")
     assert url.startswith("https://oauth.yandex.ru/authorize?")
     assert "response_type=token" in url
     assert "client_id=client-123" in url
-    assert "redirect_uri=http%3A%2F%2Flocalhost%3A5174%2Fsettings" in url
+    assert "redirect_uri" not in url
     assert "force_confirm=yes" in url
     assert "cloud_api%3Adisk.write" in url
+
+
+def test_authorize_url_optional_redirect_is_encoded():
+    url = yd.authorize_url("client-123", redirect_uri="http://localhost:5174/settings")
+    assert "redirect_uri=http%3A%2F%2Flocalhost%3A5174%2Fsettings" in url
 
 
 def test_headers_are_oauth_and_json():

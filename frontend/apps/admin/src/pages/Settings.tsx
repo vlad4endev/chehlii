@@ -13,9 +13,9 @@ import {
   completeYandexDiskOAuth,
   fetchIntegrations,
   saveIntegrations,
-  yandexDiskOAuthUrl,
 } from '../integrationsApi'
 import {
+  YANDEX_DISK_REDIRECT_URI,
   consumeYandexDiskOAuth,
   yandexDiskAuthorizeUrl,
 } from '../yandexDiskOAuth'
@@ -208,7 +208,6 @@ function IntegrationsPanel() {
         const status = await completeYandexDiskOAuth({
           access_token: pending.token ?? undefined,
           code: pending.code ?? undefined,
-          redirect_uri: `${window.location.origin}${window.location.pathname}`,
         })
         if (cancelled) return
         setDiskStatus(status)
@@ -354,16 +353,7 @@ function GroupCard({
           return
         }
       }
-      const redirect = `${window.location.origin}${window.location.pathname}`
-      const secretReady = group.fields.some(
-        (f) => f.key === 'yandex_disk.client_secret' && (f.is_set || Boolean(edits[f.key])),
-      )
-      if (secretReady) {
-        const { url } = await yandexDiskOAuthUrl(redirect)
-        window.location.assign(url)
-        return
-      }
-      window.location.assign(yandexDiskAuthorizeUrl(clientId, redirect))
+      window.location.assign(yandexDiskAuthorizeUrl(clientId))
     } catch (e) {
       setStatus({
         ok: false,
@@ -398,14 +388,20 @@ function GroupCard({
           <div className="intcard__title">{group.title}</div>
           <div className="card__hint">{group.hint}</div>
           {group.id === 'yandex_disk' && (
-            <a
-              className="intcard__doc"
-              href="https://oauth.yandex.ru/client/new"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Создать OAuth-приложение
-            </a>
+            <>
+              <a
+                className="intcard__doc"
+                href="https://oauth.yandex.ru/client/new"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Создать OAuth-приложение
+              </a>
+              <div className="intcard__callback">
+                Redirect URI в кабинете:{' '}
+                <code>{YANDEX_DISK_REDIRECT_URI}</code>
+              </div>
+            </>
           )}
         </div>
         {connected && <span className="badge badge--green">подключено</span>}
@@ -422,7 +418,11 @@ function GroupCard({
               className="input"
               type={f.secret ? 'password' : 'text'}
               placeholder={
-                f.secret && f.is_set ? '•••••• (введите, чтобы изменить)' : f.placeholder || ''
+                f.key === 'yandex_disk.oauth_token'
+                  ? 'y0_AgAA… или весь URL со страницы Яндекса'
+                  : f.secret && f.is_set
+                    ? '•••••• (введите, чтобы изменить)'
+                    : f.placeholder || ''
               }
               value={f.key in edits ? edits[f.key] : f.secret ? '' : (f.value ?? '')}
               onChange={(e) => onEdit(f.key, e.target.value)}

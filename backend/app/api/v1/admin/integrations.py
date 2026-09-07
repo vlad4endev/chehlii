@@ -118,11 +118,11 @@ class YandexDiskOAuthIn(BaseModel):
 async def yandex_disk_oauth_url(
     _: AdminOnly,
     session: Session,
-    redirect_uri: str | None = None,
 ) -> OAuthUrlOut:
     """Ссылка на oauth.yandex.ru/authorize по сохранённому Client ID.
 
-    Если задан Client secret — code flow, иначе implicit token (как в quickstart).
+    Без redirect_uri: Яндекс берёт Redirect URI из кабинета приложения
+    (для Диска это https://oauth.yandex.ru/verification_code).
     """
     client_id = await integrations.get(session, "yandex_disk.client_id")
     if not client_id:
@@ -130,12 +130,9 @@ async def yandex_disk_oauth_url(
             400,
             "Сначала сохраните Client ID приложения с oauth.yandex.ru.",
         )
-    secret = await integrations.get(session, "yandex_disk.client_secret")
-    response_type = "code" if secret else "token"
+    response_type = "token"
     try:
-        url = yandex_disk.authorize_url(
-            client_id, redirect_uri=redirect_uri, response_type=response_type
-        )
+        url = yandex_disk.authorize_url(client_id, response_type=response_type)
     except yandex_disk.YandexDiskError as e:
         raise HTTPException(400, str(e)) from e
     return OAuthUrlOut(url=url, response_type=response_type)

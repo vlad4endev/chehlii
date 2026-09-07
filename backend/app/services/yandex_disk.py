@@ -58,7 +58,12 @@ def authorize_url(
     redirect_uri: str | None = None,
     response_type: str = "token",
 ) -> str:
-    """URL страницы Яндекс OAuth (quickstart: response_type=token)."""
+    """URL страницы Яндекс OAuth (quickstart: response_type=token, без redirect_uri).
+
+    Свой Callback не передаём: если он не совпадает с Redirect URI в кабинете,
+    Яндекс отвечает «redirect_uri не совпадает с Callback URL» и берёт
+    https://oauth.yandex.ru/verification_code из настроек приложения.
+    """
     cid = client_id.strip()
     if not cid:
         raise YandexDiskError("не задан Client ID приложения")
