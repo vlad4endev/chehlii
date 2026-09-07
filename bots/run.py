@@ -84,6 +84,7 @@ async def _deliver(bot: Bot, item: dict) -> None:
     if media:
         notes = [m for m in media if m.get("type") == "video_note"]
         rest = [m for m in media if m.get("type") in ("image", "video")]
+        extras = [m for m in media if m.get("type") in ("audio", "file")]
         sent_any = False
         text_sent = False
 
@@ -122,7 +123,23 @@ async def _deliver(bot: Bot, item: dict) -> None:
                 )
                 sent_any = True
 
-        # 3) Текст, если ещё не ушёл подписью.
+        # 3) Голосовые и файлы (ответы из «Поможем выбрать»).
+        for i, mm in enumerate(extras):
+            data = await _fetch_media(mm.get("url", ""))
+            if not data:
+                continue
+            name = mm.get("name") or ("voice.ogg" if mm.get("type") == "audio" else f"file_{i}")
+            buf = BufferedInputFile(data, name)
+            cap = text if not text_sent and 0 < len(text) <= 1024 else None
+            if mm.get("type") == "audio":
+                await bot.send_voice(chat_id=chat_id, voice=buf, caption=cap)
+            else:
+                await bot.send_document(chat_id=chat_id, document=buf, caption=cap)
+            sent_any = True
+            if cap:
+                text_sent = True
+
+        # 4) Текст, если ещё не ушёл подписью.
         if sent_any:
             if text and not text_sent:
                 await bot.send_message(chat_id=chat_id, text=text)

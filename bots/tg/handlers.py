@@ -13,7 +13,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bots.core import delivery, payments
+from bots.core import consult, delivery, payments
 from bots.core.backend import backend
 from bots.core.texts import texts
 from bots.tg.keyboards import (
@@ -212,8 +212,9 @@ async def on_mockup_response(cb: CallbackQuery) -> None:
 
 # ── Главное меню ───────────────────────────────────────
 @router.message(F.text == BTN_CATALOG)
-async def on_catalog_fallback(msg: Message) -> None:
+async def on_catalog_fallback(msg: Message, state: FSMContext) -> None:
     # Срабатывает только если WebApp-URL не задан (иначе кнопка открывает мини-приложение).
+    await state.clear()
     await msg.answer(
         "Каталог открывается в мини-приложении. Оно подключится после публикации фронтенда "
         "по HTTPS (задать WEBAPP_URL)."
@@ -221,7 +222,8 @@ async def on_catalog_fallback(msg: Message) -> None:
 
 
 @router.message(F.text == BTN_DISCOUNT)
-async def on_discount(msg: Message) -> None:
+async def on_discount(msg: Message, state: FSMContext) -> None:
+    await state.clear()
     c = await _client(msg)
     await msg.answer(
         f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
@@ -231,12 +233,14 @@ async def on_discount(msg: Message) -> None:
 
 
 @router.message(F.text == BTN_PAYMENTS)
-async def on_payments(msg: Message) -> None:
+async def on_payments(msg: Message, state: FSMContext) -> None:
+    await state.clear()
     await msg.answer("Раздел «Мои оплаты» появится после подключения платёжного шлюза.")
 
 
 @router.message(F.text == BTN_DELIVERIES)
 async def on_deliveries(msg: Message, state: FSMContext) -> None:
+    await state.clear()
     client = await _client(msg)
     try:
         orders = await backend.client_orders(client["id"])
@@ -258,8 +262,11 @@ async def on_deliveries(msg: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == BTN_HELP)
-async def on_help(msg: Message) -> None:
-    await msg.answer("Скоро поможем подобрать лучший вариант ✨ (в разработке).")
+async def on_help(msg: Message, state: FSMContext) -> None:
+    await state.set_state(OrderFlow.consulting)
+    await msg.answer(texts.get("msg_help"), reply_markup=main_menu_kb())
+    client = await _client(msg)
+    await backend.mark_journey(client["id"], "msg_help")
 
 
 async def _send_pay(message: Message, order_id: int, code: str) -> None:
@@ -562,6 +569,50 @@ async def on_materials_redo(cb: CallbackQuery, state: FSMContext) -> None:
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
     await backend.mark_journey(client["id"], "msg_006б")
     await cb.answer()
+
+
+_MENU_TEXTS = {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}
+
+
+async def _consult_files_tg(bot, msg: Message) -> list[tuple[str, bytes]]:
+    items: list[tuple[str, str]] = []
+    if msg.photo:
+        items.append((msg.photo[-1].file_id, "photo.jpg"))
+    if msg.document:
+        items.append((msg.document.file_id, msg.document.file_name or "file.bin"))
+    if msg.voice:
+        items.append((msg.voice.file_id, "voice.ogg"))
+    if msg.audio:
+        items.append((msg.audio.file_id, msg.audio.file_name or "audio.mp3"))
+    if msg.video:
+        items.append((msg.video.file_id, "video.mp4"))
+    if msg.video_note:
+        items.append((msg.video_note.file_id, "note.mp4"))
+    out: list[tuple[str, bytes]] = []
+    for fid, name in items:
+        try:
+            buf = await bot.download(fid)
+            out.append((name, buf.read()))
+        except Exception as e:  # noqa: BLE001
+            logging.warning("consult tg download failed (%s): %s", name, e)
+    return out
+
+
+@router.message(OrderFlow.consulting)
+async def on_consult(msg: Message) -> None:
+    if (msg.text or "") in _MENU_TEXTS:
+        return
+    client = await _client(msg)
+    files = await _consult_files_tg(msg.bot, msg)
+    try:
+        sent = await consult.ingest(client["id"], msg.caption or msg.text, files)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("consult ingest failed: %s", e)
+        await msg.answer("Не получилось передать сообщение, напишите ещё раз.")
+        return
+    if sent:
+        await msg.answer(texts.get("msg_help_ack"))
+        await backend.mark_journey(client["id"], "msg_help_ack")
 
 
 # Фолбэк: любое сообщение вне сценария → в меню.

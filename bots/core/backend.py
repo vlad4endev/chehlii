@@ -153,5 +153,22 @@ class Backend:
         r = await self._client.post(f"/outbox/{msg_id}/sent")
         r.raise_for_status()
 
+    async def consult_upload(self, filename: str, content: bytes) -> dict:
+        r = await self._client.post(
+            "/consult/files", files={"file": (filename, content)}, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def consult_send(
+        self, client_id: int, text: str | None = None, media: list | None = None
+    ) -> dict:
+        r = await self._client.post(
+            "/consult/messages",
+            json={"client_id": client_id, "text": text, "media": media or []},
+        )
+        r.raise_for_status()
+        return r.json()
+
 
 backend = Backend()

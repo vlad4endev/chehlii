@@ -27,6 +27,15 @@ VIDEO_EXT = {
     "video/quicktime": "mov",
     "video/webm": "webm",
 }
+AUDIO_EXT = {
+    "audio/ogg": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+    "audio/wav": "wav",
+    "audio/webm": "webm",
+    "audio/x-wav": "wav",
+}
 MAX_BYTES = 12 * 1024 * 1024  # 12 МБ (фото/док)
 MAX_VIDEO_BYTES = 45 * 1024 * 1024  # 45 МБ (видео)
 
@@ -55,6 +64,28 @@ def media_kind(content_type: str | None, filename: str | None) -> tuple[str, str
         if tail in vid:
             return vid[tail], "video"
     return None
+
+
+def consult_kind(content_type: str | None, filename: str | None) -> tuple[str, str]:
+    """(расширение, тип) для консультации. тип = image|video|audio|file."""
+    known = media_kind(content_type, filename)
+    if known:
+        return known
+    ct = (content_type or "").lower()
+    if ct in AUDIO_EXT:
+        return AUDIO_EXT[ct], "audio"
+    if ct in DOC_EXT:
+        return DOC_EXT[ct], "file"
+    if filename and "." in filename:
+        tail = filename.rsplit(".", 1)[1].lower()
+        audio = {"ogg": "ogg", "oga": "ogg", "mp3": "mp3", "m4a": "m4a", "aac": "aac", "wav": "wav"}
+        if tail in audio:
+            return audio[tail], "audio"
+        if tail == "pdf":
+            return "pdf", "file"
+        if tail:
+            return tail[:8], "file"
+    return "bin", "file"
 
 
 def ext_for(

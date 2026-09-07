@@ -7,7 +7,7 @@ export interface Section {
   icon: string
   roles: Role[]
   /** Ключ метрики из /admin/stats для бейджа в меню (например «на модерации»). */
-  badge?: 'reviews_pending' | 'broadcasts_drafts' | 'orders_active'
+  badge?: 'reviews_pending' | 'broadcasts_drafts' | 'orders_active' | 'consult_waiting'
 }
 
 export const OVERVIEW: Section = {
@@ -21,6 +21,7 @@ export const OVERVIEW: Section = {
 // «Тексты бота» переехали в Настройки → вкладка «Боты», поэтому в меню их нет.
 export const SECTIONS: Section[] = [
   { path: '/orders', label: 'Заказы', icon: 'orders', roles: ['admin', 'designer'], badge: 'orders_active' },
+  { path: '/consult', label: 'Поможем выбрать', icon: 'chat', roles: ['admin'], badge: 'consult_waiting' },
   { path: '/catalog', label: 'Каталог', icon: 'catalog', roles: ['admin'] },
   { path: '/clients', label: 'Клиенты', icon: 'clients', roles: ['admin'] },
   { path: '/journeys', label: 'Клиентские пути', icon: 'clients', roles: ['admin'] },
@@ -45,7 +46,7 @@ export interface NavGroup {
 // Сгруппированная навигация для сайдбара (явные группы — без хрупких срезов).
 const GROUPS: NavGroup[] = [
   { label: null, items: [OVERVIEW] },
-  { label: 'Работа', items: [byPath('/orders'), byPath('/catalog'), byPath('/clients'), byPath('/journeys')] },
+  { label: 'Работа', items: [byPath('/orders'), byPath('/consult'), byPath('/catalog'), byPath('/clients'), byPath('/journeys')] },
   { label: 'Контент', items: [byPath('/reviews'), byPath('/broadcasts')] },
   { label: 'Система', items: [byPath('/users'), byPath('/trash'), byPath('/settings')] },
 ]

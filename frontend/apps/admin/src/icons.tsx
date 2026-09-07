@@ -34,6 +34,7 @@ const ICONS: Record<string, ReactNode> = {
   plus: <P d="M12 5v14M5 12h14" />,
   search: <P d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.3-4.3" />,
   chevron: <P d="M9 6l6 6-6 6" />,
+  chat: <P d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
   // KPI
   box: <P d="M4 7l8-3 8 3-8 3zM4 7v10l8 3 8-3V7M12 10v10" />,
   pulse: <P d="M3 12h4l2 6 4-14 2 8h6" />,

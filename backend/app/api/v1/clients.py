@@ -91,6 +91,9 @@ async def upsert_client(
         client.nickname = payload.nickname
     if payload.phone and not client.phone:
         client.phone = payload.phone
+    # Живой клиент в боте не должен оставаться в корзине — иначе консультации
+    # и заказы получают 404 «клиент не найден».
+    client.deleted_at = None
     # upsert вызывается из ботов только на входящее действие клиента (start,
     # контакт, кнопка, ответ) — используем как отметку последней активности.
     client.last_msg_at = datetime.now(UTC)

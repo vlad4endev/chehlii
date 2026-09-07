@@ -15,3 +15,4 @@ class OrderFlow(StatesGroup):
     delivery_city = State()
     delivery_address = State()
     delivery_pvz = State()
+    consulting = State()  # «Поможем выбрать»

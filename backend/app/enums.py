@@ -89,3 +89,15 @@ class ScenarioType(StrEnum):
 
     BASE = "base"  # Базовый линейный сценарий (этап 1)
     TRIGGERED = "triggered"  # Триггерные рассылки (этап 2 — не реализуется)
+
+
+class ConsultStatus(StrEnum):
+    """Диалог «Поможем выбрать»: открыт или закрыт продавцом."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class ConsultSender(StrEnum):
+    CLIENT = "client"
+    ADMIN = "admin"

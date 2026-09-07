@@ -12,6 +12,7 @@ from app.api.v1.admin.router import admin_router
 from app.api.v1.bot_messages import router as bot_messages_router
 from app.api.v1.catalog import router as catalog_router
 from app.api.v1.clients import router as clients_router
+from app.api.v1.consult import router as consult_router
 from app.api.v1.delivery import router as delivery_router
 from app.api.v1.internal import require_internal
 from app.api.v1.miniapp import router as miniapp_router
@@ -36,6 +37,9 @@ api_router.include_router(orders_router, prefix="/orders", tags=["orders"], depe
 api_router.include_router(outbox_router, prefix="/outbox", tags=["outbox"], dependencies=_internal)
 api_router.include_router(
     bot_messages_router, prefix="/bot-messages", tags=["bot-messages"], dependencies=_internal
+)
+api_router.include_router(
+    consult_router, prefix="/consult", tags=["consult"], dependencies=_internal
 )
 api_router.include_router(payments_router, prefix="/payments", tags=["payments"])
 api_router.include_router(delivery_router, prefix="/delivery", tags=["delivery"])

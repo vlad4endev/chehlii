@@ -24,7 +24,7 @@ from maxapi.types import (
     MessageCreated,
 )
 
-from bots.core import delivery, payments
+from bots.core import consult, delivery, payments
 from bots.core.backend import backend
 from bots.core.texts import texts
 from bots.max.keyboards import (
@@ -347,6 +347,7 @@ async def on_cancel(event: MessageCallback, context: MemoryContext) -> None:
 # ── Пункты меню ────────────────────────────────────────
 @dp.message_callback(F.callback.payload == CB_CATALOG)
 async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> None:
+    await context.clear()
     await event.answer(
         notification="Каталог откроется в мини-приложении после публикации в MAX."
     )
@@ -357,6 +358,7 @@ async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> Non
 # меню (гарантированно валидная inline-клавиатура).
 @dp.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
+    await context.clear()
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
     await _send_menu(
@@ -371,6 +373,7 @@ async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_PAYMENTS)
 async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
+    await context.clear()
     await _send_menu(
         event.bot,
         event.message.recipient.chat_id,
@@ -381,6 +384,7 @@ async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_DELIVERIES)
 async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
+    await context.clear()
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     try:
         orders = await backend.client_orders(c["id"])
@@ -410,11 +414,11 @@ async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_HELP)
 async def on_help(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Скоро поможем подобрать лучший вариант ✨ (в разработке).",
-    )
+    await context.set_state(OrderFlow.consulting)
+    await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_help"))
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    await backend.mark_journey(client["id"], "msg_help")
 
 
 # ── Ввод имени / материалов ────────────────────────────
@@ -660,6 +664,52 @@ async def on_delivery_pvz_text(event: MessageCreated, context: MemoryContext) ->
         return
     await context.set_state(OrderFlow.delivery_city)
     await on_delivery_city(event, context)
+
+
+async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
+    out: list[tuple[str, bytes]] = []
+    attachments = event.message.body.attachments or []
+    async with httpx.AsyncClient(timeout=40) as http:
+        for i, att in enumerate(attachments):
+            payload = getattr(att, "payload", None)
+            url = getattr(payload, "url", None)
+            if not url:
+                continue
+            try:
+                r = await http.get(url)
+                r.raise_for_status()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("consult max download failed: %s", e)
+                continue
+            kind = str(getattr(att, "type", None) or "file").lower()
+            if kind in ("image", "photo"):
+                name = f"photo_{i + 1}.jpg"
+            elif "video" in kind:
+                name = f"video_{i + 1}.mp4"
+            elif kind in ("audio", "voice"):
+                name = f"voice_{i + 1}.ogg"
+            else:
+                name = f"file_{i + 1}.bin"
+            out.append((name, r.content))
+    return out
+
+
+@dp.message_created(OrderFlow.consulting)
+async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
+    s = event.message.sender
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    files = await _consult_files_max(event)
+    try:
+        sent = await consult.ingest(client["id"], event.message.body.text, files)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("consult ingest failed: %s", e)
+        await event.message.answer("Не получилось передать сообщение, напишите ещё раз.")
+        return
+    if sent:
+        await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_help_ack"))
+        await backend.mark_journey(client["id"], "msg_help_ack")
 
 
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.
