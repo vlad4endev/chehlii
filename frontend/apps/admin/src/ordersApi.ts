@@ -1,4 +1,4 @@
-import { ApiError, apiGet, apiSend, apiUrl, getToken } from './api'
+import { ApiError, apiGet, apiSend, apiUpload, apiUrl, getToken } from './api'
 
 export interface StatusOption {
   value: string
@@ -35,6 +35,7 @@ export interface OrderDetail extends OrderRow {
   materials_files: unknown[] | null
   custom_text: string | null
   mockup_url: string | null
+  mockup_disk_url: string | null
   delivery_service: string | null
   delivery_address: string | null
   tracking_code: string | null
@@ -95,26 +96,8 @@ export const fetchOrder = (id: number) => apiGet<OrderDetail>(`/admin/orders/${i
 export const changeStatus = (id: number, status: string, force = false) =>
   apiSend<OrderDetail>('PATCH', `/admin/orders/${id}/status`, { status, force })
 export const deleteOrder = (id: number) => apiSend<void>('DELETE', `/admin/orders/${id}`)
-export async function uploadMockup(id: number, file: File): Promise<OrderDetail> {
-  const fd = new FormData()
-  fd.append('file', file)
-  const res = await fetch(apiUrl(`/admin/orders/${id}/mockup`), {
-    method: 'POST',
-    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
-    body: fd,
-  })
-  if (!res.ok) {
-    let detail = `Ошибка ${res.status}`
-    try {
-      const b = await res.json()
-      if (b?.detail) detail = String(b.detail)
-    } catch {
-      /* нет тела */
-    }
-    throw new ApiError(res.status, detail)
-  }
-  return res.json()
-}
+export const uploadMockup = (id: number, file: File) =>
+  apiUpload<OrderDetail>(`/admin/orders/${id}/mockup`, file)
 
 export async function downloadOrdersXlsx(): Promise<void> {
   const res = await fetch(apiUrl('/admin/orders/export.xlsx'), {

@@ -5,15 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo
+from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
 
 from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
+from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
 from bots.core.texts import texts
 from bots.tg.handlers import router
 from bots.tg.keyboards import (
@@ -25,19 +25,7 @@ from bots.tg.keyboards import (
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
-    """Скачать изображение (из backend по внутреннему адресу) для отправки вложением."""
-    try:
-        if path_or_url.startswith("http"):
-            u = path_or_url
-        else:
-            origin = settings.backend_url.split("/api/")[0]  # http://backend:8000
-            u = f"{origin}{path_or_url}"
-        async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.get(u)
-            r.raise_for_status()
-            return r.content
-    except Exception:  # noqa: BLE001
-        return None
+    return await fetch_bytes(path_or_url)
 
 
 def _media_of(item: dict) -> list[dict]:
@@ -48,10 +36,48 @@ def _media_of(item: dict) -> list[dict]:
     return media[:10]  # Telegram: не больше 10 в альбоме
 
 
+async def _deliver_mockup(bot: Bot, item: dict) -> None:
+    """Макет — фото в чате с кнопками, не карточка Яндекс.Диска."""
+    chat_id = int(item["channel_user_id"])
+    text = item.get("text") or "Ваш макет готов."
+    url = item.get("attachment_url") or ""
+    kb = mockup_kb(item["order_id"]) if item.get("order_id") else None
+    data = await fetch_bytes(url)
+    caption = text[:1024]
+    if data and looks_like_image(data):
+        name = "mockup.png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "mockup.jpg"
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=BufferedInputFile(data, name),
+            caption=caption,
+            reply_markup=kb,
+        )
+        return
+    if data:
+        name = "mockup.pdf" if looks_like_pdf(data) else "mockup.bin"
+        await bot.send_document(
+            chat_id=chat_id,
+            document=BufferedInputFile(data, name),
+            caption=caption,
+            reply_markup=kb,
+        )
+        return
+    extra = f"\n\n📎 {url}" if url else ""
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"{text}{extra}",
+        reply_markup=kb,
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     chat_id = int(item["channel_user_id"])
+    if kind == "mockup":
+        await _deliver_mockup(bot, item)
+        return
 
     # Рассылка с медиа: фото/видео — альбомом; кружки (video note) — отдельно.
     media = _media_of(item)
@@ -103,13 +129,8 @@ async def _deliver(bot: Bot, item: dict) -> None:
             return
         # если ничего не скачалось — упадём на текст ниже
 
-    url = item.get("attachment_url")
-    if url and kind == "mockup":
-        text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
     kb = None
-    if kind == "mockup" and item.get("order_id"):
-        kb = mockup_kb(item["order_id"])
-    elif kind == "delivery" and item.get("order_id"):
+    if kind == "delivery" and item.get("order_id"):
         oid = item["order_id"]
         services = await delivery.configured_services()
         if not services:

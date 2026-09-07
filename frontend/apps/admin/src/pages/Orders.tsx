@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, mediaUrl } from '../api'
 import { useAuth } from '../auth'
@@ -256,8 +256,11 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [error, setError] = useState<string | null>(null)
   const [nextStatus, setNextStatus] = useState('')
   const [forceStatus, setForceStatus] = useState('')
-  const [mockupFile, setMockupFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  const [mockupBusy, setMockupBusy] = useState(false)
+  const [mockupErr, setMockupErr] = useState<string | null>(null)
+  const [mockupOk, setMockupOk] = useState<string | null>(null)
+  const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -265,8 +268,9 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     try {
       const d = await fetchOrder(id)
       setOrder(d)
-      setMockupFile(null)
       setNextStatus('')
+      setMockupErr(null)
+      setMockupOk(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить заказ')
     }
@@ -311,18 +315,27 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     }
   }
 
-  async function sendMockup() {
-    if (!mockupFile) return
+  async function sendMockup(file: File) {
+    setMockupBusy(true)
     setBusy(true)
+    setMockupErr(null)
+    setMockupOk(null)
     try {
-      const d = await uploadMockup(id, mockupFile)
+      const d = await uploadMockup(id, file)
       setOrder(d)
-      setMockupFile(null)
+      const sent = d.status === 'mockup_sent'
+      setMockupOk(
+        sent
+          ? 'Макет отправлен клиенту, статус — «Отправка макета».'
+          : `Макет отправлен клиенту. Статус заказа: «${d.status_label}».`,
+      )
       onChanged()
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : 'Не удалось отправить макет')
+      setMockupErr(e instanceof ApiError ? e.message : 'Не удалось отправить макет')
     } finally {
+      setMockupBusy(false)
       setBusy(false)
+      if (mockupInputRef.current) mockupInputRef.current.value = ''
     }
   }
 
@@ -341,7 +354,12 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   }
 
   return (
-    <div className="modal" onClick={onClose}>
+    <div
+      className="modal"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div className="modal__card modal__card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">
@@ -415,28 +433,41 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
             <div className="block">
               <div className="field__label">Макет</div>
               {order.mockup_url && (
-                <a className="linkbtn" href={order.mockup_url} target="_blank" rel="noreferrer">
-                  Текущий макет ↗
+                <div className="photogrid photogrid--mockup">
+                  <ClientFile file={order.mockup_url} index={0} label="Макет" />
+                </div>
+              )}
+              {order.mockup_disk_url && (
+                <a className="linkbtn" href={order.mockup_disk_url} target="_blank" rel="noreferrer">
+                  Копия на Яндекс.Диске ↗
                 </a>
               )}
               <div className="inline-form">
                 <input
+                  ref={mockupInputRef}
                   className="input"
                   type="file"
                   accept="image/*,.pdf"
-                  onChange={(e) => setMockupFile(e.target.files?.[0] ?? null)}
+                  disabled={busy || mockupBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void sendMockup(file)
+                  }}
                 />
                 <button
+                  type="button"
                   className="btn btn--primary"
-                  onClick={sendMockup}
-                  disabled={busy || !mockupFile}
+                  disabled={busy || mockupBusy}
+                  onClick={() => mockupInputRef.current?.click()}
                 >
-                  Загрузить и отправить
+                  {mockupBusy ? 'Отправка…' : 'Загрузить и отправить'}
                 </button>
               </div>
+              {mockupErr && <div className="form-msg form-msg--err">{mockupErr}</div>}
+              {mockupOk && <div className="form-msg form-msg--ok">{mockupOk}</div>}
               <div className="card__hint">
-                Файл уйдёт на Яндекс.Диск, статус станет «Отправка макета», а клиент получит его
-                в боте с кнопками «Подтвердить / Переделать».
+                Файл сохранится локально и на Яндекс.Диске. Клиент увидит картинку в чате
+                с кнопками «Подтвердить / Переделать», статус станет «Отправка макета».
               </div>
             </div>
 
@@ -559,25 +590,36 @@ function OrderThumb({
 }
 
 // Файл клиента: фото показываем миниатюрой (клик — открыть), иначе ссылка.
-function ClientFile({ file, index }: { file: unknown; index: number }) {
+function ClientFile({
+  file,
+  index,
+  label,
+}: {
+  file: unknown
+  index: number
+  label?: string
+}) {
   const [failed, setFailed] = useState(false)
   const url = typeof file === 'string' ? mediaUrl(file) : null
   const isImage =
     typeof file === 'string' && /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.split('?')[0])
+  const title = label ?? `Фото ${index + 1}`
 
   if (url && isImage && !failed) {
     return (
-      <a className="photocard" href={url} target="_blank" rel="noreferrer" title={`Фото ${index + 1}`}>
-        <img src={url} alt={`Фото ${index + 1}`} onError={() => setFailed(true)} />
+      <a className="photocard" href={url} target="_blank" rel="noreferrer" title={title}>
+        <img src={url} alt={title} onError={() => setFailed(true)} />
       </a>
     )
   }
   if (url) {
     return (
       <a className="photocard photocard--file" href={url} target="_blank" rel="noreferrer">
-        <span>Файл {index + 1} ↗</span>
+        <span>{label ?? `Файл ${index + 1}`} ↗</span>
       </a>
     )
   }
-  return <span className="photocard photocard--file photocard--muted">Файл {index + 1}</span>
+  return (
+    <span className="photocard photocard--file photocard--muted">{label ?? `Файл ${index + 1}`}</span>
+  )
 }

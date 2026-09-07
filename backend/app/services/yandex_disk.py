@@ -22,6 +22,8 @@ _TIMEOUT = 15.0
 _JSON = "application/json"
 
 # Права, которые нужно отметить в OAuth-приложении (Доступ к данным).
+# В authorize URL их не передаём: если хоть одно не зарегистрировано,
+# Яндекс отвечает invalid_scope. Токен получает права из кабинета приложения.
 DISK_SCOPES = (
     "cloud_api:disk.write",
     "cloud_api:disk.read",
@@ -71,7 +73,6 @@ def authorize_url(
         "response_type": response_type,
         "client_id": cid,
         "force_confirm": "yes",
-        "scope": " ".join(DISK_SCOPES),
     }
     if redirect_uri:
         params["redirect_uri"] = redirect_uri
@@ -221,12 +222,28 @@ async def upload(remote_path: str, content: bytes, *, token: str) -> str:
         return public_url or file_url or remote_path
 
 
+_SAFE_EXT = {"png", "jpg", "jpeg", "webp", "gif", "pdf", "heic"}
+
+
+def safe_filename(name: str, fallback: str = "file") -> str:
+    """Имя для пути на Диске: без каталогов, запятых и пробелов (иначе API 400)."""
+    raw = (name or fallback).replace("\\", "/").rsplit("/", 1)[-1].strip()
+    stem, dot, ext = raw.rpartition(".")
+    ext = ext.lower() if dot else ""
+    if ext not in _SAFE_EXT:
+        stem = raw or fallback
+        ext = "bin"
+    cleaned = re.sub(r"[^\w.\-]+", "_", stem, flags=re.UNICODE)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("._") or fallback
+    return f"{cleaned[:80]}.{ext}"
+
+
 def design_path(root: str, order_id: int, filename: str) -> str:
-    return f"{root.rstrip('/')}/{order_id}/design/{filename}"
+    return f"{root.rstrip('/')}/{order_id}/design/{safe_filename(filename, f'mockup_{order_id}')}"
 
 
 def client_path(root: str, order_id: int, filename: str) -> str:
-    return f"{root.rstrip('/')}/{order_id}/client/{filename}"
+    return f"{root.rstrip('/')}/{order_id}/client/{safe_filename(filename, f'client_{order_id}')}"
 
 
 def _space_hint(data: dict) -> str:

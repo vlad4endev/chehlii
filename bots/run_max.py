@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import httpx
 from maxapi import Bot
 from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
@@ -16,6 +15,7 @@ from maxapi.types.input_media import InputMediaBuffer
 from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
+from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
 from bots.core.texts import texts
 from bots.max.handlers import dp
 from bots.max.keyboards import (
@@ -27,19 +27,7 @@ from bots.max.keyboards import (
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
-    """Скачать изображение (из backend по внутреннему адресу) для отправки вложением."""
-    try:
-        if path_or_url.startswith("http"):
-            u = path_or_url
-        else:
-            origin = settings.backend_url.split("/api/")[0]  # http://backend:8000
-            u = f"{origin}{path_or_url}"
-        async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.get(u)
-            r.raise_for_status()
-            return r.content
-    except Exception:  # noqa: BLE001
-        return None
+    return await fetch_bytes(path_or_url)
 
 
 def _media_of(item: dict) -> list[dict]:
@@ -50,10 +38,40 @@ def _media_of(item: dict) -> list[dict]:
     return media[:10]
 
 
+async def _deliver_mockup(bot: Bot, item: dict) -> None:
+    """Макет — картинка в чате с кнопками, не ссылка на Яндекс.Диск."""
+    uid = int(item["channel_user_id"])
+    text = item.get("text") or "Ваш макет готов."
+    url = item.get("attachment_url") or ""
+    kb = [mockup_kb(item["order_id"])] if item.get("order_id") else []
+    data = await fetch_bytes(url)
+    if data and looks_like_image(data):
+        atts = [
+            InputMediaBuffer(buffer=data, filename="mockup.jpg", type=UploadType.IMAGE),
+            *kb,
+        ]
+        await bot.send_message(user_id=uid, text=text, attachments=atts)
+        return
+    if data:
+        file_type = getattr(UploadType, "FILE", None)
+        name = "mockup.pdf" if looks_like_pdf(data) else "mockup.bin"
+        if file_type is not None:
+            atts = [InputMediaBuffer(buffer=data, filename=name, type=file_type), *kb]
+            await bot.send_message(user_id=uid, text=text, attachments=atts)
+            return
+    extra = f"\n\n📎 {url}" if url else ""
+    await bot.send_message(
+        user_id=uid, text=f"{text}{extra}", attachments=kb or None
+    )
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     uid = int(item["channel_user_id"])
+    if kind == "mockup":
+        await _deliver_mockup(bot, item)
+        return
 
     # Рассылка с медиа → одно сообщение с несколькими вложениями (фото/видео).
     media = _media_of(item)
@@ -70,13 +88,8 @@ async def _deliver(bot: Bot, item: dict) -> None:
             await bot.send_message(user_id=uid, text=(text or None), attachments=atts)
             return
 
-    url = item.get("attachment_url")
-    if url and kind == "mockup":
-        text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
     atts2 = None
-    if kind == "mockup" and item.get("order_id"):
-        atts2 = [mockup_kb(item["order_id"])]
-    elif kind == "delivery" and item.get("order_id"):
+    if kind == "delivery" and item.get("order_id"):
         oid = item["order_id"]
         services = await delivery.configured_services()
         if not services:

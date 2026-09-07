@@ -31,8 +31,9 @@ class Order(Base, TimestampMixin):
     materials_files: Mapped[list | None] = mapped_column(JSON)
     # Стандарт: имя/буква для чехла
     custom_text: Mapped[str | None] = mapped_column(String(255))
-    # Макет дизайнера — ссылка на файл в Яндекс Диске (/design/)
+    # Макет дизайнера: локальный /media для чата и превью + публичная ссылка на Диске.
     mockup_url: Mapped[str | None] = mapped_column(String(1024))
+    mockup_disk_url: Mapped[str | None] = mapped_column(String(1024))
 
     # Финансовая фиксация на момент оформления (скрыто от Дизайнера)
     cost: Mapped[float | None] = mapped_column(Numeric(12, 2))

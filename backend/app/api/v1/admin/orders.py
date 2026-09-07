@@ -24,7 +24,7 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations, pricing, stock, yandex_disk
+from app.services import integrations, media, pricing, stock, yandex_disk
 from app.services import order_state_machine as fsm
 
 router = APIRouter()
@@ -96,6 +96,7 @@ class OrderDetail(OrderRow):
     materials_files: list | None
     custom_text: str | None
     mockup_url: str | None
+    mockup_disk_url: str | None
     delivery_service: str | None
     delivery_address: str | None
     tracking_code: str | None
@@ -185,8 +186,11 @@ def _forward_statuses(current: OrderStatus) -> list[OrderStatus]:
     """Все статусы «вперёд» по воронке от текущего (+ «Отменён»). Назад — нельзя."""
     if current in _FINAL:
         return []
-    pos = _PIPELINE_POS[current]
-    ahead = [s for s in _PIPELINE if _PIPELINE_POS[s] > pos]
+    pos = _PIPELINE_POS.get(current)
+    if pos is None:
+        ahead = list(_PIPELINE)
+    else:
+        ahead = [s for s in _PIPELINE if _PIPELINE_POS[s] > pos]
     ahead.append(OrderStatus.CANCELLED)
     return ahead
 
@@ -341,6 +345,7 @@ async def get_order(
         materials_files=order.materials_files,
         custom_text=order.custom_text,
         mockup_url=order.mockup_url,
+        mockup_disk_url=order.mockup_disk_url,
         delivery_service=order.delivery_service,
         delivery_address=order.delivery_address,
         tracking_code=order.tracking_code,
@@ -380,7 +385,7 @@ async def _record(
         await stock.deduct_for_order(session, order)
     elif new == OrderStatus.CANCELLED:
         await stock.restore_for_order(session, order)
-    trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"
+    trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"[:128]
     session.add(
         OrderStatusHistory(
             order_id=order.id,
@@ -438,7 +443,7 @@ async def delete_order(
 
 _MOCKUP_DEFAULT_TEXT = (
     "Дизайнер подготовил макет вашего чехла ✨\n"
-    "Посмотрите файл выше и подтвердите — или отправьте на доработку."
+    "Подтвердите — или отправьте на доработку."
 )
 
 
@@ -449,13 +454,26 @@ async def upload_mockup(
     session: Annotated[AsyncSession, Depends(get_session)],
     file: Annotated[UploadFile, File()],
 ) -> OrderDetail:
-    """Триггерная цепочка передачи макета (ТЗ v2.0): дизайнер грузит файл →
-    (1) файл на Яндекс Диск /orders/{id}/design/, (2) статус «Отправка макета»,
-    (3) заявка в outbox — бот доставит клиенту с кнопками «Подтвердить/Переделать».
+    """Дизайнер грузит макет → локальный файл и копия на Яндекс.Диск,
+    статус «Отправка макета», outbox с кнопками «Подтвердить / Переделать».
+
+    Локальный `/media/...` уходит в чат и превью админки. Ссылка Диска
+    хранится отдельно — архив, без карточки yadi.sk у клиента.
     """
     order, client, _ = await _load(session, order_id)
     content = await file.read()
-    filename = (file.filename or f"mockup_{order_id}").replace("/", "_")
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустой файл")
+    if len(content) > media.MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Файл больше 12 МБ.")
+    filename = file.filename or f"mockup_{order_id}"
+    ext = media.ext_for(file.content_type, filename, allow_docs=True)
+    if ext is None:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "Поддерживаются фото (JPG/PNG/WEBP/HEIC) и PDF.",
+        )
+    local_url = media.save_bytes(content, ext, f"orders/{order_id}")
 
     token = await integrations.get(session, "yandex_disk.oauth_token")
     root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
@@ -465,14 +483,21 @@ async def upload_mockup(
             "Яндекс.Диск не настроен — задайте OAuth-токен в разделе «Настройки → Интеграции».",
         )
     try:
-        url = await yandex_disk.upload(
+        disk_url = await yandex_disk.upload(
             yandex_disk.design_path(root, order_id, filename), content, token=token
         )
     except yandex_disk.YandexDiskError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Яндекс.Диск: {e}") from e
 
-    order.mockup_url = url
-    if fsm.can_transition(order.status, OrderStatus.MOCKUP_SENT):
+    order.mockup_url = local_url
+    order.mockup_disk_url = disk_url
+    # Загрузка макета — штатный триггер «Отправка макета». FSM пускает только из
+    # «Дизайн в процессе» / «Пересогласование»; из более ранних статусов воронки
+    # всё равно двигаем вперёд (иначе кнопка в админке «ничего не делает»).
+    if order.status != OrderStatus.MOCKUP_SENT and (
+        fsm.can_transition(order.status, OrderStatus.MOCKUP_SENT)
+        or OrderStatus.MOCKUP_SENT in _forward_statuses(order.status)
+    ):
         await _record(session, order, OrderStatus.MOCKUP_SENT, user)
 
     msg = await session.scalar(select(BotMessage).where(BotMessage.code == "msg_009аб"))
@@ -484,7 +509,7 @@ async def upload_mockup(
             order_id=order.id,
             kind="mockup",
             text=(msg.text if msg else _MOCKUP_DEFAULT_TEXT),
-            attachment_url=url,
+            attachment_url=local_url,
         )
     )
     await session.commit()

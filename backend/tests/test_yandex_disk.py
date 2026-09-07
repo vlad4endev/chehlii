@@ -56,6 +56,15 @@ def _fake_client(routes: dict[str, _FakeResponse], monkeypatch, *, capture: dict
     monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
 
 
+def test_safe_filename_strips_path_and_punctuation():
+    name = "Изображение Со, 6 г., 02_25_12.png"
+    assert yd.safe_filename(name) == "Изображение_Со_6_г._02_25_12.png"
+    assert yd.safe_filename("../../x.png") == "x.png"
+    assert yd.safe_filename("a/b\\c.jpeg") == "c.jpeg"
+    path = yd.design_path("/chechlii/orders", 20, "Макет, v2.png")
+    assert path.endswith("/20/design/Макет_v2.png")
+
+
 def test_sanitize_strips_oauth_prefix_and_quotes():
     assert yd.sanitize_token("  OAuth y0_abc  ") == "y0_abc"
     assert yd.sanitize_token("Bearer y0_abc") == "y0_abc"
@@ -79,7 +88,7 @@ def test_authorize_url_matches_quickstart():
     assert "client_id=client-123" in url
     assert "redirect_uri" not in url
     assert "force_confirm=yes" in url
-    assert "cloud_api%3Adisk.write" in url
+    assert "scope" not in url
 
 
 def test_authorize_url_optional_redirect_is_encoded():
