@@ -1,13 +1,13 @@
-"""Админка: инбокс «Поможем выбрать» — диалоги клиента с продавцом."""
+"""Админка: инбокс «Сообщения» — диалоги клиента с продавцом."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
@@ -24,9 +24,11 @@ FilterTab = Literal["waiting", "open", "closed", "all"]
 
 
 class MediaItem(BaseModel):
-    url: str
+    url: str = ""
     type: str = "image"
     name: str | None = None
+    code: str | None = None
+    state: str | None = None
 
 
 class ThreadOut(BaseModel):
@@ -63,6 +65,10 @@ class ReplyIn(BaseModel):
     media: list[MediaItem] = Field(default_factory=list, max_length=10)
 
 
+class ScenarioIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
 def _name(c: Client) -> str:
     return (c.nickname or c.phone or f"Клиент #{c.id}").strip()
 
@@ -84,7 +90,20 @@ def _thread_out(row: ConsultThread, client: Client) -> ThreadOut:
 
 
 def _msg_out(m: ConsultMessage) -> MessageOut:
-    items = [MediaItem(**x) for x in (m.media or []) if isinstance(x, dict) and x.get("url")]
+    items: list[MediaItem] = []
+    for x in m.media or []:
+        if not isinstance(x, dict):
+            continue
+        if x.get("url") or x.get("type") == "scenario":
+            items.append(
+                MediaItem(
+                    url=str(x.get("url") or ""),
+                    type=str(x.get("type") or "file"),
+                    name=x.get("name"),
+                    code=x.get("code"),
+                    state=x.get("state"),
+                )
+            )
     return MessageOut(
         id=m.id,
         sender=m.sender,
@@ -110,7 +129,7 @@ async def _load(session: AsyncSession, thread_id: int) -> tuple[ConsultThread, C
 async def list_threads(
     _: AdminOnly,
     session: Session,
-    tab: Annotated[FilterTab, Query()] = "waiting",
+    tab: Annotated[FilterTab, Query()] = "all",
     q: Annotated[str | None, Query(max_length=80)] = None,
 ) -> list[ThreadOut]:
     stmt = (
@@ -168,11 +187,13 @@ async def mark_read(thread_id: int, _: AdminOnly, session: Session) -> dict:
 
 
 @router.post("/threads/{thread_id}/close", response_model=ThreadOut)
-async def close_thread(thread_id: int, _: AdminOnly, session: Session) -> ThreadOut:
+async def close_thread(thread_id: int, admin: AdminOnly, session: Session) -> ThreadOut:
     row, client = await _load(session, thread_id)
-    row.status = ConsultStatus.CLOSED
-    row.closed_at = datetime.now(UTC)
-    row.unread_admin = 0
+    if client.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Клиент не найден")
+    await consult.close_with_notify(
+        session, thread=row, client=client, admin_user_id=admin.id
+    )
     await session.commit()
     await session.refresh(row)
     return _thread_out(row, client)
@@ -186,6 +207,27 @@ async def reopen_thread(thread_id: int, _: AdminOnly, session: Session) -> Threa
     await session.commit()
     await session.refresh(row)
     return _thread_out(row, client)
+
+
+@router.post("/threads/{thread_id}/scenario", response_model=MessageOut)
+async def send_scenario(
+    thread_id: int, body: ScenarioIn, admin: AdminOnly, session: Session
+) -> MessageOut:
+    row, client = await _load(session, thread_id)
+    if client.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Клиент не найден")
+    if row.status == ConsultStatus.CLOSED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Диалог закрыт — откройте снова")
+    code = body.code.strip()
+    try:
+        msg = await consult.send_scenario(
+            session, thread=row, client=client, code=code, admin_user_id=admin.id
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    await session.commit()
+    await session.refresh(msg)
+    return _msg_out(msg)
 
 
 @router.post("/threads/{thread_id}/messages", response_model=MessageOut)
@@ -224,7 +266,30 @@ async def upload_reply_media(file: UploadFile, _: AdminOnly) -> dict[str, str]:
         )
     limit = media.MAX_VIDEO_BYTES if kind in ("video", "audio") else media.MAX_BYTES
     if len(data) > limit:
-        mb = limit // (1024 * 1024)
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"Файл больше {mb} МБ.")
-    url = media.save_bytes(data, ext, "consult")
-    return {"url": url, "type": kind, "name": file.filename or ""}
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Файл больше {limit // (1024 * 1024)} МБ.",
+        )
+    return {"url": media.save_bytes(data, ext, "consult"), "type": kind, "name": file.filename or ""}
+
+
+@router.get("/unread-count")
+async def unread_count(_: AdminOnly, session: Session) -> dict:
+    n = int(
+        await session.scalar(
+            select(func.coalesce(func.sum(ConsultThread.unread_admin), 0)).where(
+                ConsultThread.status == ConsultStatus.OPEN
+            )
+        )
+        or 0
+    )
+    waiting = int(
+        await session.scalar(
+            select(func.count()).select_from(ConsultThread).where(
+                ConsultThread.status == ConsultStatus.OPEN,
+                ConsultThread.unread_admin > 0,
+            )
+        )
+        or 0
+    )
+    return {"unread": n, "waiting": waiting}

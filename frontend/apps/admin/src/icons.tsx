@@ -34,7 +34,6 @@ const ICONS: Record<string, ReactNode> = {
   plus: <P d="M12 5v14M5 12h14" />,
   search: <P d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.3-4.3" />,
   chevron: <P d="M9 6l6 6-6 6" />,
-  chat: <P d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
   // KPI
   box: <P d="M4 7l8-3 8 3-8 3zM4 7v10l8 3 8-3V7M12 10v10" />,
   pulse: <P d="M3 12h4l2 6 4-14 2 8h6" />,
@@ -42,6 +41,7 @@ const ICONS: Record<string, ReactNode> = {
   ruble: <P d="M8 20V4h5a4 4 0 010 8H8m0-4h9M6 16h6" />,
   client: <P d="M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" />,
   star: <P d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.4 7.2 18.9l.9-5.4L4.2 9.7l5.4-.8z" />,
+  chat: <P d="M21 12a8 8 0 01-8 8H7l-4 3V12a8 8 0 018-8h2a8 8 0 018 5z" />,
 }
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {

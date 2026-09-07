@@ -9,6 +9,8 @@ export interface MediaItem {
   url: string
   type: string
   name?: string | null
+  code?: string | null
+  state?: string | null
 }
 
 export interface ConsultThread {
@@ -58,6 +60,9 @@ export const reopenThread = (id: number) =>
 
 export const sendReply = (id: number, text: string, media: MediaItem[]) =>
   apiSend<ConsultMessage>('POST', `/admin/consult/threads/${id}/messages`, { text, media })
+
+export const sendScenario = (id: number, code: string) =>
+  apiSend<ConsultMessage>('POST', `/admin/consult/threads/${id}/scenario`, { code })
 
 export const uploadConsultMedia = (file: File) =>
   apiUpload<MediaItem>('/admin/consult/media', file)

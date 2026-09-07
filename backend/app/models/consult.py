@@ -38,6 +38,8 @@ class ConsultThread(Base, TimestampMixin):
     last_sender: Mapped[ConsultSender | None] = mapped_column(String(16))
     unread_admin: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Сценарий из админки: бот заберёт и выставит FSM ({state, order_id?, code}).
+    pending_fsm: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ConsultMessage(Base, TimestampMixin):

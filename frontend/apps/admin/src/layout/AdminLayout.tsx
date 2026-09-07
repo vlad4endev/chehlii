@@ -26,11 +26,10 @@ export function AdminLayout() {
   useEffect(() => {
     if (user?.role !== 'admin') return
     let alive = true
-    const load = () => {
+    const load = () =>
       fetchStats()
         .then((s) => alive && setStats(s))
         .catch(() => {})
-    }
     load()
     const t = window.setInterval(load, 15000)
     return () => {
@@ -112,7 +111,7 @@ export function AdminLayout() {
             <span className="status-dot">все системы в норме</span>
           </div>
         </header>
-        <main className={`content${location.pathname.startsWith('/consult') ? ' content--fill' : ''}`}>
+        <main className={`content${current?.path === '/consult' ? ' content--fill' : ''}`}>
           <Outlet />
         </main>
       </div>

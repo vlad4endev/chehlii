@@ -7,6 +7,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
 
@@ -14,14 +15,26 @@ from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
+from bots.core.scenario import (
+    STATE_CLEAR,
+    STATE_CONSULTING,
+    STATE_WAITING_CONTACT,
+    STATE_WAITING_MATERIALS,
+    STATE_WAITING_NAME,
+    pending_payload,
+)
 from bots.core.texts import texts
 from bots.tg.handlers import router
 from bots.tg.keyboards import (
+    contact_kb,
     delivery_mode_kb,
     delivery_service_kb,
     delivery_start_kb,
+    main_menu_kb,
     mockup_kb,
 )
+from bots.tg.pending_fsm import PendingFsmMiddleware
+from bots.tg.states import OrderFlow
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
@@ -33,7 +46,8 @@ def _media_of(item: dict) -> list[dict]:
     media = list(item.get("media") or [])
     if not media and item.get("kind") == "photo" and item.get("attachment_url"):
         media = [{"url": item["attachment_url"], "type": "image"}]
-    return media[:10]  # Telegram: не больше 10 в альбоме
+    # meta scenario без url — не медиа для альбома
+    return [m for m in media[:10] if isinstance(m, dict) and m.get("url")]
 
 
 async def _deliver_mockup(bot: Bot, item: dict) -> None:
@@ -71,12 +85,64 @@ async def _deliver_mockup(bot: Bot, item: dict) -> None:
     )
 
 
-async def _deliver(bot: Bot, item: dict) -> None:
+_TG_STATE = {
+    STATE_WAITING_CONTACT: OrderFlow.waiting_contact,
+    STATE_WAITING_NAME: OrderFlow.waiting_name,
+    STATE_WAITING_MATERIALS: OrderFlow.waiting_materials,
+    STATE_CONSULTING: OrderFlow.consulting,
+}
+
+
+async def _set_redis_fsm(bot: Bot, storage: RedisStorage, item: dict) -> None:
+    """Сразу выставить FSM в Redis при доставке scenario (не ждать следующего апдейта)."""
+    pending = pending_payload(item)
+    if not pending.get("state"):
+        return
+    chat_id = int(item["channel_user_id"])
+    key = StorageKey(bot_id=bot.id, chat_id=chat_id, user_id=chat_id)
+    name = pending["state"]
+    if name == STATE_CLEAR:
+        await storage.set_state(key, None)
+        await storage.set_data(key, {})
+        return
+    mapped = _TG_STATE.get(name)
+    if mapped is None:
+        return
+    await storage.set_state(key, mapped)
+    data: dict = {}
+    if pending.get("order_id") is not None:
+        data["order_id"] = pending["order_id"]
+    await storage.set_data(key, data)
+
+
+def _scenario_kb(state: str | None):
+    if state == STATE_WAITING_CONTACT:
+        return contact_kb()
+    return main_menu_kb()
+
+
+async def _deliver_scenario(bot: Bot, storage: RedisStorage | None, item: dict) -> None:
+    chat_id = int(item["channel_user_id"])
+    pending = pending_payload(item)
+    text = item.get("text") or "Новое сообщение"
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=_scenario_kb(pending.get("state")),
+    )
+    if storage is not None:
+        await _set_redis_fsm(bot, storage, item)
+
+
+async def _deliver(bot: Bot, item: dict, storage: RedisStorage | None = None) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     chat_id = int(item["channel_user_id"])
     if kind == "mockup":
         await _deliver_mockup(bot, item)
+        return
+    if kind == "scenario":
+        await _deliver_scenario(bot, storage, item)
         return
 
     # Рассылка с медиа: фото/видео — альбомом; кружки (video note) — отдельно.
@@ -88,7 +154,6 @@ async def _deliver(bot: Bot, item: dict) -> None:
         sent_any = False
         text_sent = False
 
-        # 1) Фото/обычные видео: одно — отдельно, несколько — альбомом (с подписью).
         files = []
         for i, mm in enumerate(rest):
             data = await _fetch_media(mm.get("url", ""))
@@ -114,7 +179,6 @@ async def _deliver(bot: Bot, item: dict) -> None:
             if caption:
                 text_sent = True
 
-        # 2) Видео-кружки: у video note подписи нет — шлём отдельными сообщениями.
         for i, mm in enumerate(notes):
             data = await _fetch_media(mm.get("url", ""))
             if data:
@@ -123,7 +187,6 @@ async def _deliver(bot: Bot, item: dict) -> None:
                 )
                 sent_any = True
 
-        # 3) Голосовые и файлы (ответы из «Поможем выбрать»).
         for i, mm in enumerate(extras):
             data = await _fetch_media(mm.get("url", ""))
             if not data:
@@ -139,12 +202,10 @@ async def _deliver(bot: Bot, item: dict) -> None:
             if cap:
                 text_sent = True
 
-        # 4) Текст, если ещё не ушёл подписью.
         if sent_any:
             if text and not text_sent:
                 await bot.send_message(chat_id=chat_id, text=text)
             return
-        # если ничего не скачалось — упадём на текст ниже
 
     kb = None
     if kind == "delivery" and item.get("order_id"):
@@ -159,14 +220,14 @@ async def _deliver(bot: Bot, item: dict) -> None:
     await bot.send_message(chat_id=chat_id, text=text or "Новое сообщение", reply_markup=kb)
 
 
-async def _outbox_loop(bot: Bot) -> None:
+async def _outbox_loop(bot: Bot, storage: RedisStorage) -> None:
     """Забирает исходящие сообщения из backend и доставляет клиентам (backend
     не ходит в Telegram напрямую — TG заблокирован на сервере)."""
     while True:
         try:
             for item in await backend.get_outbox("tg"):
                 try:
-                    await _deliver(bot, item)
+                    await _deliver(bot, item, storage)
                     await backend.mark_outbox_sent(item["id"])
                 except Exception as e:  # noqa: BLE001
                     logging.warning("outbox tg: доставка не удалась: %s", e)
@@ -203,10 +264,12 @@ async def main() -> None:
     await texts.load()
 
     bot = await _make_bot()
-    dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
+    storage = RedisStorage.from_url(settings.redis_url)
+    dp = Dispatcher(storage=storage)
+    dp.message.outer_middleware(PendingFsmMiddleware())
     dp.include_router(router)
 
-    outbox = asyncio.create_task(_outbox_loop(bot))
+    outbox = asyncio.create_task(_outbox_loop(bot, storage))
     try:
         await dp.start_polling(bot)
     finally:

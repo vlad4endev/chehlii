@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, mediaUrl } from '../api'
+import { type BotMessage, fetchBotMessages } from '../botTextsApi'
 import { Icon } from '../icons'
 import {
   type ConsultMessage,
@@ -13,6 +14,7 @@ import {
   markRead,
   reopenThread,
   sendReply,
+  sendScenario,
   uploadConsultMedia,
 } from '../consultApi'
 import { ChannelChip, initials } from '../ui'
@@ -23,6 +25,9 @@ const TABS: { id: ConsultTab; label: string }[] = [
   { id: 'closed', label: 'Закрытые' },
   { id: 'all', label: 'Все' },
 ]
+
+/** Сценарии, которые переводят клиента в нужный шаг бота. */
+const GUIDE_CODES = new Set(['msg_002', 'msg_003', 'msg_006а', 'msg_006б', 'msg_help'])
 
 const CHANNEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 
@@ -35,15 +40,6 @@ function fmtTime(iso: string | null): string {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
 }
 
-function fmtStamp(iso: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function mediaLabel(m: MediaItem): string {
   if (m.type === 'audio') return 'Голосовое'
   if (m.type === 'video') return 'Видео'
@@ -51,9 +47,28 @@ function mediaLabel(m: MediaItem): string {
   return m.name || 'Вложение'
 }
 
+function scenarioLabel(m: ConsultMessage): string | null {
+  if (m.kind !== 'scenario') return null
+  return m.media.find((x) => x.type === 'scenario')?.code || null
+}
+
+function fmtBubbleTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function Consult() {
   const initialId = Number(new URLSearchParams(window.location.search).get('id') || 0) || null
-  const [tab, setTab] = useState<ConsultTab>(initialId ? 'all' : 'waiting')
+  const [tab, setTab] = useState<ConsultTab>('all')
   const [q, setQ] = useState('')
   const [threads, setThreads] = useState<ConsultThread[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,9 +81,20 @@ export function Consult() {
   const [attach, setAttach] = useState<MediaItem[]>([])
   const [sending, setSending] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [botMsgs, setBotMsgs] = useState<BotMessage[]>([])
+  const [scenarioSel, setScenarioSel] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const stickBottom = useRef(true)
+
+  useEffect(() => {
+    fetchBotMessages()
+      .then(setBotMsgs)
+      .catch(() => setBotMsgs([]))
+  }, [])
+
+  const guideMsgs = botMsgs.filter((m) => GUIDE_CODES.has(m.code))
+  const textMsgs = botMsgs.filter((m) => !GUIDE_CODES.has(m.code) && m.code !== 'msg_help_close')
 
   const loadList = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -143,6 +169,22 @@ export function Consult() {
     }
   }
 
+  async function onPickScenario(code: string) {
+    if (!activeId || sending || !code) return
+    setScenarioSel('')
+    setSending(true)
+    try {
+      await sendScenario(activeId, code)
+      stickBottom.current = true
+      await loadDetail(activeId)
+      await loadList(true)
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Не удалось отправить сценарий')
+    } finally {
+      setSending(false)
+    }
+  }
+
   async function onAttach(file: File) {
     try {
       const item = await uploadConsultMedia(file)
@@ -187,13 +229,15 @@ export function Consult() {
     <div className={`inbox${showChat ? ' inbox--chat' : ''}`}>
       <aside className="inbox__list">
         <div className="inbox__head">
-          <h1 className="page__title">Поможем выбрать</h1>
-          <p className="inbox__lead">Переписка с клиентами из бота</p>
-          <div className="segmented inbox__tabs">
+          <h1 className="page__title">Сообщения</h1>
+          <div className="inbox__tabs" role="tablist">
             {TABS.map((t) => (
               <button
                 key={t.id}
-                className={`segmented__btn${tab === t.id ? ' segmented__btn--active' : ''}`}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                className={`inbox__tab${tab === t.id ? ' inbox__tab--active' : ''}`}
                 onClick={() => setTab(t.id)}
               >
                 {t.label}
@@ -289,40 +333,51 @@ export function Consult() {
               {detail.messages.length === 0 && (
                 <div className="inbox__empty">Клиент ещё ничего не написал.</div>
               )}
-              {detail.messages.map((m) => (
-                <article
-                  key={m.id}
-                  className={`bubble bubble--${m.sender === 'admin' ? 'out' : 'in'}`}
-                >
-                  {m.text && <p>{m.text}</p>}
-                  {m.media.length > 0 && (
-                    <div className="bubble__media">
-                      {m.media.map((item, i) =>
-                        item.type === 'image' ? (
-                          <a key={i} href={mediaUrl(item.url)} target="_blank" rel="noreferrer">
-                            <img src={mediaUrl(item.url)} alt="" />
-                          </a>
-                        ) : item.type === 'audio' ? (
-                          <audio key={i} controls src={mediaUrl(item.url)} />
-                        ) : item.type === 'video' ? (
-                          <video key={i} controls src={mediaUrl(item.url)} />
-                        ) : (
-                          <a
-                            key={i}
-                            className="bubble__file"
-                            href={mediaUrl(item.url)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {mediaLabel(item)}
-                          </a>
-                        ),
-                      )}
-                    </div>
-                  )}
-                  <time>{fmtStamp(m.created_at)}</time>
-                </article>
-              ))}
+              {detail.messages.map((m) => {
+                const sc = scenarioLabel(m)
+                const mine = m.sender === 'admin'
+                return (
+                  <article
+                    key={m.id}
+                    className={`bubble bubble--${mine ? 'out' : 'in'}${
+                      m.kind === 'scenario' ? ' bubble--scenario' : ''
+                    }`}
+                  >
+                    {m.kind === 'scenario' && (
+                      <span className="bubble__tag">Сценарий{sc ? ` · ${sc}` : ''}</span>
+                    )}
+                    {m.text && <p>{m.text}</p>}
+                    {m.media.filter((x) => x.url).length > 0 && (
+                      <div className="bubble__media">
+                        {m.media
+                          .filter((x) => x.url)
+                          .map((item, i) =>
+                            item.type === 'image' ? (
+                              <a key={i} href={mediaUrl(item.url)} target="_blank" rel="noreferrer">
+                                <img src={mediaUrl(item.url)} alt="" />
+                              </a>
+                            ) : item.type === 'audio' ? (
+                              <audio key={i} controls src={mediaUrl(item.url)} />
+                            ) : item.type === 'video' ? (
+                              <video key={i} controls src={mediaUrl(item.url)} />
+                            ) : (
+                              <a
+                                key={i}
+                                className="bubble__file"
+                                href={mediaUrl(item.url)}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {mediaLabel(item)}
+                              </a>
+                            ),
+                          )}
+                      </div>
+                    )}
+                    <time dateTime={m.created_at}>{fmtBubbleTime(m.created_at)}</time>
+                  </article>
+                )
+              })}
             </div>
 
             {thread.status === 'closed' ? (
@@ -369,31 +424,65 @@ export function Consult() {
                   />
                   <button
                     type="button"
-                    className="btn btn--ghost"
+                    className="inbox__icon-btn"
                     onClick={() => fileRef.current?.click()}
                     title="Вложение"
+                    aria-label="Вложение"
                   >
                     +
                   </button>
                   <textarea
                     className="input textarea inbox__input"
-                    rows={2}
-                    placeholder="Ответ клиенту…"
+                    rows={1}
+                    placeholder="Напишите ответ…"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
                         onSend()
                       }
                     }}
                   />
                   <button
-                    className="btn btn--primary"
+                    className="btn btn--primary inbox__send"
                     disabled={sending || (!draft.trim() && attach.length === 0)}
                   >
                     {sending ? '…' : 'Отправить'}
                   </button>
+                </div>
+                <div className="inbox__tools">
+                  <label className="inbox__scenario-label" htmlFor="inbox-scenario">
+                    Сценарий
+                  </label>
+                  <select
+                    id="inbox-scenario"
+                    className="input inbox__scenario-select"
+                    value={scenarioSel}
+                    disabled={sending}
+                    onChange={(e) => onPickScenario(e.target.value)}
+                    aria-label="Отправить сценарий бота"
+                  >
+                    <option value="">Выберите и сразу отправится…</option>
+                    {guideMsgs.length > 0 && (
+                      <optgroup label="Направить клиента">
+                        {guideMsgs.map((m) => (
+                          <option key={m.code} value={m.code}>
+                            {m.trigger}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {textMsgs.length > 0 && (
+                      <optgroup label="Текст из бота">
+                        {textMsgs.map((m) => (
+                          <option key={m.code} value={m.code}>
+                            {m.code} — {m.trigger}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
               </form>
             )}

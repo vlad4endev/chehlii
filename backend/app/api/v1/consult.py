@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.enums import ConsultSender, ConsultStatus
+from app.enums import Channel, ConsultSender, ConsultStatus
 from app.models.client import Client
 from app.models.consult import ConsultThread
 from app.services import consult, media
@@ -38,10 +38,6 @@ class ConsultOut(BaseModel):
     created_at: datetime
 
 
-def _saved_file(url: str, kind: str, name: str | None) -> dict[str, str]:
-    return {"url": url, "type": kind, "name": name or ""}
-
-
 @router.post("/files")
 async def upload_consult_file(file: UploadFile) -> dict[str, str]:
     """Сохранить вложение клиента (фото, видео, голосовое, файл)."""
@@ -51,18 +47,18 @@ async def upload_consult_file(file: UploadFile) -> dict[str, str]:
     ext, kind = media.consult_kind(file.content_type, file.filename)
     limit = media.MAX_VIDEO_BYTES if kind in ("video", "audio") else media.MAX_BYTES
     if len(data) > limit:
-        mb = limit // (1024 * 1024)
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"Файл больше {mb} МБ.")
-    url = media.save_bytes(data, ext, "consult")
-    return _saved_file(url, kind, file.filename)
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Файл больше {limit // (1024 * 1024)} МБ.",
+        )
+    return {"url": media.save_bytes(data, ext, "consult"), "type": kind, "name": file.filename or ""}
 
 
 @router.post("/messages", response_model=ConsultOut)
 async def post_client_message(body: ConsultIn, session: Session) -> ConsultOut:
     client = await session.get(Client, body.client_id)
-    if client is None:
+    if client is None or client.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Клиент не найден")
-    client.deleted_at = None
     text = (body.text or "").strip() or None
     items = [m.model_dump() for m in body.media if m.url]
     if not text and not items:
@@ -81,7 +77,7 @@ async def post_client_message(body: ConsultIn, session: Session) -> ConsultOut:
 
 @router.get("/open/{client_id}")
 async def has_open_thread(client_id: int, session: Session) -> dict:
-    """Есть ли открытый диалог — бот решает, слать свободный текст сюда."""
+    """Есть ли открытый диалог — бот решает, слать свободный текст в консультацию."""
     row = await session.scalar(
         select(ConsultThread).where(
             ConsultThread.client_id == client_id,
@@ -89,3 +85,36 @@ async def has_open_thread(client_id: int, session: Session) -> dict:
         )
     )
     return {"open": row is not None, "thread_id": row.id if row else None}
+
+
+class PendingTakeIn(BaseModel):
+    client_id: int | None = None
+    channel: str | None = Field(default=None, max_length=8)
+    channel_user_id: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/pending/take")
+async def take_pending(body: PendingTakeIn, session: Session) -> dict:
+    """Снять pending_fsm: бот применяет FSM до выбора хендлера (outer middleware)."""
+    client_id = body.client_id
+    if client_id is None:
+        if not body.channel or not body.channel_user_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Нужен client_id или channel + channel_user_id"
+            )
+        try:
+            channel = Channel(body.channel)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неизвестный канал") from e
+        client = await session.scalar(
+            select(Client).where(
+                Client.channel == channel,
+                Client.channel_user_id == body.channel_user_id,
+            )
+        )
+        if client is None:
+            return {"pending": None}
+        client_id = client.id
+    pending = await consult.take_pending_fsm(session, client_id=client_id)
+    await session.commit()
+    return {"pending": pending}

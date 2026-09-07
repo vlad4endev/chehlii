@@ -170,5 +170,33 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def consult_is_open(self, client_id: int) -> bool:
+        try:
+            r = await self._client.get(f"/consult/open/{client_id}")
+            r.raise_for_status()
+            return bool(r.json().get("open"))
+        except httpx.HTTPError:
+            return False
+
+    async def consult_take_pending(
+        self,
+        *,
+        client_id: int | None = None,
+        channel: str | None = None,
+        channel_user_id: str | None = None,
+    ) -> dict | None:
+        payload: dict = {}
+        if client_id is not None:
+            payload["client_id"] = client_id
+        if channel and channel_user_id:
+            payload["channel"] = channel
+            payload["channel_user_id"] = channel_user_id
+        try:
+            r = await self._client.post("/consult/pending/take", json=payload)
+            r.raise_for_status()
+            return r.json().get("pending")
+        except httpx.HTTPError:
+            return None
+
 
 backend = Backend()

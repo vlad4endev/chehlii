@@ -16,14 +16,18 @@ from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
+from bots.core.scenario import STATE_WAITING_CONTACT, pending_payload
 from bots.core.texts import texts
 from bots.max.handlers import dp
 from bots.max.keyboards import (
+    contact_kb,
     delivery_mode_kb,
     delivery_service_kb,
     delivery_start_kb,
+    main_menu_kb,
     mockup_kb,
 )
+from bots.max.pending_fsm import PendingFsmMiddleware
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
@@ -35,7 +39,7 @@ def _media_of(item: dict) -> list[dict]:
     media = list(item.get("media") or [])
     if not media and item.get("kind") == "photo" and item.get("attachment_url"):
         media = [{"url": item["attachment_url"], "type": "image"}]
-    return media[:10]
+    return [m for m in media[:10] if isinstance(m, dict) and m.get("url")]
 
 
 async def _deliver_mockup(bot: Bot, item: dict) -> None:
@@ -65,12 +69,33 @@ async def _deliver_mockup(bot: Bot, item: dict) -> None:
     )
 
 
+async def _scenario_attachments(bot: Bot, state: str | None) -> list:
+    me = getattr(bot, "me", None) or getattr(bot, "_me", None)
+    username = getattr(me, "username", None) if me else None
+    bot_id = getattr(me, "user_id", None) if me else None
+    if state == STATE_WAITING_CONTACT:
+        return [contact_kb()]
+    return [main_menu_kb(username, bot_id)]
+
+
+async def _deliver_scenario(bot: Bot, item: dict) -> None:
+    uid = int(item["channel_user_id"])
+    pending = pending_payload(item)
+    text = item.get("text") or "Новое сообщение"
+    atts = await _scenario_attachments(bot, pending.get("state"))
+    await bot.send_message(user_id=uid, text=text, attachments=atts)
+    # FSM для MAX ставит outer middleware на следующем апдейте (MemoryContext).
+
+
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     uid = int(item["channel_user_id"])
     if kind == "mockup":
         await _deliver_mockup(bot, item)
+        return
+    if kind == "scenario":
+        await _deliver_scenario(bot, item)
         return
 
     # Рассылка с медиа → одно сообщение с несколькими вложениями (фото/видео).
@@ -131,6 +156,7 @@ async def main() -> None:
 
     await texts.load()
     bot = Bot(settings.max_bot_token)
+    dp.register_outer_middleware(PendingFsmMiddleware())
     outbox = asyncio.create_task(_outbox_loop(bot))
     try:
         await dp.start_polling(bot)

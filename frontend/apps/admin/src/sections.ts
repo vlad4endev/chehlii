@@ -21,7 +21,7 @@ export const OVERVIEW: Section = {
 // «Тексты бота» переехали в Настройки → вкладка «Боты», поэтому в меню их нет.
 export const SECTIONS: Section[] = [
   { path: '/orders', label: 'Заказы', icon: 'orders', roles: ['admin', 'designer'], badge: 'orders_active' },
-  { path: '/consult', label: 'Поможем выбрать', icon: 'chat', roles: ['admin'], badge: 'consult_waiting' },
+  { path: '/consult', label: 'Сообщения', icon: 'chat', roles: ['admin'], badge: 'consult_waiting' },
   { path: '/catalog', label: 'Каталог', icon: 'catalog', roles: ['admin'] },
   { path: '/clients', label: 'Клиенты', icon: 'clients', roles: ['admin'] },
   { path: '/journeys', label: 'Клиентские пути', icon: 'clients', roles: ['admin'] },
