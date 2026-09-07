@@ -230,6 +230,19 @@ async def send_scenario(
     return _msg_out(msg)
 
 
+@router.post("/threads/{thread_id}/typing")
+async def typing(thread_id: int, _: AdminOnly, session: Session) -> dict:
+    """Админ набирает ответ → бот покажет клиенту индикатор «печатает…»."""
+    row, client = await _load(session, thread_id)
+    if client.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Клиент не найден")
+    if row.status == ConsultStatus.CLOSED:
+        return {"ok": False, "queued": False}
+    queued = await consult.enqueue_typing(session, client)
+    await session.commit()
+    return {"ok": True, "queued": queued}
+
+
 @router.post("/threads/{thread_id}/messages", response_model=MessageOut)
 async def reply(thread_id: int, body: ReplyIn, admin: AdminOnly, session: Session) -> MessageOut:
     row, client = await _load(session, thread_id)

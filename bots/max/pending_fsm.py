@@ -16,6 +16,7 @@ from bots.core.scenario import (
     STATE_WAITING_MATERIALS,
     STATE_WAITING_NAME,
 )
+from bots.max.chat_map import remember
 from bots.max.states import OrderFlow
 
 CHANNEL = "max"
@@ -52,11 +53,12 @@ def _user_id_from_event(event_object: Any) -> str | None:
         body = getattr(event_object, "message", None)
         sender = getattr(body, "sender", None) if body else None
         uid = getattr(sender, "user_id", None)
-        if uid is not None:
-            return str(uid)
-        # fallback: recipient chat for dialogs
         recipient = getattr(body, "recipient", None) if body else None
         chat_id = getattr(recipient, "chat_id", None) if recipient else None
+        if uid is not None and chat_id is not None:
+            remember(uid, chat_id)
+        if uid is not None:
+            return str(uid)
         if chat_id is not None:
             return str(chat_id)
     return None

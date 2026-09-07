@@ -172,6 +172,29 @@ async def enqueue_admin_reply(session: AsyncSession, client: Client, msg: Consul
     )
 
 
+async def enqueue_typing(session: AsyncSession, client: Client) -> bool:
+    """Сигнал «печатает…» в outbox. Не дублируем, если уже есть неотправенный typing."""
+    pending = await session.scalar(
+        select(OutboundMessage.id).where(
+            OutboundMessage.client_id == client.id,
+            OutboundMessage.kind == "typing",
+            OutboundMessage.sent_at.is_(None),
+        )
+    )
+    if pending is not None:
+        return False
+    session.add(
+        OutboundMessage(
+            client_id=client.id,
+            channel=client.channel,
+            channel_user_id=client.channel_user_id,
+            kind="typing",
+            text=None,
+        )
+    )
+    return True
+
+
 async def enqueue_scenario(
     session: AsyncSession,
     client: Client,

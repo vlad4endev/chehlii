@@ -64,5 +64,9 @@ export const sendReply = (id: number, text: string, media: MediaItem[]) =>
 export const sendScenario = (id: number, code: string) =>
   apiSend<ConsultMessage>('POST', `/admin/consult/threads/${id}/scenario`, { code })
 
+/** Сигнал «печатает…» клиенту (throttle на стороне UI). */
+export const signalTyping = (id: number) =>
+  apiSend<{ ok: boolean; queued: boolean }>('POST', `/admin/consult/threads/${id}/typing`)
+
 export const uploadConsultMedia = (file: File) =>
   apiUpload<MediaItem>('/admin/consult/media', file)

@@ -610,9 +610,9 @@ async def on_consult(msg: Message) -> None:
         logging.warning("consult ingest failed: %s", e)
         await msg.answer("Не получилось передать сообщение, напишите ещё раз.")
         return
-    if sent:
-        await msg.answer(texts.get("msg_help_ack"))
-        await backend.mark_journey(client["id"], "msg_help_ack")
+    if not sent:
+        return
+    # Без автоответа: клиент увидит «печатает…», когда админ начнёт набирать ответ.
 
 
 # Фолбэк: любое сообщение вне сценария → в меню.

@@ -15,6 +15,7 @@ import {
   reopenThread,
   sendReply,
   sendScenario,
+  signalTyping,
   uploadConsultMedia,
 } from '../consultApi'
 import { ChannelChip, initials } from '../ui'
@@ -28,6 +29,13 @@ const TABS: { id: ConsultTab; label: string }[] = [
 
 /** Сценарии, которые переводят клиента в нужный шаг бота. */
 const GUIDE_CODES = new Set(['msg_002', 'msg_003', 'msg_006а', 'msg_006б', 'msg_help'])
+
+/**
+ * Как часто слать typing в backend, пока админ набирает.
+ * TG держит «печатает…» ~5 с — слишком редко = мигание, слишком часто = шум в outbox.
+ * TODO(you): подкрутите под ощущение живого ответа (обычно 2500–4000).
+ */
+const TYPING_THROTTLE_MS = 3000
 
 const CHANNEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
 
@@ -86,6 +94,21 @@ export function Consult() {
   const scroller = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const stickBottom = useRef(true)
+  const typingAt = useRef(0)
+
+  function notifyTyping() {
+    if (activeId == null || sending) return
+    const now = Date.now()
+    if (now - typingAt.current < TYPING_THROTTLE_MS) return
+    typingAt.current = now
+    void signalTyping(activeId).catch(() => {
+      /* индикатор — best-effort */
+    })
+  }
+
+  useEffect(() => {
+    typingAt.current = 0
+  }, [activeId])
 
   useEffect(() => {
     fetchBotMessages()
@@ -189,6 +212,7 @@ export function Consult() {
     try {
       const item = await uploadConsultMedia(file)
       setAttach((prev) => [...prev, item].slice(0, 10))
+      notifyTyping()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось загрузить файл')
     }
@@ -436,7 +460,10 @@ export function Consult() {
                     rows={1}
                     placeholder="Напишите ответ…"
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(e) => {
+                      setDraft(e.target.value)
+                      if (e.target.value.trim()) notifyTyping()
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()

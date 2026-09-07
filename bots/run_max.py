@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 from maxapi import Bot
+from maxapi.enums.sender_action import SenderAction
 from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
 
@@ -18,6 +19,7 @@ from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
 from bots.core.scenario import STATE_WAITING_CONTACT, pending_payload
 from bots.core.texts import texts
+from bots.max.chat_map import chat_for
 from bots.max.handlers import dp
 from bots.max.keyboards import (
     contact_kb,
@@ -91,6 +93,10 @@ async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     uid = int(item["channel_user_id"])
+    if kind == "typing":
+        # channel_user_id = user_id; send_action нужен chat_id диалога.
+        await bot.send_action(chat_id=chat_for(uid), action=SenderAction.TYPING_ON)
+        return
     if kind == "mockup":
         await _deliver_mockup(bot, item)
         return
@@ -146,7 +152,7 @@ async def _outbox_loop(bot: Bot) -> None:
                     logging.warning("outbox max: доставка не удалась: %s", e)
         except Exception:  # noqa: BLE001
             pass
-        await asyncio.sleep(5)
+        await asyncio.sleep(1.5)
 
 
 async def main() -> None:

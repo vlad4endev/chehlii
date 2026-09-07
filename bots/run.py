@@ -7,6 +7,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.enums import ChatAction
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
@@ -138,6 +139,9 @@ async def _deliver(bot: Bot, item: dict, storage: RedisStorage | None = None) ->
     text = item.get("text") or ""
     kind = item.get("kind")
     chat_id = int(item["channel_user_id"])
+    if kind == "typing":
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        return
     if kind == "mockup":
         await _deliver_mockup(bot, item)
         return
@@ -233,7 +237,7 @@ async def _outbox_loop(bot: Bot, storage: RedisStorage) -> None:
                     logging.warning("outbox tg: доставка не удалась: %s", e)
         except Exception:  # noqa: BLE001
             pass
-        await asyncio.sleep(5)
+        await asyncio.sleep(1.5)
 
 
 async def _make_bot() -> Bot:

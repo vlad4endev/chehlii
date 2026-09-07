@@ -49,3 +49,8 @@ def test_scenario_meta_roundtrip() -> None:
     meta = [{"type": "scenario", "code": "msg_006а", "state": "waiting_name"}]
     # message_kind без url → text; явный kind=scenario задаётся в send_scenario
     assert consult.message_kind("Напишите имя", meta) == "text"
+
+
+def test_enqueue_typing_coalesce_signature() -> None:
+    """enqueue_typing — публичный хелпер для индикатора печати."""
+    assert callable(consult.enqueue_typing)

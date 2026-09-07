@@ -27,6 +27,7 @@ from maxapi.types import (
 from bots.core import consult, delivery, payments
 from bots.core.backend import backend
 from bots.core.texts import texts
+from bots.max.chat_map import remember
 from bots.max.keyboards import (
     CB_CANCEL,
     CB_CATALOG,
@@ -697,6 +698,7 @@ async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
 @dp.message_created(OrderFlow.consulting)
 async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
     s = event.message.sender
+    remember(s.user_id, event.message.recipient.chat_id)
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
@@ -707,9 +709,9 @@ async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
         logging.warning("consult ingest failed: %s", e)
         await event.message.answer("Не получилось передать сообщение, напишите ещё раз.")
         return
-    if sent:
-        await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_help_ack"))
-        await backend.mark_journey(client["id"], "msg_help_ack")
+    if not sent:
+        return
+    # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
 
 
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.
