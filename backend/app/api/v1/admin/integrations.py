@@ -91,7 +91,7 @@ async def check_yandex_pay(_: AdminOnly, session: Session) -> ConnectionOut:
 
 @router.post("/yandex-delivery/check", response_model=ConnectionOut)
 async def check_yandex_delivery(_: AdminOnly, session: Session) -> ConnectionOut:
-    """Статус связи с Яндекс Доставкой: список складов (чтение) + их station_id."""
+    """Статус связи с Яндекс Доставкой: location/detect без побочных эффектов."""
     ok, detail = await yandex_delivery.check_connection(await yandex_cfg(session))
     return ConnectionOut(ok=ok, detail=detail)
 

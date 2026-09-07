@@ -38,8 +38,20 @@ class YandexDeliveryError(RuntimeError):
     pass
 
 
+def sanitize_token(raw: str | None) -> str:
+    """Убрать кавычки, переносы и префикс Bearer — в поле часто вставляют заголовок целиком."""
+    token = (raw or "").strip().strip('"').strip("'")
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return "".join(token.split())
+
+
 def base_url(is_test: bool) -> str:
     return TEST if is_test else PROD
+
+
+def _mode(is_test: bool) -> str:
+    return "тест" if is_test else "продакшен"
 
 
 def to_kopecks(rub: float) -> int:
@@ -68,13 +80,14 @@ async def _request(
     raw: bool = False,
 ) -> Any:
     """`raw=True` — вернуть байты (ярлыки приходят application/pdf, а не JSON)."""
-    if not cfg.get("token"):
+    token = sanitize_token(cfg.get("token"))
+    if not token:
         raise YandexDeliveryError("не задан OAuth-токен")
     async with httpx.AsyncClient(timeout=60 if raw else 30) as client:
         r = await client.request(
             method,
             f"{base_url(cfg['is_test'])}{path}",
-            headers={"Authorization": f"Bearer {cfg['token']}", "Accept-Language": "ru"},
+            headers={"Authorization": f"Bearer {token}", "Accept-Language": "ru"},
             json=json,
             params=params,
         )
@@ -383,23 +396,38 @@ async def warehouses(cfg: dict) -> list[dict]:
 async def check_connection(cfg: dict) -> tuple[bool, str]:
     """Проба связи без побочных эффектов.
 
-    Токен проверяем самым базовым методом (`location/detect`): он нужен любой
-    интеграции. `warehouses/list` для этого не годится — раздел управления
-    складами открыт не всякому токену и отвечает 401 даже на рабочих кредах.
-    Склады показываем сверх того, если доступ есть: их `station_id` нужен в
-    настройках, а в ЛК он на глаза не попадается.
+    Токен проверяем `location/detect`: он нужен любой интеграции.
+    `warehouses/list` для этого не годится — раздел складов открыт не всякому
+    токену и отвечает 401 даже на рабочих кредах. Если текущий хост отвечает 401,
+    пробуем другой: токен из ЛК живёт только на продакшене, тестовый из
+    документации — только на b2b.taxi.tst.yandex.net. Склады показываем сверх
+    того, если доступ есть: их `station_id` нужен в настройках.
     """
-    mode = "тест" if cfg["is_test"] else "продакшен"
+    cfg = {**cfg, "token": sanitize_token(cfg.get("token"))}
+    mode = _mode(cfg["is_test"])
     try:
         await detect_geo_id(cfg, "Москва")
     except YandexDeliveryError as e:
         detail = str(e)[:160]
-        if cfg["is_test"] and "401" in detail:
-            detail += (
-                ". В тестовом режиме нужен тестовый токен из документации — "
+        if "401" not in detail:
+            return False, f"токен отклонён ({mode}): {detail}"
+        other = {**cfg, "is_test": not cfg["is_test"]}
+        try:
+            await detect_geo_id(other, "Москва")
+        except YandexDeliveryError:
+            hint = (
+                ". В тестовом режиме нужен тестовый токен из документации API — "
                 "токен из ЛК действует только на продакшене"
+                if cfg["is_test"]
+                else ". На продакшене нужен токен из ЛК Доставки, не тестовый из документации"
             )
-        return False, f"токен отклонён ({mode}): {detail}"
+            return False, f"токен отклонён ({mode}): {detail}{hint}"
+        other_mode = _mode(other["is_test"])
+        return False, (
+            f"токен отклонён ({mode}), но принят на {other_mode}. "
+            f"Переключите «Тестовый режим» на {other_mode} — токен из ЛК и "
+            "тестовый токен из документации работают на разных хостах"
+        )
 
     try:
         found = await warehouses(cfg)

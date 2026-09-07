@@ -301,7 +301,7 @@ async def yandex_cfg(session: AsyncSession) -> dict:
         raise HTTPException(
             400, "Яндекс Доставка не настроена — задайте токен в «Настройки → Интеграции»."
         )
-    test = (await integrations.get(session, "yandex.test", "true") or "true").lower()
+    test = (await integrations.get(session, "yandex.test", "false") or "false").lower()
     return {
         "token": token,
         "is_test": test in _TRUE,

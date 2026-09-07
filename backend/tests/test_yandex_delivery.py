@@ -95,6 +95,12 @@ def test_price_to_rub_parses_offer_string():
     assert yd.price_to_rub(300) == 300.0
 
 
+def test_sanitize_token_strips_bearer_and_whitespace():
+    assert yd.sanitize_token('  Bearer y0_AgAA  \n') == "y0_AgAA"
+    assert yd.sanitize_token('"y0_AgAA"') == "y0_AgAA"
+    assert yd.sanitize_token("y0_AgAA") == "y0_AgAA"
+
+
 def test_missing_station_is_rejected():
     with pytest.raises(yd.YandexDeliveryError):
         yd.build_request(
@@ -128,10 +134,13 @@ def test_map_status(platform_status, expected):
 class _FakeResponse:
     """Минимальный ответ httpx: нужен только код и текст (см. yd._request)."""
 
-    def __init__(self, status_code: int, payload: dict | None = None):
+    def __init__(self, status_code: int, payload: dict | None = None, text: str | None = None):
         self.status_code = status_code
         self._payload = payload or {}
-        self.text = "Access denied" if status_code >= 400 else ""
+        if text is not None:
+            self.text = text
+        else:
+            self.text = "Access denied" if status_code >= 400 else ""
 
     def json(self):
         return self._payload
@@ -159,6 +168,29 @@ def _fake_client(routes: dict[str, _FakeResponse], monkeypatch):
     monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
 
 
+def _fake_client_by_host(test_resp: _FakeResponse, prod_resp: _FakeResponse, monkeypatch):
+    """Разные ответы для песочницы и продакшена (один и тот же путь)."""
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            if "b2b.taxi.tst.yandex.net" in url:
+                return test_resp
+            if "b2b-authproxy.taxi.yandex.net" in url:
+                return prod_resp
+            raise AssertionError(f"неожиданный запрос: {url}")
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+
+
 async def test_check_connection_survives_forbidden_warehouses(monkeypatch):
     # Раздел складов открыт не всякому токену: 401 на нём не значит «нет связи».
     _fake_client(
@@ -178,6 +210,19 @@ async def test_check_connection_reports_bad_token(monkeypatch):
     ok, detail = await yd.check_connection(CFG)
     assert ok is False
     assert "тестовый токен из документации" in detail  # подсказка про тестовый режим
+
+
+async def test_check_connection_detects_prod_token_in_test_mode(monkeypatch):
+    # Частый случай: токен из ЛК при включённом тестовом режиме.
+    _fake_client_by_host(
+        _FakeResponse(401, text='{"code":"unauthorized","message":"Access denied"}'),
+        _FakeResponse(200, {"variants": [{"geo_id": 213}]}),
+        monkeypatch,
+    )
+    ok, detail = await yd.check_connection(CFG)
+    assert ok is False
+    assert "принят на продакшен" in detail
+    assert "Переключите «Тестовый режим»" in detail
 
 
 async def test_check_connection_lists_warehouses(monkeypatch):
