@@ -505,11 +505,10 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
     await event.answer(notification="Принято ✅")
     chat_id = event.message.recipient.chat_id
     if approved:
-        await _send_menu(event.bot, chat_id, "Спасибо! Макет согласован — переходим к оплате.")
         b = await payments.block(order_id, "postpayment")
         await event.bot.send_message(
             chat_id=chat_id,
-            text=b.text,
+            text=f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
             attachments=[pay_kb(b.buttons)] if b.buttons else None,
         )
     else:

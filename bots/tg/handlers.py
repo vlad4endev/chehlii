@@ -200,9 +200,11 @@ async def on_mockup_response(cb: CallbackQuery) -> None:
         return
     await cb.message.edit_reply_markup(reply_markup=None)
     if approved:
-        await cb.message.answer("Спасибо! Макет согласован — переходим к оплате.")
         b = await payments.block(order_id, "postpayment")
-        await cb.message.answer(b.text, reply_markup=pay_kb(b.buttons) if b.buttons else None)
+        await cb.message.answer(
+            f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
+            reply_markup=pay_kb(b.buttons) if b.buttons else None,
+        )
     else:
         await cb.message.answer("Принято! Дизайнер доработает макет и пришлёт заново.")
     await cb.answer()
