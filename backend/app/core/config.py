@@ -44,8 +44,10 @@ class Settings(BaseSettings):
     jwt_access_ttl_minutes: int = 60
     jwt_refresh_ttl_days: int = 14
 
-    # Яндекс Диск
+    # Яндекс Диск (OAuth-приложение на oauth.yandex.ru)
     yandex_disk_oauth_token: str | None = None
+    yandex_disk_client_id: str | None = None
+    yandex_disk_client_secret: str | None = None
     yandex_disk_root: str = "/chechlii/orders"
 
     # Боты

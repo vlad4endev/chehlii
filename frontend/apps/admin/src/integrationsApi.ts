@@ -39,5 +39,16 @@ export const checkCdek = () =>
 export const checkYandexDisk = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-disk/check')
 
+export const yandexDiskOAuthUrl = (redirectUri: string) =>
+  apiGet<{ url: string; response_type: string }>(
+    `/admin/integrations/yandex-disk/oauth-url?redirect_uri=${encodeURIComponent(redirectUri)}`,
+  )
+
+export const completeYandexDiskOAuth = (body: {
+  access_token?: string
+  code?: string
+  redirect_uri?: string
+}) => apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-disk/oauth', body)
+
 export const checkRobokassa = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/robokassa/check')

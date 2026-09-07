@@ -20,10 +20,26 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "yandex_disk",
         "title": "Яндекс.Диск",
         "hint": (
-            "Хранилище файлов клиентов и макетов. Нужно для передачи макета клиенту. "
-            "Кнопка «Проверить связь» спрашивает Диск сохранённым токеном и папок не создаёт."
+            "Хранилище файлов клиентов и макетов. Создайте приложение на oauth.yandex.ru "
+            "(«для доступа к API или отладки»). В «Доступ к данным» укажите "
+            "cloud_api:disk.write, cloud_api:disk.read и cloud_api:disk.info. "
+            "Redirect URI — адрес этой страницы настроек, тогда токен вернётся сам. "
+            "Иначе скопируйте токен со страницы Яндекса и вставьте сюда. "
+            "«Проверить связь» папок не создаёт."
         ),
         "fields": [
+            {
+                "key": "yandex_disk.client_id",
+                "label": "Client ID приложения",
+                "secret": False,
+                "placeholder": "из oauth.yandex.ru",
+            },
+            {
+                "key": "yandex_disk.client_secret",
+                "label": "Client secret (для обмена code)",
+                "secret": True,
+                "placeholder": "нужен, если Яндекс вернёт code, а не токен",
+            },
             {
                 "key": "yandex_disk.oauth_token",
                 "label": "OAuth-токен",
@@ -277,6 +293,8 @@ SECRET_KEYS: set[str] = {f["key"] for g in INTEGRATION_SCHEMA for f in g["fields
 # Фоллбэк из переменных окружения для известных ключей.
 _ENV_FALLBACK = {
     "yandex_disk.oauth_token": lambda: settings.yandex_disk_oauth_token,
+    "yandex_disk.client_id": lambda: settings.yandex_disk_client_id,
+    "yandex_disk.client_secret": lambda: settings.yandex_disk_client_secret,
     "yandex_disk.root": lambda: settings.yandex_disk_root,
 }
 
@@ -303,6 +321,12 @@ async def set_many(session: AsyncSession, values: dict[str, str]) -> None:
         # Пустое значение для секрета = «не менять» (не затираем существующий).
         if k in SECRET_KEYS and v == "":
             continue
+        if k == "yandex_disk.oauth_token":
+            from app.services.yandex_disk import sanitize_token
+
+            v = sanitize_token(v)
+            if not v:
+                continue
         row = await session.get(IntegrationSetting, k)
         if row is None:
             session.add(IntegrationSetting(key=k, value=v))

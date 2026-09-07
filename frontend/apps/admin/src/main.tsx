@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router-dom'
 import './styles.css'
 import { App } from './App'
 import { AuthProvider } from './auth'
+import { stashYandexDiskOAuthFromUrl } from './yandexDiskOAuth'
+
+stashYandexDiskOAuthFromUrl()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

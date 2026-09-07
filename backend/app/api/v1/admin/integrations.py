@@ -103,6 +103,80 @@ async def check_cdek(_: AdminOnly, session: Session) -> ConnectionOut:
     return ConnectionOut(ok=ok, detail=detail)
 
 
+class OAuthUrlOut(BaseModel):
+    url: str
+    response_type: str
+
+
+class YandexDiskOAuthIn(BaseModel):
+    access_token: str | None = None
+    code: str | None = None
+    redirect_uri: str | None = None
+
+
+@router.get("/yandex-disk/oauth-url", response_model=OAuthUrlOut)
+async def yandex_disk_oauth_url(
+    _: AdminOnly,
+    session: Session,
+    redirect_uri: str | None = None,
+) -> OAuthUrlOut:
+    """Ссылка на oauth.yandex.ru/authorize по сохранённому Client ID.
+
+    Если задан Client secret — code flow, иначе implicit token (как в quickstart).
+    """
+    client_id = await integrations.get(session, "yandex_disk.client_id")
+    if not client_id:
+        raise HTTPException(
+            400,
+            "Сначала сохраните Client ID приложения с oauth.yandex.ru.",
+        )
+    secret = await integrations.get(session, "yandex_disk.client_secret")
+    response_type = "code" if secret else "token"
+    try:
+        url = yandex_disk.authorize_url(
+            client_id, redirect_uri=redirect_uri, response_type=response_type
+        )
+    except yandex_disk.YandexDiskError as e:
+        raise HTTPException(400, str(e)) from e
+    return OAuthUrlOut(url=url, response_type=response_type)
+
+
+@router.post("/yandex-disk/oauth", response_model=ConnectionOut)
+async def complete_yandex_disk_oauth(
+    body: YandexDiskOAuthIn, _: AdminOnly, session: Session
+) -> ConnectionOut:
+    """Сохранить токен из implicit-flow или обменять code на access_token."""
+    token: str | None = None
+    if body.access_token:
+        token = yandex_disk.sanitize_token(body.access_token)
+        if not token:
+            raise HTTPException(400, "Пустой OAuth-токен.")
+    elif body.code:
+        client_id = await integrations.get(session, "yandex_disk.client_id")
+        secret = await integrations.get(session, "yandex_disk.client_secret")
+        if not client_id or not secret:
+            raise HTTPException(
+                400,
+                "Для обмена кода сохраните Client ID и Client secret, затем повторите.",
+            )
+        try:
+            token = await yandex_disk.exchange_code(
+                client_id=client_id,
+                client_secret=secret,
+                code=body.code,
+                redirect_uri=body.redirect_uri,
+            )
+        except yandex_disk.YandexDiskError as e:
+            raise HTTPException(400, str(e)) from e
+    else:
+        raise HTTPException(400, "Нужен access_token или code из ответа Яндекса.")
+
+    await integrations.set_many(session, {"yandex_disk.oauth_token": token})
+    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
+    ok, detail = await yandex_disk.check_connection(token=token, root=root)
+    return ConnectionOut(ok=ok, detail=detail)
+
+
 @router.post("/yandex-disk/check", response_model=ConnectionOut)
 async def check_yandex_disk(_: AdminOnly, session: Session) -> ConnectionOut:
     """Статус связи с Яндекс.Диском: метаданные диска, папок не создаёт."""

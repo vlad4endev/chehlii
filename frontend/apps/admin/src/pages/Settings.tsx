@@ -10,9 +10,15 @@ import {
   checkYandexDelivery,
   checkYandexDisk,
   checkYandexPay,
+  completeYandexDiskOAuth,
   fetchIntegrations,
   saveIntegrations,
+  yandexDiskOAuthUrl,
 } from '../integrationsApi'
+import {
+  consumeYandexDiskOAuth,
+  yandexDiskAuthorizeUrl,
+} from '../yandexDiskOAuth'
 import { BotTexts } from './BotTexts'
 
 const GROUP_ICON: Record<string, string> = {
@@ -182,29 +188,55 @@ function IntegrationsPanel() {
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
-
-  async function reload() {
-    setLoading(true)
-    setError(null)
-    try {
-      setGroups(await fetchIntegrations())
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить настройки')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [diskStatus, setDiskStatus] = useState<ConnectionStatus | null>(null)
 
   useEffect(() => {
-    reload()
+    let cancelled = false
+    async function boot() {
+      setLoading(true)
+      setError(null)
+      const pending = consumeYandexDiskOAuth()
+      try {
+        const next = await fetchIntegrations()
+        if (cancelled) return
+        setGroups(next)
+        if (pending.error) {
+          setDiskStatus({ ok: false, detail: pending.error })
+          return
+        }
+        if (!pending.token && !pending.code) return
+        const status = await completeYandexDiskOAuth({
+          access_token: pending.token ?? undefined,
+          code: pending.code ?? undefined,
+          redirect_uri: `${window.location.origin}${window.location.pathname}`,
+        })
+        if (cancelled) return
+        setDiskStatus(status)
+        setGroups(await fetchIntegrations())
+      } catch (e) {
+        if (cancelled) return
+        const message = e instanceof ApiError ? e.message : 'Не удалось загрузить настройки'
+        if (pending.token || pending.code) {
+          setDiskStatus({ ok: false, detail: message })
+        } else {
+          setError(message)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  async function saveGroup(g: IntegrationGroup) {
+  async function saveGroup(g: IntegrationGroup): Promise<boolean> {
     const values: Record<string, string> = {}
     for (const f of g.fields) {
       if (f.key in edits) values[f.key] = edits[f.key]
     }
-    if (Object.keys(values).length === 0) return
+    if (Object.keys(values).length === 0) return true
     setSavingId(g.id)
     setSavedId(null)
     try {
@@ -217,8 +249,10 @@ function IntegrationsPanel() {
         return copy
       })
       setSavedId(g.id)
+      return true
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось сохранить')
+      return false
     } finally {
       setSavingId(null)
     }
@@ -228,7 +262,8 @@ function IntegrationsPanel() {
     <div>
       <p className="page__lead">
         Данные для подключения внешних сервисов. Секретные значения не показываются — если
-        задано, отображается «задан»; чтобы изменить, введите новое.
+        задано, отображается «задан»; чтобы изменить, введите новое. Для Яндекс.Диска
+        сначала Client ID, затем «Получить токен у Яндекса».
       </p>
 
       {loading && <div className="empty">Загрузка…</div>}
@@ -247,6 +282,7 @@ function IntegrationsPanel() {
               onSave={() => saveGroup(g)}
               saving={savingId === g.id}
               saved={savedId === g.id}
+              initialStatus={g.id === 'yandex_disk' ? diskStatus : null}
             />
           ))}
         </div>
@@ -264,18 +300,25 @@ function GroupCard({
   onSave,
   saving,
   saved,
+  initialStatus,
 }: {
   group: IntegrationGroup
   icon: string
   check?: () => Promise<ConnectionStatus>
   edits: Record<string, string>
   onEdit: (key: string, value: string) => void
-  onSave: () => void
+  onSave: () => Promise<boolean>
   saving: boolean
   saved: boolean
+  initialStatus?: ConnectionStatus | null
 }) {
   const [checking, setChecking] = useState(false)
-  const [status, setStatus] = useState<ConnectionStatus | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [status, setStatus] = useState<ConnectionStatus | null>(initialStatus ?? null)
+
+  useEffect(() => {
+    if (initialStatus) setStatus(initialStatus)
+  }, [initialStatus])
 
   async function runCheck() {
     if (!check) return
@@ -290,17 +333,60 @@ function GroupCard({
     }
   }
 
+  async function connectYandexDisk() {
+    const typedId = edits['yandex_disk.client_id']
+    const stored = group.fields.find((f) => f.key === 'yandex_disk.client_id')?.value
+    const clientId = (typedId ?? stored ?? '').trim()
+    if (!clientId) {
+      setStatus({
+        ok: false,
+        detail: 'Введите Client ID с oauth.yandex.ru — без него Яндекс не выдаст токен.',
+      })
+      return
+    }
+    setConnecting(true)
+    setStatus(null)
+    try {
+      if (group.fields.some((f) => f.key in edits)) {
+        const savedOk = await onSave()
+        if (!savedOk) {
+          setConnecting(false)
+          return
+        }
+      }
+      const redirect = `${window.location.origin}${window.location.pathname}`
+      const secretReady = group.fields.some(
+        (f) => f.key === 'yandex_disk.client_secret' && (f.is_set || Boolean(edits[f.key])),
+      )
+      if (secretReady) {
+        const { url } = await yandexDiskOAuthUrl(redirect)
+        window.location.assign(url)
+        return
+      }
+      window.location.assign(yandexDiskAuthorizeUrl(clientId, redirect))
+    } catch (e) {
+      setStatus({
+        ok: false,
+        detail: e instanceof ApiError ? e.message : 'Не удалось открыть Яндекс OAuth',
+      })
+      setConnecting(false)
+    }
+  }
+
   const dirty = useMemo(
     () => group.fields.some((f) => f.key in edits),
     [group.fields, edits],
   )
-  // «Подключено» = задан ключевой секрет (или, если секретов нет, любое поле).
+  // «Подключено» = задан OAuth-токен Диска / ключевой секрет остальных групп.
   const connected = useMemo(() => {
+    if (group.id === 'yandex_disk') {
+      return group.fields.some((f) => f.key === 'yandex_disk.oauth_token' && f.is_set)
+    }
     const secrets = group.fields.filter((f) => f.secret)
     return secrets.length > 0
       ? secrets.some((f) => f.is_set)
       : group.fields.some((f) => f.is_set)
-  }, [group.fields])
+  }, [group.fields, group.id])
 
   return (
     <div className="card intcard">
@@ -311,6 +397,16 @@ function GroupCard({
         <div>
           <div className="intcard__title">{group.title}</div>
           <div className="card__hint">{group.hint}</div>
+          {group.id === 'yandex_disk' && (
+            <a
+              className="intcard__doc"
+              href="https://oauth.yandex.ru/client/new"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Создать OAuth-приложение
+            </a>
+          )}
         </div>
         {connected && <span className="badge badge--green">подключено</span>}
       </div>
@@ -345,13 +441,22 @@ function GroupCard({
       )}
 
       <div className="intcard__foot">
+        {group.id === 'yandex_disk' && (
+          <button
+            className="btn btn--sm intcard__oauth"
+            onClick={() => void connectYandexDisk()}
+            disabled={connecting || saving}
+          >
+            {connecting ? 'Открываем Яндекс…' : 'Получить токен у Яндекса'}
+          </button>
+        )}
         {saved && <span className="badge badge--green">Сохранено</span>}
         {check && (
           <button className="btn btn--sm" onClick={runCheck} disabled={checking}>
             {checking ? 'Проверяем…' : 'Проверить связь'}
           </button>
         )}
-        <button className="btn btn--primary btn--sm" onClick={onSave} disabled={saving || !dirty}>
+        <button className="btn btn--primary btn--sm" onClick={() => void onSave()} disabled={saving || !dirty}>
           {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>
       </div>
