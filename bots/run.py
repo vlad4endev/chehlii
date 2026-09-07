@@ -11,11 +11,17 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
+from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.texts import texts
 from bots.tg.handlers import router
-from bots.tg.keyboards import mockup_kb
+from bots.tg.keyboards import (
+    delivery_mode_kb,
+    delivery_service_kb,
+    delivery_start_kb,
+    mockup_kb,
+)
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
@@ -100,7 +106,18 @@ async def _deliver(bot: Bot, item: dict) -> None:
     url = item.get("attachment_url")
     if url and kind == "mockup":
         text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
-    kb = mockup_kb(item["order_id"]) if kind == "mockup" and item.get("order_id") else None
+    kb = None
+    if kind == "mockup" and item.get("order_id"):
+        kb = mockup_kb(item["order_id"])
+    elif kind == "delivery" and item.get("order_id"):
+        oid = item["order_id"]
+        services = await delivery.configured_services()
+        if not services:
+            kb = delivery_start_kb(oid)
+        elif len(services) > 1:
+            kb = delivery_service_kb(oid, services)
+        else:
+            kb = delivery_mode_kb(oid)
     await bot.send_message(chat_id=chat_id, text=text or "Новое сообщение", reply_markup=kb)
 
 

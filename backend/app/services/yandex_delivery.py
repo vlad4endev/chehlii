@@ -115,7 +115,7 @@ async def pickup_points(cfg: dict, *, geo_id: int | None = None, limit: int = 50
     points = data.get("points") or []
     return [
         {
-            "id": p.get("id"),
+            "id": str(p["id"]) if p.get("id") is not None else None,
             "name": p.get("name"),
             "address": (p.get("address") or {}).get("full_address"),
             "latitude": (p.get("position") or {}).get("latitude"),

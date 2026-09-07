@@ -79,6 +79,56 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def client_orders(self, client_id: int) -> list[dict]:
+        r = await self._client.get(f"/clients/{client_id}/orders")
+        r.raise_for_status()
+        return r.json()
+
+    async def delivery_options(self) -> dict:
+        r = await self._client.get("/delivery/options")
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/cdek/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def yandex_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/yandex/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_quote(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/cdek/orders/{order_id}/quote", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def yandex_select(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/yandex/orders/{order_id}/select", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def delivery_fulfill(self, order_id: int) -> dict:
+        r = await self._client.post(f"/delivery/orders/{order_id}/fulfill", timeout=40.0)
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_fulfill(self, order_id: int) -> dict:
+        return await self.delivery_fulfill(order_id)
+
     async def add_client_file(self, order_id: int, filename: str, content: bytes) -> dict:
         r = await self._client.post(
             f"/orders/{order_id}/client-file", files={"file": (filename, content)}

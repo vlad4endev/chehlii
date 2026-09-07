@@ -11,3 +11,7 @@ class OrderFlow(StatesGroup):
     waiting_name = State()  # Стандарт: ждём имя/букву
     waiting_materials = State()  # Кастом: ждём фото/материалы
     confirming_materials = State()  # Кастом: показана сводка материалов, ждём подтверждения
+    delivery_mode = State()  # служба / ПВЗ или курьер
+    delivery_city = State()  # город или индекс
+    delivery_address = State()  # улица/дом до двери
+    delivery_pvz = State()  # выбор пункта из списка

@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.internal import require_internal
@@ -23,7 +24,7 @@ from app.enums import OrderStatus
 from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import cdek, integrations, pricing, yandex_delivery
+from app.services import cdek, cdek_checkout, integrations, pricing, yandex_delivery
 
 router = APIRouter()
 
@@ -80,11 +81,12 @@ def _int(value: str | None, default: int) -> int:
 
 
 async def cdek_cfg(session: AsyncSession) -> dict:
-    account = await integrations.get(session, "cdek.account")
-    secret = await integrations.get(session, "cdek.secret")
+    account = cdek.sanitize_secret(await integrations.get(session, "cdek.account"))
+    secret = cdek.sanitize_secret(await integrations.get(session, "cdek.secret"))
     if not (account and secret):
         raise HTTPException(400, "СДЭК не настроен — задайте в «Настройки → Интеграции».")
-    test = (await integrations.get(session, "cdek.test", "true") or "true").lower()
+    # Ключи из ЛК живут на api.cdek.ru; true только для отдельных ключей песочницы.
+    test = (await integrations.get(session, "cdek.test", "false") or "false").lower()
     return {
         "account": account,
         "secret": secret,
@@ -102,6 +104,7 @@ async def cdek_cfg(session: AsyncSession) -> dict:
 
 class CalcIn(BaseModel):
     to_postal: str | None = None
+    to_city: str | None = None
     pickup_point_id: str | None = None
     weight: int | None = None
 
@@ -115,19 +118,30 @@ class CalcOut(BaseModel):
 
 @router.post("/calc", response_model=CalcOut, dependencies=[Depends(require_internal)])
 async def calculate(body: CalcIn, session: Session) -> CalcOut:
-    if not (body.to_postal or body.pickup_point_id):
-        raise HTTPException(400, "Укажите индекс (to_postal) или ПВЗ (pickup_point_id).")
+    if not (body.to_postal or body.pickup_point_id or body.to_city):
+        raise HTTPException(400, "Укажите индекс, город или ПВЗ.")
     cfg = await cdek_cfg(session)
     try:
-        res = await cdek.calculate(
+        res = await cdek_checkout.calculate_quote(
             cfg,
+            pickup_point_id=body.pickup_point_id,
             to_postal=body.to_postal,
-            delivery_point=body.pickup_point_id,
+            to_city=body.to_city,
             weight_g=body.weight or cfg["weight"],
         )
     except cdek.CdekError as e:
         raise HTTPException(400, f"СДЭК: {e}") from e
     return CalcOut(**res)
+
+
+class DeliveryOptionsOut(BaseModel):
+    services: list[str]
+
+
+@router.get("/options", response_model=DeliveryOptionsOut, dependencies=[Depends(require_internal)])
+async def delivery_options(session: Session) -> DeliveryOptionsOut:
+    """Службы, у которых заданы креды — бот показывает только их."""
+    return DeliveryOptionsOut(services=await cdek_checkout.available_services(session))
 
 
 class CdekPickupPointOut(BaseModel):
@@ -166,9 +180,19 @@ class CreateIn(BaseModel):
     pickup_point_id: str | None = None
     to_postal: str | None = None
     to_address: str | None = None
+    to_city: str | None = None
     recipient_name: str | None = None
     recipient_phone: str | None = None
     recipient_email: str | None = None
+
+
+class QuoteOut(BaseModel):
+    delivery_sum: float
+    period_min: int | None
+    period_max: int | None
+    tariff_code: int = 0
+    address: str | None = None
+    service: str = "cdek"
 
 
 async def _cdek_recipient(
@@ -219,7 +243,12 @@ async def create_delivery(order_id: int, body: CreateIn, session: Session) -> di
     except cdek.CdekError as e:
         raise HTTPException(400, f"СДЭК: {e}") from e
     order.delivery_service = "cdek"
-    order.delivery_address = body.to_address or f"ПВЗ {body.pickup_point_id}"
+    order.delivery_address = cdek_checkout.encode_destination(
+        pickup_point_id=body.pickup_point_id,
+        to_postal=body.to_postal,
+        to_address=body.to_address,
+        label=body.to_address or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None),
+    )
     order.delivery_cost = calc["delivery_sum"]
     order.tracking_code = created.get("cdek_number") or created["uuid"]
     await session.commit()
@@ -231,12 +260,84 @@ async def create_delivery(order_id: int, body: CreateIn, session: Session) -> di
     }
 
 
+@router.post(
+    "/cdek/orders/{order_id}/quote",
+    response_model=QuoteOut,
+    dependencies=[Depends(require_internal)],
+)
+async def cdek_quote(order_id: int, body: CreateIn, session: Session) -> QuoteOut:
+    """Расчёт СДЭК + сохранение адреса. Заявку создаём после оплаты доставки."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Заказ не найден")
+    label = body.to_address
+    if body.pickup_point_id and not label:
+        try:
+            point = await cdek.get_point(await cdek_cfg(session), body.pickup_point_id)
+        except cdek.CdekError:
+            point = None
+        loc = (point or {}).get("location") or {}
+        label = loc.get("address_full") or loc.get("address") or f"ПВЗ {body.pickup_point_id}"
+    try:
+        calc = await cdek_checkout.apply_quote(
+            session,
+            order,
+            pickup_point_id=body.pickup_point_id,
+            to_postal=body.to_postal,
+            to_address=body.to_address,
+            to_city=body.to_city,
+            label=label,
+        )
+    except cdek.CdekError as e:
+        raise HTTPException(400, f"СДЭК: {e}") from e
+    await session.commit()
+    return QuoteOut(**calc)
+
+
+@router.post("/orders/{order_id}/fulfill", dependencies=[Depends(require_internal)])
+@router.post("/cdek/orders/{order_id}/fulfill", dependencies=[Depends(require_internal)])
+async def cdek_fulfill(order_id: int, session: Session) -> dict:
+    """Создать заявку выбранной службы по сохранённому адресу."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Заказ не найден")
+    client = await session.get(Client, order.client_id)
+    created = await cdek_checkout.fulfill(session, order, client)
+    await session.commit()
+    if created is None and not order.tracking_code:
+        raise HTTPException(400, "Не удалось создать заявку — проверьте адрес и настройки.")
+    return {
+        "uuid": (created or {}).get("uuid"),
+        "request_id": (created or {}).get("request_id"),
+        "tracking_code": order.tracking_code,
+        "cdek_number": order.tracking_code,
+        "delivery_cost": float(order.delivery_cost or 0),
+        "service": order.delivery_service,
+    }
+
+
 async def _cdek_order(session: AsyncSession, order_id: int) -> Order:
     """Заказ с созданной доставкой СДЭК. tracking_code = uuid или номер накладной."""
     order = await session.get(Order, order_id)
     if order is None or not order.tracking_code or order.delivery_service != "cdek":
         raise HTTPException(404, "Доставка СДЭК для заказа не создана")
     return order
+
+
+async def _order_from_cdek_event(session: AsyncSession, event: dict) -> Order | None:
+    """Найти заказ по номеру casetop-{id} или по уже сохранённому трек-коду/uuid."""
+    attrs = event.get("attributes") or {}
+    oid = cdek.casetop_order_id(attrs.get("number"))
+    if oid is not None:
+        order = await session.get(Order, oid)
+        if order is not None:
+            return order
+    ids = cdek.webhook_track_ids(event)
+    if not ids:
+        return None
+    return await session.scalar(
+        select(Order).where(Order.tracking_code.in_(ids), Order.deleted_at.is_(None)).limit(1)
+    )
 
 
 @router.get("/cdek/orders/{order_id}/status", dependencies=[Depends(require_internal)])
@@ -433,6 +534,33 @@ async def yandex_quote(order_id: int, body: YandexIn, session: Session) -> list[
     return [OfferOut(**o) for o in offers if o.get("offer_id")]
 
 
+@router.post(
+    "/yandex/orders/{order_id}/select",
+    response_model=QuoteOut,
+    dependencies=[Depends(require_internal)],
+)
+async def yandex_select(order_id: int, body: YandexIn, session: Session) -> QuoteOut:
+    """Самый дешёвый оффер Яндекса + сохранение адреса. Заявку — после оплаты."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Заказ не найден")
+    try:
+        calc = await cdek_checkout.apply_yandex_quote(
+            session,
+            order,
+            pickup_point_id=body.pickup_point_id,
+            to_address=body.to_address,
+            latitude=body.latitude,
+            longitude=body.longitude,
+            label=body.to_address
+            or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None),
+        )
+    except yandex_delivery.YandexDeliveryError as e:
+        raise HTTPException(400, f"Яндекс Доставка: {e}") from e
+    await session.commit()
+    return QuoteOut(**calc)
+
+
 @router.post("/yandex/orders/{order_id}/create", dependencies=[Depends(require_internal)])
 async def yandex_create(order_id: int, body: YandexCreateIn, session: Session) -> dict:
     """Создать доставку Яндекса: оффер → бронь. Сохраняет службу/адрес/цену/трек."""
@@ -456,7 +584,12 @@ async def yandex_create(order_id: int, body: YandexCreateIn, session: Session) -
         raise HTTPException(400, f"Яндекс Доставка: {e}") from e
 
     order.delivery_service = "yandex"
-    order.delivery_address = body.to_address or f"ПВЗ {body.pickup_point_id}"
+    order.delivery_address = cdek_checkout.encode_destination(
+        pickup_point_id=body.pickup_point_id,
+        to_address=body.to_address,
+        label=body.to_address
+        or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None),
+    )
     order.delivery_cost = chosen["delivery_cost"]
     order.tracking_code = request_id
     await session.commit()
@@ -539,36 +672,33 @@ async def yandex_label(
 
 @router.post("/webhooks/cdek")
 async def cdek_webhook(request: Request, session: Session) -> dict:
-    """Вебхук СДЭК ORDER_STATUS → перевод заказа в «Отправлен»/«Получен»."""
+    """Вебхук СДЭК ORDER_STATUS → перевод заказа в «Отправлен»/«Получен».
+
+    СДЭК шлёт один объект или массив. `number` (наш casetop-{id}) часто пустой —
+    тогда ищем по uuid / cdek_number, которые кладём в tracking_code при создании.
+    """
     try:
         body = await request.json()
     except Exception:
         return {"ok": True}
-    attrs = body.get("attributes") or {}
-    code = (attrs.get("code") or "").upper()
-    number = attrs.get("number") or ""  # наш number = casetop-{order_id}
-    order_id = None
-    if number.startswith("casetop-"):
-        tail = number.split("-", 1)[1]
-        if tail.isdigit():
-            order_id = int(tail)
-    if order_id is None:
-        return {"ok": True}
-
-    order = await session.get(Order, order_id)
-    if order is None:
-        return {"ok": True}
-
-    mapped = cdek.map_status(code)
-    new = None
-    if mapped == "delivered":
-        new = OrderStatus.DELIVERED
-    elif mapped == "shipped":
-        new = OrderStatus.SHIPPED
-    if new is None:
-        return {"ok": True}
-    if attrs.get("cdek_number"):
-        order.tracking_code = str(attrs["cdek_number"])
-    await _advance(session, order, new, f"СДЭК: {code}")
-    await session.commit()  # трек-номер сохраняем и когда статус не поменялся
-    return {"ok": True}
+    changed = 0
+    for event in cdek.iter_webhook_events(body):
+        event_type = event.get("type") or "ORDER_STATUS"
+        if event_type != "ORDER_STATUS":
+            continue
+        code = cdek.webhook_status_code(event)
+        mapped = cdek.map_status(code)
+        if mapped is None:
+            continue
+        order = await _order_from_cdek_event(session, event)
+        if order is None:
+            continue
+        attrs = event.get("attributes") or {}
+        if attrs.get("cdek_number"):
+            order.tracking_code = str(attrs["cdek_number"])
+        new = OrderStatus.DELIVERED if mapped == "delivered" else OrderStatus.SHIPPED
+        if await _advance(session, order, new, f"СДЭК: {code}"):
+            changed += 1
+        else:
+            await session.commit()
+    return {"ok": True, "changed": changed}

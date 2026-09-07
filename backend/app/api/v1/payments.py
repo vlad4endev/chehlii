@@ -27,7 +27,8 @@ from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
-from app.services import integrations, pricing, robokassa, stock, yandex_pay
+from app.services import cdek_checkout, integrations, pricing, robokassa, stock, yandex_pay
+from app.services.order_state_machine import can_transition
 
 router = APIRouter()
 
@@ -37,6 +38,32 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 _PAID_STATUS = {
     PaymentKind.PREPAYMENT: OrderStatus.PREPAYMENT_PAID,
     PaymentKind.POSTPAYMENT: OrderStatus.POSTPAYMENT_PAID,
+}
+# Если заказ уже ушёл дальше по воронке, поздний вебхук оплаты не откатывает статус.
+_PAST_PREPAY = {
+    OrderStatus.HANDED_TO_DESIGN,
+    OrderStatus.DESIGN_IN_PROGRESS,
+    OrderStatus.MOCKUP_SENT,
+    OrderStatus.MOCKUP_APPROVAL,
+    OrderStatus.MOCKUP_REVISION,
+    OrderStatus.POSTPAYMENT_ISSUED,
+    OrderStatus.POSTPAYMENT_PAID,
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REVIEW_OFFERED,
+    OrderStatus.REVIEW_RECEIVED,
+}
+_PAST_POSTPAY = {
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REVIEW_OFFERED,
+    OrderStatus.REVIEW_RECEIVED,
 }
 
 _KIND_RU = {"prepayment": "предоплата", "postpayment": "постоплата", "delivery": "доставка"}
@@ -171,6 +198,21 @@ async def create_link(body: LinkIn, session: Session) -> LinkOut:
     amount = _amount(order, body.kind, percent)
     if amount <= 0:
         raise HTTPException(400, "Сумма оплаты равна нулю")
+    # Ссылка постоплаты после макета / стандарта — статус «выставлена», иначе
+    # админка и вебхук видят ещё «согласование макета», хотя клиент уже платит.
+    if body.kind == PaymentKind.POSTPAYMENT and can_transition(
+        order.status, OrderStatus.POSTPAYMENT_ISSUED
+    ):
+        order.status = OrderStatus.POSTPAYMENT_ISSUED
+        session.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                status=OrderStatus.POSTPAYMENT_ISSUED,
+                changed_by="system",
+                trigger="Ссылка постоплаты",
+                created_at=datetime.now(UTC),
+            )
+        )
 
     default = await _provider(session)
     description = f"casetop заказ #{order.id} ({_KIND_RU.get(body.kind, body.kind)})"
@@ -326,7 +368,10 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
     if order is not None:
         order.payment_status = PaymentStatus.PAID
         new = _PAID_STATUS.get(payment.kind)
-        if new is not None:
+        rewind = (new == OrderStatus.PREPAYMENT_PAID and order.status in _PAST_PREPAY) or (
+            new == OrderStatus.POSTPAYMENT_PAID and order.status in _PAST_POSTPAY
+        )
+        if new is not None and not rewind:
             order.status = new
             if new == OrderStatus.PREPAYMENT_PAID:
                 await stock.deduct_for_order(session, order)
@@ -340,7 +385,12 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
                 )
             )
         client = await session.get(Client, order.client_id)
-        if client is not None:
+        if payment.kind == PaymentKind.POSTPAYMENT:
+            # Дальше бот показывает выбор службы и ПВЗ/курьера (outbox kind=delivery).
+            await cdek_checkout.start_after_postpayment(session, order, client)
+        elif payment.kind == PaymentKind.DELIVERY:
+            await cdek_checkout.fulfill(session, order, client)
+        elif client is not None:
             session.add(
                 OutboundMessage(
                     client_id=client.id,
@@ -363,9 +413,50 @@ h1{{font-size:22px;margin:0 0 10px}}p{{color:#6d6f73;line-height:1.5}}</style>
 <div class=c><h1>{title}</h1><p>{text}</p></div>"""
 
 
+async def _try_apply_from_redirect(session: AsyncSession, params: dict[str, str]) -> None:
+    """SuccessURL — запасной вход, если ResultURL/вебхук не дошёл. Идемпотентно."""
+    inv_id = params.get("InvId") or params.get("invId") or params.get("orderId") or ""
+    if not str(inv_id).isdigit():
+        return
+    payment = await session.get(Payment, int(inv_id))
+    if payment is None or payment.status == PaymentStatus.PAID:
+        return
+    if payment.gateway == "robokassa":
+        try:
+            cfg = await robokassa_cfg(session)
+        except HTTPException:
+            return
+        shp = {k: v for k, v in params.items() if k.startswith("Shp_")}
+        if not robokassa.verify_success(
+            password1=cfg["pass1"],
+            out_sum=params.get("OutSum", ""),
+            inv_id=str(inv_id),
+            signature=params.get("SignatureValue", ""),
+            shp=shp,
+        ):
+            return
+        payment.raw_webhook = params
+        await _apply_paid(session, payment)
+        return
+    if payment.gateway != "yandex_pay":
+        return
+    try:
+        cfg = await yandexpay_cfg(session)
+        status = await yandex_pay.order_status(cfg, str(inv_id))
+        if status == "AUTHORIZED":
+            if await yandex_pay.capture(cfg, str(inv_id), float(payment.amount)) == "SUCCESS":
+                status = "CAPTURED"
+        if status in yandex_pay.PAID_STATUSES:
+            payment.raw_webhook = params
+            await _apply_paid(session, payment)
+    except (HTTPException, yandex_pay.YandexPayError):
+        return
+
+
 @router.get("/success", response_class=HTMLResponse)
 @router.get("/robokassa/success", response_class=HTMLResponse)
-async def payment_success() -> str:
+async def payment_success(request: Request, session: Session) -> str:
+    await _try_apply_from_redirect(session, dict(request.query_params))
     return _PAGE.format(
         title="Оплата прошла ✅", text="Спасибо! Вернитесь в чат бота — продолжим оформление."
     )

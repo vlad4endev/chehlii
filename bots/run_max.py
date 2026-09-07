@@ -13,11 +13,17 @@ from maxapi import Bot
 from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
 
+from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.texts import texts
 from bots.max.handlers import dp
-from bots.max.keyboards import mockup_kb
+from bots.max.keyboards import (
+    delivery_mode_kb,
+    delivery_service_kb,
+    delivery_start_kb,
+    mockup_kb,
+)
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
@@ -67,7 +73,18 @@ async def _deliver(bot: Bot, item: dict) -> None:
     url = item.get("attachment_url")
     if url and kind == "mockup":
         text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
-    atts2 = [mockup_kb(item["order_id"])] if kind == "mockup" and item.get("order_id") else None
+    atts2 = None
+    if kind == "mockup" and item.get("order_id"):
+        atts2 = [mockup_kb(item["order_id"])]
+    elif kind == "delivery" and item.get("order_id"):
+        oid = item["order_id"]
+        services = await delivery.configured_services()
+        if not services:
+            atts2 = [delivery_start_kb(oid)]
+        elif len(services) > 1:
+            atts2 = [delivery_service_kb(oid, services)]
+        else:
+            atts2 = [delivery_mode_kb(oid)]
     await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts2)
 
 

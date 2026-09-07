@@ -21,11 +21,12 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "title": "Яндекс.Диск",
         "hint": (
             "Хранилище файлов клиентов и макетов. Создайте приложение на oauth.yandex.ru "
-            "(«для доступа к API или отладки»). В «Доступ к данным» укажите "
-            "cloud_api:disk.write, cloud_api:disk.read и cloud_api:disk.info. "
-            "Redirect URI в кабинете — строго https://oauth.yandex.ru/verification_code "
-            "(как в доке Диска). После «Разрешить» скопируйте токен или весь URL "
-            "в поле OAuth-токен. «Проверить связь» папок не создаёт."
+            "(«для доступа к API или отладки»). В «Доступ к данным» начните вводить и "
+            "выберите из списка: cloud_api:disk.write, cloud_api:disk.read, "
+            "cloud_api:disk.info. Без этих трёх прав Яндекс вернёт invalid_scope. "
+            "Redirect URI — строго https://oauth.yandex.ru/verification_code. "
+            "После «Разрешить» скопируйте токен или весь URL в поле OAuth-токен. "
+            "«Проверить связь» папок не создаёт."
         ),
         "fields": [
             {
@@ -58,9 +59,10 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "cdek",
         "title": "СДЭК",
         "hint": (
-            "Служба доставки: расчёт, ПВЗ, заявка, статус, ярлык. Ключи — в ЛК СДЭК → "
-            "Интеграция (не логин кабинета). Для тарифа «склад-дверь» обязателен код "
-            "ПВЗ отгрузки. В тестовом режиме — ключи песочницы api.edu.cdek.ru."
+            "Служба доставки: расчёт, ПВЗ, заявка, статус, ярлык. Ключи — ЛК СДЭК → "
+            "Интеграция → «Создать ключ» (две длинные строки Account и Secure), не "
+            "логин кабинета. Ключи ЛК работают только на продакшене: тестовый режим "
+            "= false. Для api.edu.cdek.ru нужны отдельные ключи песочницы."
         ),
         "fields": [
             {
@@ -74,7 +76,7 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "key": "cdek.test",
                 "label": "Тестовый режим (true/false)",
                 "secret": False,
-                "placeholder": "true",
+                "placeholder": "false (ключи из ЛК — продакшен)",
             },
             {
                 "key": "cdek.shipment_point",
@@ -322,6 +324,12 @@ async def set_many(session: AsyncSession, values: dict[str, str]) -> None:
         # Пустое значение для секрета = «не менять» (не затираем существующий).
         if k in SECRET_KEYS and v == "":
             continue
+        if k in ("cdek.account", "cdek.secret"):
+            from app.services.cdek import sanitize_secret
+
+            v = sanitize_secret(v)
+            if not v:
+                continue
         if k == "yandex_disk.oauth_token":
             from app.services.yandex_disk import sanitize_token
 

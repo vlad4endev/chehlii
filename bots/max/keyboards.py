@@ -91,3 +91,48 @@ def mockup_kb(order_id: int):
         CallbackButton(text="🔄 Переделать", payload=f"mockup:redo:{order_id}"),
     )
     return b.as_markup()
+
+
+def delivery_service_kb(order_id: int, services: list):
+    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка"}
+    b = InlineKeyboardBuilder()
+    for s in services:
+        if s in labels:
+            b.row(CallbackButton(text=labels[s], payload=f"dlv:svc:{order_id}:{s}"))
+    return b.as_markup()
+
+
+def delivery_mode_kb(order_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(
+        CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"),
+        CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"),
+    )
+    return b.as_markup()
+
+
+def delivery_points_kb(order_id: int, points: list):
+    b = InlineKeyboardBuilder()
+    row = []
+    for i in range(len(points)):
+        row.append(CallbackButton(text=str(i + 1), payload=f"dlv:n:{order_id}:{i}"))
+        if len(row) == 4:
+            b.row(*row)
+            row = []
+    if row:
+        b.row(*row)
+    b.row(CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"))
+    return b.as_markup()
+
+
+def delivery_start_kb(order_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(CallbackButton(text="📦 Оформить доставку", payload=f"dlv:go:{order_id}"))
+    return b.as_markup()
+
+
+def delivery_orders_kb(orders: list):
+    b = InlineKeyboardBuilder()
+    for o in orders[:5]:
+        b.row(CallbackButton(text=f"#{o['id']} оформить доставку", payload=f"dlv:go:{o['id']}"))
+    return b.as_markup()

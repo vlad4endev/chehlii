@@ -24,7 +24,7 @@ from maxapi.types import (
     MessageCreated,
 )
 
-from bots.core import payments
+from bots.core import delivery, payments
 from bots.core.backend import backend
 from bots.core.texts import texts
 from bots.max.keyboards import (
@@ -39,6 +39,11 @@ from bots.max.keyboards import (
     CB_PAYMENTS,
     confirm_kb,
     contact_kb,
+    delivery_mode_kb,
+    delivery_orders_kb,
+    delivery_points_kb,
+    delivery_service_kb,
+    delivery_start_kb,
     main_menu_kb,
     materials_confirm_kb,
     pay_kb,
@@ -100,6 +105,84 @@ async def _send_pay(bot, chat_id: int, order_id: int, code: str) -> None:
         text=b.text,
         attachments=[pay_kb(b.buttons)] if b.buttons else None,
     )
+
+
+async def _send_delivery_pay(bot, chat_id: int, order_id: int, quote: dict) -> None:
+    await _send_menu(bot, chat_id, delivery.quote_text(quote))
+    if (quote.get("delivery_sum") or 0) <= 0:
+        try:
+            await backend.delivery_fulfill(order_id)
+            await bot.send_message(
+                chat_id=chat_id,
+                text="Доставка бесплатная — заявку создаём сейчас.",
+            )
+        except Exception as e:  # noqa: BLE001
+            await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
+        return
+    b = await payments.block(order_id, "delivery")
+    await bot.send_message(
+        chat_id=chat_id,
+        text=b.text,
+        attachments=[pay_kb(b.buttons)] if b.buttons else None,
+    )
+
+
+async def _start_delivery(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+    services = await delivery.configured_services()
+    await context.update_data(
+        order_id=order_id,
+        delivery_mode=None,
+        delivery_city=None,
+        delivery_points=[],
+        delivery_service=services[0] if len(services) == 1 else None,
+    )
+    if not services:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Доставка ещё не настроена. Напишите нам — отправим вручную.",
+        )
+        return
+    await context.set_state(OrderFlow.delivery_mode)
+    if len(services) > 1:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Выберите службу доставки.",
+            attachments=[delivery_service_kb(order_id, services)],
+        )
+        return
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Как удобнее получить заказ?",
+        attachments=[delivery_mode_kb(order_id)],
+    )
+
+
+async def _ask_mode(bot, chat_id: int, order_id: int, service: str, context: MemoryContext) -> None:
+    await context.set_state(OrderFlow.delivery_mode)
+    await context.update_data(
+        order_id=order_id,
+        delivery_service=service,
+        delivery_mode=None,
+        delivery_points=[],
+    )
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Как удобнее получить заказ?",
+        attachments=[delivery_mode_kb(order_id)],
+    )
+
+
+async def _quote_point(bot, chat_id: int, context: MemoryContext, point: dict) -> None:
+    data = await context.get_data()
+    order_id = int(data["order_id"])
+    service = await delivery.resolve_service(data.get("delivery_service"))
+    try:
+        quote = await delivery.quote_pvz(order_id, point, service)
+    except Exception as e:  # noqa: BLE001
+        await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
+        return
+    await context.clear()
+    await _send_delivery_pay(bot, chat_id, order_id, quote)
 
 
 async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
@@ -221,6 +304,15 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
             event.bot, event.message.recipient.chat_id, int(pending), client["id"], context
         )
         return
+    pending_delivery = data.get("pending_delivery_order_id")
+    if pending_delivery:
+        await _start_delivery(
+            event.bot,
+            event.message.recipient.chat_id,
+            int(pending_delivery),
+            context,
+        )
+        return
     await context.clear()
     await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_003"))
     await backend.mark_journey(client["id"], "msg_003")
@@ -289,11 +381,30 @@ async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_DELIVERIES)
 async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Раздел «Мои доставки» появится после подключения служб доставки.",
-    )
+    c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
+    try:
+        orders = await backend.client_orders(c["id"])
+    except Exception:  # noqa: BLE001
+        orders = []
+    chat_id = event.message.recipient.chat_id
+    await _send_menu(event.bot, chat_id, delivery.orders_text(orders))
+    pending = [
+        o
+        for o in orders
+        if o.get("status") in delivery.NEEDS_CHECKOUT and not o.get("tracking_code")
+    ]
+    if len(pending) == 1:
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text="Нажмите, чтобы оформить доставку.",
+            attachments=[delivery_start_kb(pending[0]["id"])],
+        )
+    elif pending:
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text="Выберите заказ:",
+            attachments=[delivery_orders_kb(pending)],
+        )
 
 
 @dp.message_callback(F.callback.payload == CB_HELP)
@@ -405,6 +516,151 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
         await _send_menu(
             event.bot, chat_id, "Принято! Дизайнер доработает макет и пришлёт заново."
         )
+
+
+@dp.message_callback(F.callback.payload.startswith("dlv:"))
+async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None:
+    parts = (event.callback.payload or "").split(":")
+    if len(parts) < 3:
+        await event.answer()
+        return
+    action, oid_s = parts[1], parts[2]
+    try:
+        order_id = int(oid_s)
+    except ValueError:
+        await event.answer()
+        return
+    chat_id = event.message.recipient.chat_id
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    if not client.get("phone"):
+        await context.set_state(OrderFlow.waiting_phone)
+        await context.update_data(pending_delivery_order_id=order_id)
+        await event.answer()
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text="Для доставки нужен телефон получателя. Пришлите номер в формате +7XXXXXXXXXX.",
+            attachments=[contact_kb()],
+        )
+        return
+    if action == "go":
+        await event.answer()
+        await _start_delivery(event.bot, chat_id, order_id, context)
+        return
+    if action == "svc" and len(parts) >= 4:
+        svc = parts[3]
+        if svc not in delivery.SERVICE_LABELS:
+            await event.answer()
+            return
+        await event.answer()
+        await _ask_mode(event.bot, chat_id, order_id, svc, context)
+        return
+    if action in ("pvz", "door"):
+        data = await context.get_data()
+        service = await delivery.resolve_service(data.get("delivery_service"))
+        await context.set_state(OrderFlow.delivery_city)
+        await context.update_data(
+            order_id=order_id,
+            delivery_mode=action,
+            delivery_service=service,
+            delivery_points=[],
+        )
+        hint = (
+            "Напишите город или индекс, где заберёте заказ."
+            if action == "pvz"
+            else "Напишите город или индекс для курьера."
+        )
+        await event.answer()
+        await event.bot.send_message(chat_id=chat_id, text=hint)
+        return
+    if action == "n" and len(parts) >= 4:
+        try:
+            idx = int(parts[3])
+        except ValueError:
+            await event.answer()
+            return
+        points = (await context.get_data()).get("delivery_points") or []
+        if idx < 0 or idx >= len(points):
+            await event.answer(notification="Список устарел — напишите город ещё раз")
+            return
+        await event.answer()
+        await _quote_point(event.bot, chat_id, context, points[idx])
+        return
+    await event.answer()
+
+
+@dp.message_created(OrderFlow.delivery_city)
+async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> None:
+    city = (event.message.body.text or "").strip()
+    chat_id = event.message.recipient.chat_id
+    if not city:
+        await event.message.answer("Напишите город или индекс.")
+        return
+    data = await context.get_data()
+    mode = data.get("delivery_mode")
+    order_id = int(data["order_id"])
+    if mode == "door":
+        await context.update_data(delivery_city=city)
+        await context.set_state(OrderFlow.delivery_address)
+        await event.message.answer("Напишите улицу, дом и квартиру.")
+        return
+    service = await delivery.resolve_service(data.get("delivery_service"))
+    try:
+        points = await delivery.pickup_points(city, service)
+    except Exception as e:  # noqa: BLE001
+        await event.message.answer(delivery.api_error(e))
+        return
+    if not points:
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text=delivery.empty_points_text(service),
+            attachments=[delivery_mode_kb(order_id)],
+        )
+        return
+    await context.update_data(
+        delivery_city=city, delivery_points=points, delivery_service=service
+    )
+    await context.set_state(OrderFlow.delivery_pvz)
+    await event.bot.send_message(
+        chat_id=chat_id,
+        text=delivery.points_text(city, points, service),
+        attachments=[delivery_points_kb(order_id, points)],
+    )
+
+
+@dp.message_created(OrderFlow.delivery_address)
+async def on_delivery_address(event: MessageCreated, context: MemoryContext) -> None:
+    street = (event.message.body.text or "").strip()
+    if not street:
+        await event.message.answer("Напишите улицу, дом и квартиру.")
+        return
+    data = await context.get_data()
+    order_id = int(data["order_id"])
+    service = await delivery.resolve_service(data.get("delivery_service"))
+    try:
+        quote = await delivery.quote_door(
+            order_id, data.get("delivery_city") or "", street, service
+        )
+    except Exception as e:  # noqa: BLE001
+        await event.message.answer(delivery.api_error(e))
+        return
+    await context.clear()
+    await _send_delivery_pay(event.bot, event.message.recipient.chat_id, order_id, quote)
+
+
+@dp.message_created(OrderFlow.delivery_pvz)
+async def on_delivery_pvz_text(event: MessageCreated, context: MemoryContext) -> None:
+    text = (event.message.body.text or "").strip()
+    points = (await context.get_data()).get("delivery_points") or []
+    if text.isdigit():
+        idx = int(text) - 1
+        if 0 <= idx < len(points):
+            await _quote_point(event.bot, event.message.recipient.chat_id, context, points[idx])
+            return
+        await event.message.answer("Нет такого номера. Нажмите кнопку или напишите город заново.")
+        return
+    await context.set_state(OrderFlow.delivery_city)
+    await on_delivery_city(event, context)
 
 
 # Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.

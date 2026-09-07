@@ -36,7 +36,7 @@ def test_ttl_is_clamped_to_api_limits():
 def test_redirect_urls_only_when_public_base_known():
     assert "redirectUrls" not in _order()
     urls = _order(redirect_base="https://casetop.example.ru/")["redirectUrls"]
-    assert urls["onSuccess"] == "https://casetop.example.ru/api/v1/payments/success"
+    assert urls["onSuccess"] == "https://casetop.example.ru/api/v1/payments/success?InvId=42"
     assert urls["onError"].endswith("/api/v1/payments/fail")
 
 

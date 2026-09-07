@@ -90,3 +90,70 @@ def materials_confirm_kb() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def delivery_service_kb(order_id: int, services: list[str]) -> InlineKeyboardMarkup:
+    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка"}
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=labels.get(s, s),
+                callback_data=f"dlv:svc:{order_id}:{s}",
+            )
+        ]
+        for s in services
+        if s in labels
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delivery_mode_kb(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📦 Пункт выдачи",
+                    callback_data=f"dlv:pvz:{order_id}",
+                ),
+                InlineKeyboardButton(
+                    text="🚚 Курьер до двери",
+                    callback_data=f"dlv:door:{order_id}",
+                ),
+            ]
+        ]
+    )
+
+
+def delivery_points_kb(order_id: int, points: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=str(i + 1), callback_data=f"dlv:n:{order_id}:{i}")]
+        for i in range(len(points))
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(text="🚚 Курьер до двери", callback_data=f"dlv:door:{order_id}"),
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delivery_start_kb(order_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Оформить доставку", callback_data=f"dlv:go:{order_id}")]
+        ]
+    )
+
+
+def delivery_orders_kb(orders: list[dict]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"#{o['id']} оформить доставку",
+                    callback_data=f"dlv:go:{o['id']}",
+                )
+            ]
+            for o in orders[:5]
+        ]
+    )

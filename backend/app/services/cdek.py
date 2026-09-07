@@ -29,6 +29,8 @@ import httpx
 
 PROD = "https://api.cdek.ru"
 TEST = "https://api.edu.cdek.ru"
+# Официальный SDK шлёт `?parameters` — без него шлюз СДЭК иногда отвечает 401.
+TOKEN_PATH = "/v2/oauth/token?parameters"
 
 # Габариты коробки под чехол — те же, что для Яндекса.
 BOX_CM = (20, 15, 5)
@@ -50,8 +52,17 @@ class CdekError(RuntimeError):
     pass
 
 
+def sanitize_secret(raw: str | None) -> str:
+    """Убрать кавычки, пробелы и переносы — из ЛК часто копируют с хвостовым пробелом."""
+    return "".join((raw or "").strip().strip('"').strip("'").split())
+
+
 def base_url(is_test: bool) -> str:
     return TEST if is_test else PROD
+
+
+def _mode(is_test: bool) -> str:
+    return "тест" if is_test else "продакшен"
 
 
 def is_uuid(value: str) -> bool:
@@ -94,17 +105,22 @@ def _format_http_error(status: int, text: str) -> str:
 
 
 async def _token(base: str, account: str, secret: str) -> str:
+    account = sanitize_secret(account)
+    secret = sanitize_secret(secret)
+    if not account or not secret:
+        raise CdekError("не заданы account / secret")
     cached = _token_cache.get((base, account))
     if cached and cached[1] > time.time() + 30:
         return cached[0]
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(
-            f"{base}/v2/oauth/token",
+            f"{base}{TOKEN_PATH}",
             data={
                 "grant_type": "client_credentials",
                 "client_id": account,
                 "client_secret": secret,
             },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     if r.status_code != 200:
         raise CdekError(f"авторизация СДЭК: {_format_http_error(r.status_code, r.text)}")
@@ -125,10 +141,13 @@ async def _request(
     _retried: bool = False,
 ) -> Any:
     """`raw=True` — вернуть байты (скачанный PDF ярлыка)."""
-    if not cfg.get("account") or not cfg.get("secret"):
+    account = sanitize_secret(cfg.get("account"))
+    secret = sanitize_secret(cfg.get("secret"))
+    if not account or not secret:
         raise CdekError("не заданы account / secret")
+    cfg = {**cfg, "account": account, "secret": secret}
     base = base_url(cfg["is_test"])
-    token = await _token(base, cfg["account"], cfg["secret"])
+    token = await _token(base, account, secret)
     async with httpx.AsyncClient(timeout=60 if raw else 30) as client:
         r = await client.request(
             method,
@@ -530,6 +549,48 @@ def map_status(status: str | None) -> str | None:
     return None
 
 
+def iter_webhook_events(body: object) -> list[dict]:
+    """СДЭК шлёт один объект или массив событий. Остальное игнорируем."""
+    if isinstance(body, list):
+        return [e for e in body if isinstance(e, dict)]
+    if isinstance(body, dict):
+        nested = body.get("events")
+        if isinstance(nested, list):
+            return [e for e in nested if isinstance(e, dict)]
+        return [body]
+    return []
+
+
+def casetop_order_id(number: str | None) -> int | None:
+    """Достать id заказа из нашего `casetop-{id}`. Голое число — номер СДЭК, не id."""
+    raw = (number or "").strip()
+    if not raw.startswith("casetop-"):
+        return None
+    tail = raw.split("-", 1)[1]
+    return int(tail) if tail.isdigit() else None
+
+
+def webhook_status_code(event: dict) -> str:
+    attrs = event.get("attributes") or {}
+    return str(attrs.get("code") or "").upper()
+
+
+def webhook_track_ids(event: dict) -> list[str]:
+    """uuid / номер СДЭК / наш number — чем можно найти заказ по tracking_code."""
+    attrs = event.get("attributes") or {}
+    ids: list[str] = []
+    for value in (
+        event.get("uuid"),
+        attrs.get("uuid"),
+        attrs.get("cdek_number"),
+        attrs.get("number"),
+    ):
+        text = str(value).strip() if value else ""
+        if text and text not in ids:
+            ids.append(text)
+    return ids
+
+
 # ── Ярлык ──────────────────────────────────────────────
 async def generate_label(cfg: dict, identifier: str, *, fmt: str = "A4") -> bytes:
     """PDF штрихкода места. Без него посылку не примут на складе СДЭК.
@@ -576,22 +637,52 @@ async def generate_label(cfg: dict, identifier: str, *, fmt: str = "A4") -> byte
 
 
 # ── Проба связи ────────────────────────────────────────
+_AUTH_HINT = (
+    " Account и Secure — две длинные строки из ЛК СДЭК → Интеграция → «Создать ключ», "
+    "не email и пароль входа. Ключи ЛК работают на продакшене (тестовый режим = false); "
+    "для api.edu.cdek.ru нужны отдельные ключи песочницы. Скопируйте заново без пробелов."
+)
+
+
 async def check_connection(cfg: dict) -> tuple[bool, str]:
-    """OAuth + чтение справочника городов. Заказов не создаёт."""
-    mode = "тест" if cfg["is_test"] else "продакшен"
+    """OAuth + чтение справочника городов. Заказов не создаёт.
+
+    Ключи из ЛК живут только на api.cdek.ru, ключи песочницы — только на
+    api.edu.cdek.ru. Если текущий хост отвечает invalid_client, пробуем другой.
+    """
+    cfg = {
+        **cfg,
+        "account": sanitize_secret(cfg.get("account")),
+        "secret": sanitize_secret(cfg.get("secret")),
+    }
+    if "@" in (cfg["account"] or ""):
+        return False, (
+            "в Account попал логин кабинета (email). Нужен идентификатор из "
+            "ЛК СДЭК → Интеграция → «Создать ключ», не email/пароль входа"
+        )
+    mode = _mode(cfg["is_test"])
+
+    async def probe(conf: dict) -> list:
+        return await cities(conf, "Москва", size=1)
+
     try:
-        found = await cities(cfg, "Москва", size=1)
+        found = await probe(cfg)
     except CdekError as e:
         detail = str(e)[:160]
-        if "401" in detail or "авторизация" in detail:
-            hint = (
-                ". В тестовом режиме нужны ключи песочницы из ЛК СДЭК → Интеграция, "
-                "не account/secure от боевого договора"
-                if cfg["is_test"]
-                else ""
-            )
-            return False, f"креды отклонены ({mode}): {detail}{hint}"
-        return False, f"нет связи ({mode}): {detail}"
+        auth_fail = "401" in detail or "invalid_client" in detail or "авторизация" in detail
+        if not auth_fail:
+            return False, f"нет связи ({mode}): {detail}"
+        other = {**cfg, "is_test": not cfg["is_test"]}
+        try:
+            await probe(other)
+        except CdekError:
+            return False, f"креды отклонены ({mode}): {detail}.{_AUTH_HINT}"
+        other_mode = _mode(other["is_test"])
+        return False, (
+            f"креды отклонены ({mode}), но приняты на {other_mode}. "
+            f"Переключите «Тестовый режим» на {other_mode} — ключи ЛК и "
+            "песочницы работают на разных хостах"
+        )
     if not found:
         return False, f"токен принят ({mode}), но справочник городов пуст — проверьте договор"
     city = found[0].get("city") or found[0].get("code") or "Москва"
