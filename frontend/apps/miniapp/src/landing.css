@@ -216,6 +216,14 @@ body:has(.lp) { background: var(--lp-paper); }
   filter: drop-shadow(0 40px 60px rgba(0, 0, 0, 0.35));
   object-fit: contain;
 }
+/* Реальное фото чехла: белый фон растворяется в бумаге лендинга */
+.lp-hero__img--product {
+  object-fit: contain;
+  border-radius: 0;
+  box-shadow: none;
+  mix-blend-mode: darken;
+  filter: drop-shadow(0 36px 50px rgba(0, 0, 0, 0.28));
+}
 @keyframes lp-float {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -14px; }
