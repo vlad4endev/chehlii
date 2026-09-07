@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -236,6 +236,45 @@ def safe_filename(name: str, fallback: str = "file") -> str:
     cleaned = re.sub(r"[^\w.\-]+", "_", stem, flags=re.UNICODE)
     cleaned = re.sub(r"_+", "_", cleaned).strip("._") or fallback
     return f"{cleaned[:80]}.{ext}"
+
+
+_PUBLIC_HOSTS = (
+    "yadi.sk",
+    "disk.yandex.ru",
+    "disk.yandex.com",
+    "disk.yandex.net",
+)
+
+
+def is_public_url(url: str) -> bool:
+    """Публичная страница/ключ Яндекс.Диска (не произвольный URL — защита от SSRF)."""
+    raw = (url or "").strip()
+    if not raw.startswith("http://") and not raw.startswith("https://"):
+        return False
+    host = (urlparse(raw).hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host in _PUBLIC_HOSTS or any(host.endswith(f".{h}") for h in _PUBLIC_HOSTS)
+
+
+async def download_public(public_url: str) -> bytes:
+    """Скачать опубликованный файл по public_url / yadi.sk без OAuth."""
+    if not is_public_url(public_url):
+        raise YandexDiskError("это не публичная ссылка Яндекс.Диска")
+    async with httpx.AsyncClient(timeout=40.0, follow_redirects=True) as client:
+        r = await client.get(
+            f"{_API}/public/resources/download",
+            params={"public_key": public_url},
+        )
+        if r.status_code >= 400:
+            raise YandexDiskError(f"public download: {_api_error(r)}")
+        href = (r.json() or {}).get("href") if r.content else None
+        if not isinstance(href, str) or not href:
+            raise YandexDiskError("public download: в ответе нет href")
+        file = await client.get(href)
+        if file.status_code >= 400 or not file.content:
+            raise YandexDiskError(f"public download: файл недоступен ({file.status_code})")
+        return file.content
 
 
 def design_path(root: str, order_id: int, filename: str) -> str:

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, mediaUrl } from '../api'
+import { ApiError, apiGetBlob, mediaUrl } from '../api'
 import { useAuth } from '../auth'
 import {
   CHANNELS,
@@ -10,6 +10,7 @@ import {
   changeStatus,
   deleteOrder,
   downloadOrdersXlsx,
+  fetchFilePreview,
   fetchOrder,
   fetchOrders,
   uploadMockup,
@@ -411,30 +412,17 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               </div>
             )}
 
-            <div className="deflist">
-              <Row label="Клиент" value={order.client_name || '—'} />
-              <Row label="Телефон" value={order.client_phone || '—'} />
-              <Row label="Канал" value={CHANNEL_LABEL[order.channel] ?? order.channel} />
-              {order.delivery_service && <Row label="Доставка" value={order.delivery_service} />}
-              {order.delivery_address && <Row label="Адрес" value={order.delivery_address} />}
-              {order.tracking_code && <Row label="Трек" value={order.tracking_code} />}
-              {isAdmin && (
-                <>
-                  <div className="deflist__sep">Финансы</div>
-                  <Row label="Себестоимость" value={order.cost != null ? money(order.cost) : '—'} />
-                  <Row label="Маржа" value={order.margin != null ? money(order.margin) : '—'} />
-                  <Row label="Скидка" value={order.total_discount != null ? `${order.total_discount}%` : '—'} />
-                  <Row label="Доставка, ₽" value={order.delivery_cost != null ? money(order.delivery_cost) : '—'} />
-                  <Row label="Итог" value={order.final_price != null ? money(order.final_price) : '—'} strong />
-                </>
-              )}
-            </div>
-
             <div className="block">
               <div className="field__label">Макет</div>
               {order.mockup_url && (
                 <div className="photogrid photogrid--mockup">
-                  <ClientFile file={order.mockup_url} index={0} label="Макет" />
+                  <ClientFile
+                    key={order.mockup_url}
+                    file={order.mockup_url}
+                    index={0}
+                    label="Макет"
+                    previewApi={`/admin/orders/${id}/mockup-file`}
+                  />
                 </div>
               )}
               {order.mockup_disk_url && (
@@ -469,6 +457,25 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                 Файл сохранится локально и на Яндекс.Диске. Клиент увидит картинку в чате
                 с кнопками «Подтвердить / Переделать», статус станет «Отправка макета».
               </div>
+            </div>
+
+            <div className="deflist">
+              <Row label="Клиент" value={order.client_name || '—'} />
+              <Row label="Телефон" value={order.client_phone || '—'} />
+              <Row label="Канал" value={CHANNEL_LABEL[order.channel] ?? order.channel} />
+              {order.delivery_service && <Row label="Доставка" value={order.delivery_service} />}
+              {order.delivery_address && <Row label="Адрес" value={order.delivery_address} />}
+              {order.tracking_code && <Row label="Трек" value={order.tracking_code} />}
+              {isAdmin && (
+                <>
+                  <div className="deflist__sep">Финансы</div>
+                  <Row label="Себестоимость" value={order.cost != null ? money(order.cost) : '—'} />
+                  <Row label="Маржа" value={order.margin != null ? money(order.margin) : '—'} />
+                  <Row label="Скидка" value={order.total_discount != null ? `${order.total_discount}%` : '—'} />
+                  <Row label="Доставка, ₽" value={order.delivery_cost != null ? money(order.delivery_cost) : '—'} />
+                  <Row label="Итог" value={order.final_price != null ? money(order.final_price) : '—'} strong />
+                </>
+              )}
             </div>
 
             <div className="block">
@@ -589,32 +596,124 @@ function OrderThumb({
   )
 }
 
-// Файл клиента: фото показываем миниатюрой (клик — открыть), иначе ссылка.
+// Файл: фото показываем миниатюрой (клик — открыть), иначе ссылка.
+// Макеты со старых заказов — страница yadi.sk, её нельзя ставить в <img src>.
+// Качаем байты с API (Bearer) и рисуем blob.
+function resolveFileRef(file: unknown): string | null {
+  if (typeof file === 'string' && file.trim()) return file.trim()
+  if (file && typeof file === 'object') {
+    const rec = file as Record<string, unknown>
+    if (typeof rec.url === 'string') return rec.url
+    if (typeof rec.href === 'string') return rec.href
+  }
+  return null
+}
+
+function isYandexUrl(url: string): boolean {
+  return /(?:yadi\.sk|disk\.yandex\.)/i.test(url)
+}
+
+function isDirectImage(url: string): boolean {
+  const path = url.split('?')[0]
+  return /\.(jpe?g|png|webp|gif)$/i.test(path)
+}
+
 function ClientFile({
   file,
   index,
   label,
+  previewApi,
 }: {
   file: unknown
   index: number
   label?: string
+  previewApi?: string
 }) {
-  const [failed, setFailed] = useState(false)
-  const url = typeof file === 'string' ? mediaUrl(file) : null
-  const isImage =
-    typeof file === 'string' && /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.split('?')[0])
+  const raw = resolveFileRef(file)
+  const href = raw ? mediaUrl(raw) : null
   const title = label ?? `Фото ${index + 1}`
+  const canDirect = Boolean(raw && isDirectImage(raw) && !isYandexUrl(raw) && !previewApi)
+  const [src, setSrc] = useState<string | null>(canDirect && raw ? mediaUrl(raw) : null)
+  const [kind, setKind] = useState<'img' | 'file' | 'empty' | 'loading'>(
+    !raw ? 'empty' : canDirect ? 'img' : 'loading',
+  )
 
-  if (url && isImage && !failed) {
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+
+    async function load() {
+      if (!raw) {
+        setSrc(null)
+        setKind('empty')
+        return
+      }
+      const needsFetch = Boolean(previewApi) || isYandexUrl(raw) || !isDirectImage(raw)
+      if (!needsFetch) {
+        setSrc(mediaUrl(raw))
+        setKind('img')
+        return
+      }
+      setKind('loading')
+      try {
+        const blob = await (previewApi ? apiGetBlob(previewApi) : fetchFilePreview(raw))
+        if (cancelled) return
+        if (blob.type.includes('pdf')) {
+          setSrc(mediaUrl(raw))
+          setKind('file')
+          return
+        }
+        if (
+          blob.size > 0 &&
+          (!blob.type || blob.type.startsWith('image/')) &&
+          !blob.type.includes('heic') &&
+          !blob.type.includes('heif')
+        ) {
+          objectUrl = URL.createObjectURL(blob)
+          if (cancelled) {
+            URL.revokeObjectURL(objectUrl)
+            return
+          }
+          setSrc(objectUrl)
+          setKind('img')
+          return
+        }
+        setSrc(mediaUrl(raw))
+        setKind('file')
+      } catch {
+        if (!cancelled) {
+          setSrc(mediaUrl(raw))
+          setKind('file')
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [raw, previewApi])
+
+  if (kind === 'loading') {
+    return <span className="photocard photocard--file photocard--muted">Загрузка…</span>
+  }
+  if (kind === 'img' && src) {
     return (
-      <a className="photocard" href={url} target="_blank" rel="noreferrer" title={title}>
-        <img src={url} alt={title} onError={() => setFailed(true)} />
+      <a className="photocard" href={src} target="_blank" rel="noreferrer" title={title}>
+        <img
+          src={src}
+          alt={title}
+          onError={() => {
+            setKind(href ? 'file' : 'empty')
+          }}
+        />
       </a>
     )
   }
-  if (url) {
+  if (href) {
     return (
-      <a className="photocard photocard--file" href={url} target="_blank" rel="noreferrer">
+      <a className="photocard photocard--file" href={href} target="_blank" rel="noreferrer">
         <span>{label ?? `Файл ${index + 1}`} ↗</span>
       </a>
     )

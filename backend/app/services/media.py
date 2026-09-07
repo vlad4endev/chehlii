@@ -83,3 +83,62 @@ def save_bytes(content: bytes, ext: str, subdir: str) -> str:
     name = f"{uuid.uuid4().hex}.{ext}"
     (folder / name).write_bytes(content)
     return f"/media/{subdir}/{name}"
+
+
+def resolve_local(url: str) -> Path | None:
+    """Путь на диске для `/media/...`. Посторонние URL и `..` — None."""
+    path = (url or "").split("?", 1)[0].strip()
+    if not path.startswith("/media/"):
+        return None
+    rel = path[len("/media/") :].lstrip("/")
+    if not rel or ".." in Path(rel).parts:
+        return None
+    root = Path(settings.media_root).resolve()
+    full = (root / rel).resolve()
+    try:
+        full.relative_to(root)
+    except ValueError:
+        return None
+    return full if full.is_file() else None
+
+
+def sniff_mime(data: bytes, *, name: str = "") -> str:
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:4] == b"%PDF":
+        return "application/pdf"
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+        "gif": "image/gif",
+        "pdf": "application/pdf",
+        "heic": "image/heic",
+        "heif": "image/heif",
+    }.get(ext, "application/octet-stream")
+
+
+async def bytes_for_url(url: str) -> tuple[bytes, str] | None:
+    """Байты локального `/media` или публичного файла Яндекс.Диска."""
+    local = resolve_local(url)
+    if local is not None:
+        data = local.read_bytes()
+        return data, sniff_mime(data, name=local.name)
+    from app.services import yandex_disk
+
+    if yandex_disk.is_public_url(url):
+        try:
+            data = await yandex_disk.download_public(url)
+        except yandex_disk.YandexDiskError:
+            return None
+        if data:
+            return data, sniff_mime(data)
+    return None

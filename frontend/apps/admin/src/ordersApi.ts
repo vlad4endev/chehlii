@@ -1,4 +1,4 @@
-import { ApiError, apiGet, apiSend, apiUpload, apiUrl, getToken } from './api'
+import { ApiError, apiGet, apiGetBlob, apiSend, apiUpload, apiUrl, getToken } from './api'
 
 export interface StatusOption {
   value: string
@@ -98,6 +98,9 @@ export const changeStatus = (id: number, status: string, force = false) =>
 export const deleteOrder = (id: number) => apiSend<void>('DELETE', `/admin/orders/${id}`)
 export const uploadMockup = (id: number, file: File) =>
   apiUpload<OrderDetail>(`/admin/orders/${id}/mockup`, file)
+
+export const fetchFilePreview = (url: string) =>
+  apiGetBlob(`/admin/media/preview?url=${encodeURIComponent(url)}`)
 
 export async function downloadOrdersXlsx(): Promise<void> {
   const res = await fetch(apiUrl('/admin/orders/export.xlsx'), {

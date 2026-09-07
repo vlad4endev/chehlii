@@ -65,6 +65,15 @@ def test_safe_filename_strips_path_and_punctuation():
     assert path.endswith("/20/design/Макет_v2.png")
 
 
+def test_is_public_url_accepts_yadisk_only() -> None:
+    assert yd.is_public_url("https://yadi.sk/d/nalmht9ljyifAQ")
+    assert yd.is_public_url("https://disk.yandex.ru/d/abc")
+    assert yd.is_public_url("https://www.disk.yandex.com/i/xyz")
+    assert not yd.is_public_url("https://evil.example/yadi.sk")
+    assert not yd.is_public_url("/media/orders/1/a.png")
+    assert not yd.is_public_url("https://example.com/file.png")
+
+
 def test_sanitize_strips_oauth_prefix_and_quotes():
     assert yd.sanitize_token("  OAuth y0_abc  ") == "y0_abc"
     assert yd.sanitize_token("Bearer y0_abc") == "y0_abc"
@@ -224,6 +233,42 @@ async def test_upload_accepts_202_and_returns_public_url(monkeypatch):
     )
     url = await yd.upload("/chechlii/orders/1/design/a.png", b"png", token="y0_token")
     assert url == "https://yadi.sk/d/waited"
+
+
+async def test_download_public_follows_href(monkeypatch):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 12
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, **kw):
+            if "public/resources/download" in url:
+                return _FakeResponse(200, {"href": "https://downloader.disk.yandex.ru/file"})
+            if "downloader.disk.yandex.ru" in url:
+                r = _FakeResponse(200)
+                r.content = png
+                return r
+            raise AssertionError(f"неожиданный GET: {url}")
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+    data = await yd.download_public("https://yadi.sk/d/nalmht9ljyifAQ")
+    assert data == png
+
+
+async def test_download_public_rejects_ssrf():
+    try:
+        await yd.download_public("https://example.com/secret")
+    except yd.YandexDiskError as e:
+        assert "не публичная" in str(e)
+    else:
+        raise AssertionError("ожидали YandexDiskError")
 
 
 async def test_upload_401_asks_to_reauth(monkeypatch):

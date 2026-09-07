@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -327,6 +327,30 @@ async def _load(session: AsyncSession, order_id: int) -> tuple[Order, Client, Ca
         else None
     )
     return order, client, case
+
+
+@router.get("/{order_id}/mockup-file")
+async def mockup_file(
+    order_id: int,
+    _: CurrentAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Сама картинка макета для карточки заказа. <img> не умеет Bearer,
+    поэтому админка качает байты с токеном. Старые заказы — yadi.sk,
+    новые — /media/orders/{id}/…; если локального нет, берём копию с Диска."""
+    order, _, _ = await _load(session, order_id)
+    for url in (order.mockup_url, order.mockup_disk_url):
+        if not url:
+            continue
+        got = await media.bytes_for_url(url)
+        if got:
+            data, mime = got
+            return Response(
+                content=data,
+                media_type=mime,
+                headers={"Cache-Control": "private, max-age=120"},
+            )
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Макет не найден")
 
 
 @router.get("/{order_id}", response_model=OrderDetail)
