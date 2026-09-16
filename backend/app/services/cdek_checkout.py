@@ -4,7 +4,7 @@
 - `pvz:CODE|человекочитаемо`
 - `door:ИНДЕКС|улица дом квартира`
 
-После постоплаты заказ переходит к выбору службы (СДЭК / Яндекс, если обе
+После постоплаты заказ переходит к выбору службы (СДЭК / Яндекс / Ozon, если
 настроены). Заявку создаём, когда клиент оплатил доставку.
 """
 
@@ -101,9 +101,7 @@ def statuses_to_apply(current: OrderStatus, target: OrderStatus) -> list[OrderSt
     return list(DELIVERY_CHAIN[start + 1 : end + 1])
 
 
-async def walk_to(
-    session: AsyncSession, order: Order, target: OrderStatus, trigger: str
-) -> None:
+async def walk_to(session: AsyncSession, order: Order, target: OrderStatus, trigger: str) -> None:
     """Продвинуть заказ по цепочке доставки, записывая каждый переход."""
     for status in statuses_to_apply(order.status, target):
         assert_transition(order.status, status)
@@ -152,7 +150,7 @@ async def load_cfg(session: AsyncSession) -> dict:
 
 async def available_services(session: AsyncSession) -> list[str]:
     """Какие службы реально настроены — бот показывает только их."""
-    from app.services import integrations
+    from app.services import integrations, ozon_delivery
     from app.services.yandex_delivery import sanitize_token
 
     out: list[str] = []
@@ -162,7 +160,33 @@ async def available_services(session: AsyncSession) -> list[str]:
         out.append("cdek")
     if sanitize_token(await integrations.get(session, "yandex.oauth_token")):
         out.append("yandex")
+    ozon_id = ozon_delivery.sanitize_secret(await integrations.get(session, "ozon.client_id"))
+    ozon_secret = ozon_delivery.sanitize_secret(
+        await integrations.get(session, "ozon.client_secret")
+    )
+    if ozon_id and ozon_secret:
+        out.append("ozon")
     return out
+
+
+async def load_ozon_cfg(session: AsyncSession) -> dict:
+    from app.services import integrations
+    from app.services import ozon_delivery as ozon
+
+    client_id = ozon.sanitize_secret(await integrations.get(session, "ozon.client_id"))
+    secret = ozon.sanitize_secret(await integrations.get(session, "ozon.client_secret"))
+    if not (client_id and secret):
+        raise ozon.OzonDeliveryError(
+            "Ozon Доставка не настроена — задайте в «Настройки → Интеграции»."
+        )
+    return {
+        "client_id": client_id,
+        "client_secret": secret,
+        "shipment_method_id": await integrations.get(session, "ozon.shipment_method_id"),
+        "weight": _int(await integrations.get(session, "ozon.weight", "300"), 300),
+        "sender_name": await integrations.get(session, "ozon.sender_name", "casetop"),
+        "sender_phone": await integrations.get(session, "ozon.sender_phone"),
+    }
 
 
 async def load_yandex_cfg(session: AsyncSession) -> dict:
@@ -442,18 +466,80 @@ async def apply_yandex_quote(
     }
 
 
+async def apply_ozon_quote(
+    session: AsyncSession,
+    order: Order,
+    *,
+    pickup_point_id: str | None = None,
+    label: str | None = None,
+) -> dict:
+    """Посчитать Ozon, сохранить ПВЗ и выставить оплату. Только пункт выдачи."""
+    from app.services import ozon_delivery as ozon
+
+    if order.tracking_code:
+        raise ozon.OzonDeliveryError("заявка по этому заказу уже создана")
+    if order.status not in _QUOTE_STATUSES:
+        raise ozon.OzonDeliveryError("для этого заказа доставку оформить нельзя")
+    try:
+        point_id = int(str(pickup_point_id or "").strip())
+    except (TypeError, ValueError):
+        point_id = 0
+    if point_id <= 0:
+        raise ozon.OzonDeliveryError("укажите пункт выдачи Ozon")
+
+    client = await session.get(Client, order.client_id)
+    if client is None or not client.phone:
+        raise ozon.OzonDeliveryError("нет телефона получателя")
+
+    cfg = await load_ozon_cfg(session)
+    if not await ozon.check_client(cfg, client.phone):
+        raise ozon.OzonDeliveryError(
+            "этот номер не зарегистрирован в Ozon — доставка Ozon недоступна"
+        )
+    calc = await ozon.checkout(
+        cfg,
+        order_id=order.id,
+        item_price_rub=_item_price(order),
+        recipient_phone=client.phone,
+        delivery_point_id=point_id,
+    )
+    stored = encode_destination(
+        pickup_point_id=str(point_id),
+        label=label,
+    )
+    try:
+        await _save_quoted(
+            session,
+            order,
+            service=DeliveryService.OZON,
+            stored=stored,
+            cost=float(calc["delivery_sum"]),
+            chosen_label="Ozon Доставку",
+        )
+    except InvalidTransition as e:
+        raise ozon.OzonDeliveryError(str(e)) from e
+    return {
+        "delivery_sum": float(calc["delivery_sum"]),
+        "period_min": calc.get("period_min"),
+        "period_max": calc.get("period_max"),
+        "tariff_code": 0,
+        "address": decode_destination(stored)["label"],
+        "service": "ozon",
+    }
+
+
 async def fulfill(session: AsyncSession, order: Order, client: Client | None) -> dict | None:
     """Создать заявку выбранной службы по сохранённому адресу."""
     if order.tracking_code:
         return None
     if order.delivery_service == DeliveryService.YANDEX:
         return await _fulfill_yandex(session, order, client)
+    if order.delivery_service == DeliveryService.OZON:
+        return await _fulfill_ozon(session, order, client)
     return await _fulfill_cdek(session, order, client)
 
 
-async def _fulfill_cdek(
-    session: AsyncSession, order: Order, client: Client | None
-) -> dict | None:
+async def _fulfill_cdek(session: AsyncSession, order: Order, client: Client | None) -> dict | None:
     """Создать заявку СДЭК по сохранённому адресу. Ошибки не откатывают оплату."""
     if order.tracking_code and order.delivery_service == DeliveryService.CDEK:
         return None
@@ -584,3 +670,65 @@ async def _fulfill_yandex(
             "Когда посылка будет в пути — напишем.",
         )
     return {"request_id": request_id}
+
+
+async def _fulfill_ozon(session: AsyncSession, order: Order, client: Client | None) -> dict | None:
+    from app.services import ozon_delivery as ozon
+
+    dest = decode_destination(order.delivery_address)
+    try:
+        point_id = int(str(dest.get("pickup_point_id") or "").strip())
+    except (TypeError, ValueError):
+        point_id = 0
+    if point_id <= 0:
+        if client is not None:
+            _notify(
+                session,
+                client,
+                order.id,
+                "Оплата доставки получена, но пункт выдачи Ozon не сохранился. "
+                "Напишите нам — оформим отправку вручную.",
+            )
+        return None
+    if client is None or not client.phone:
+        if client is not None:
+            _notify(
+                session,
+                client,
+                order.id,
+                "Оплата доставки получена, но нет телефона получателя. "
+                "Напишите нам — оформим отправку.",
+            )
+        return None
+
+    try:
+        cfg = await load_ozon_cfg(session)
+        created = await ozon.create_order(
+            cfg,
+            order_id=order.id,
+            item_price_rub=_item_price(order),
+            recipient_name=client.nickname or "Получатель",
+            recipient_phone=client.phone,
+            delivery_point_id=point_id,
+        )
+    except ozon.OzonDeliveryError as e:
+        if client is not None:
+            _notify(
+                session,
+                client,
+                order.id,
+                f"Оплата доставки получена, заявку Ozon оформим вручную ({e}).",
+            )
+        return None
+
+    track = created.get("tracking_code") or created.get("posting_number")
+    order.delivery_service = DeliveryService.OZON
+    order.tracking_code = track
+    if client is not None:
+        _notify(
+            session,
+            client,
+            order.id,
+            f"Заявка Ozon Доставки создана. Номер: {track}. Когда посылка будет в пути — напишем.",
+        )
+    return created

@@ -93,7 +93,7 @@ def materials_confirm_kb() -> InlineKeyboardMarkup:
 
 
 def delivery_service_kb(order_id: int, services: list[str]) -> InlineKeyboardMarkup:
-    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка"}
+    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка", "ozon": "Ozon Доставка"}
     rows = [
         [
             InlineKeyboardButton(
@@ -107,33 +107,41 @@ def delivery_service_kb(order_id: int, services: list[str]) -> InlineKeyboardMar
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def delivery_mode_kb(order_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def delivery_mode_kb(order_id: int, service: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="📦 Пункт выдачи",
+                callback_data=f"dlv:pvz:{order_id}",
+            ),
+        ]
+    ]
+    if service != "ozon":
+        rows[0].append(
+            InlineKeyboardButton(
+                text="🚚 Курьер до двери",
+                callback_data=f"dlv:door:{order_id}",
+            )
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def delivery_points_kb(
+    order_id: int, points: list[dict], service: str | None = None
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=str(i + 1), callback_data=f"dlv:n:{order_id}:{i}")]
+        for i in range(len(points))
+    ]
+    if service != "ozon":
+        rows.append(
             [
-                InlineKeyboardButton(
-                    text="📦 Пункт выдачи",
-                    callback_data=f"dlv:pvz:{order_id}",
-                ),
                 InlineKeyboardButton(
                     text="🚚 Курьер до двери",
                     callback_data=f"dlv:door:{order_id}",
                 ),
             ]
-        ]
-    )
-
-
-def delivery_points_kb(order_id: int, points: list[dict]) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text=str(i + 1), callback_data=f"dlv:n:{order_id}:{i}")]
-        for i in range(len(points))
-    ]
-    rows.append(
-        [
-            InlineKeyboardButton(text="🚚 Курьер до двери", callback_data=f"dlv:door:{order_id}"),
-        ]
-    )
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

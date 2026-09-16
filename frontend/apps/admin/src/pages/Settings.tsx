@@ -6,6 +6,7 @@ import {
   type ConnectionStatus,
   type IntegrationGroup,
   checkCdek,
+  checkOzon,
   checkRobokassa,
   checkYandexDelivery,
   checkYandexDisk,
@@ -16,10 +17,12 @@ import {
 } from '../integrationsApi'
 import {
   YANDEX_DISK_REDIRECT_URI,
+  YANDEX_DISK_SCOPES,
   consumeYandexDiskOAuth,
   yandexDiskAuthorizeUrl,
 } from '../yandexDiskOAuth'
 import { BotTexts } from './BotTexts'
+import { ProxyPanel } from './ProxySettings'
 
 const GROUP_ICON: Record<string, string> = {
   yandex_disk: 'box',
@@ -36,10 +39,11 @@ const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
   yandex_pay: checkYandexPay,
   yandex_delivery: checkYandexDelivery,
   cdek: checkCdek,
+  ozon: checkOzon,
   payment: checkRobokassa,
 }
 
-type SettingsTab = 'integrations' | 'bots' | 'miniapp'
+type SettingsTab = 'integrations' | 'proxy' | 'bots' | 'miniapp'
 
 export function Settings() {
   const [tab, setTab] = useState<SettingsTab>('integrations')
@@ -57,6 +61,12 @@ export function Settings() {
           Интеграции
         </button>
         <button
+          className={`segmented__btn${tab === 'proxy' ? ' segmented__btn--active' : ''}`}
+          onClick={() => setTab('proxy')}
+        >
+          Прокси
+        </button>
+        <button
           className={`segmented__btn${tab === 'bots' ? ' segmented__btn--active' : ''}`}
           onClick={() => setTab('bots')}
         >
@@ -71,6 +81,7 @@ export function Settings() {
       </div>
 
       {tab === 'integrations' && <IntegrationsPanel />}
+      {tab === 'proxy' && <ProxyPanel />}
       {tab === 'bots' && <BotTexts embedded />}
       {tab === 'miniapp' && <MiniappPanel />}
     </div>
@@ -398,8 +409,16 @@ function GroupCard({
                 Создать OAuth-приложение
               </a>
               <div className="intcard__callback">
-                Redirect URI в кабинете:{' '}
+                Redirect URI:{' '}
                 <code>{YANDEX_DISK_REDIRECT_URI}</code>
+                <br />
+                Доступ к данным:{' '}
+                {YANDEX_DISK_SCOPES.map((scope, i) => (
+                  <span key={scope}>
+                    {i > 0 ? ', ' : ''}
+                    <code>{scope}</code>
+                  </span>
+                ))}
               </div>
             </>
           )}

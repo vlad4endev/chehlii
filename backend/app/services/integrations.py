@@ -203,6 +203,56 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "ozon",
+        "title": "Ozon Доставка",
+        "hint": (
+            "Доставка заказов со своего сайта через ПВЗ Ozon (не витрина маркетплейса). "
+            "В ЛК Ozon Доставки создайте частное приложение с типом Delivery API и "
+            "скоупом delivery-api.all — скопируйте Client ID и Client Secret. "
+            "ID метода доставки указан в ЛК под штрих-кодом метода после его добавления. "
+            "Клиентский телефон должен быть зарегистрирован в Ozon, иначе заказ "
+            "не создастся. Это не Seller API и не старый Ozon Rocket."
+        ),
+        "fields": [
+            {
+                "key": "ozon.client_id",
+                "label": "Client ID приложения (UUID)",
+                "secret": False,
+                "placeholder": "из ЛК → частные приложения",
+            },
+            {
+                "key": "ozon.client_secret",
+                "label": "Client Secret",
+                "secret": True,
+                "placeholder": "",
+            },
+            {
+                "key": "ozon.shipment_method_id",
+                "label": "ID метода доставки",
+                "secret": False,
+                "placeholder": "число под штрих-кодом метода в ЛК",
+            },
+            {
+                "key": "ozon.weight",
+                "label": "Вес посылки, г",
+                "secret": False,
+                "placeholder": "300",
+            },
+            {
+                "key": "ozon.sender_name",
+                "label": "Имя отправителя",
+                "secret": False,
+                "placeholder": "casetop",
+            },
+            {
+                "key": "ozon.sender_phone",
+                "label": "Телефон отправителя",
+                "secret": False,
+                "placeholder": "+79990000000",
+            },
+        ],
+    },
+    {
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (
@@ -324,7 +374,7 @@ async def set_many(session: AsyncSession, values: dict[str, str]) -> None:
         # Пустое значение для секрета = «не менять» (не затираем существующий).
         if k in SECRET_KEYS and v == "":
             continue
-        if k in ("cdek.account", "cdek.secret"):
+        if k in ("cdek.account", "cdek.secret", "ozon.client_id", "ozon.client_secret"):
             from app.services.cdek import sanitize_secret
 
             v = sanitize_secret(v)

@@ -36,6 +36,9 @@ export const checkYandexDelivery = () =>
 export const checkCdek = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/cdek/check')
 
+export const checkOzon = () =>
+  apiSend<ConnectionStatus>('POST', '/admin/integrations/ozon/check')
+
 export const checkYandexDisk = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/yandex-disk/check')
 

@@ -25,6 +25,7 @@ from bots.core.scenario import (
     pending_payload,
 )
 from bots.core.texts import texts
+from bots.tg import proxy as tg_proxy
 from bots.tg.handlers import router
 from bots.tg.keyboards import (
     contact_kb,
@@ -220,7 +221,7 @@ async def _deliver(bot: Bot, item: dict, storage: RedisStorage | None = None) ->
         elif len(services) > 1:
             kb = delivery_service_kb(oid, services)
         else:
-            kb = delivery_mode_kb(oid)
+            kb = delivery_mode_kb(oid, services[0])
     await bot.send_message(chat_id=chat_id, text=text or "Новое сообщение", reply_markup=kb)
 
 
@@ -240,46 +241,131 @@ async def _outbox_loop(bot: Bot, storage: RedisStorage) -> None:
         await asyncio.sleep(1.5)
 
 
-async def _make_bot() -> Bot:
-    """Собрать Telegram-клиент. Прокси — best-effort: если он мёртв, идём напрямую.
+async def _bot_with_proxy(proxy: str | None) -> Bot:
+    if proxy:
+        return Bot(settings.tg_bot_token, session=AiohttpSession(proxy=proxy))
+    return Bot(settings.tg_bot_token)
 
-    На VPS в РФ api.telegram.org иногда недоступен, поэтому в TG_PROXY кладут
-    socks/http. Но мёртвый прокси раньше ронял процесс на getMe (таймаут 60с) и
-    docker restart: unless-stopped крутил это сотни раз — бот молчал. Прямой
-    доступ с этого же хоста при этом мог уже работать.
+
+async def _probe(bot: Bot) -> str:
+    me = await asyncio.wait_for(bot.get_me(), timeout=20)
+    return f"@{me.username}" if me.username else str(me.id)
+
+
+async def _make_bot() -> tuple[Bot, str]:
+    """Собрать клиент Telegram. Ключи — из админки (VLESS/SOCKS), иначе TG_PROXY.
+
+    Если прокси включён в настройках, на прямой доступ не падаем: на VPS в РФ
+    api.telegram.org мёртв, и «успешный» старт без прокси = молчащий бот.
     """
-    proxy = settings.tg_proxy
-    if not proxy:
-        return Bot(settings.tg_bot_token)
-    logging.info("Telegram: пробуем прокси")
-    bot = Bot(settings.tg_bot_token, session=AiohttpSession(proxy=proxy))
+    cfg = await backend.get_tg_proxy()
+    enabled = bool(cfg.get("enabled"))
+    candidates = list(cfg.get("candidates") or [])
+    fp = str(cfg.get("fingerprint") or "")
+    last_err = "нет ключей"
+
+    if enabled:
+        if not candidates:
+            await backend.report_tg_proxy(
+                ok=False,
+                detail="Прокси включён, но рабочих ключей нет",
+                fingerprint=fp,
+            )
+            raise tg_proxy.ProxyError("Прокси включён, ключей нет")
+        for cand in candidates:
+            bot: Bot | None = None
+            try:
+                proxy = await tg_proxy.prepare_candidate(cand, fp)
+                bot = await _bot_with_proxy(proxy)
+                name = await _probe(bot)
+                via = str(cand.get("label") or cand.get("host") or cand.get("kind"))
+                await backend.report_tg_proxy(
+                    ok=True, detail=name, via=via, fingerprint=fp
+                )
+                logging.info("Telegram: %s через %s (%s)", name, via, cand.get("kind"))
+                return bot, fp
+            except Exception as e:  # noqa: BLE001
+                last_err = str(e)
+                logging.warning("Telegram: ключ %s не подошёл: %s", cand.get("label"), e)
+                if bot is not None:
+                    await bot.session.close()
+        await backend.report_tg_proxy(ok=False, detail=last_err[:400], fingerprint=fp)
+        raise tg_proxy.ProxyError(last_err)
+
+    env_url = tg_proxy.env_fallback_url()
+    bot = await _bot_with_proxy(env_url)
     try:
-        await asyncio.wait_for(bot.get_me(), timeout=15)
-        logging.info("Telegram: прокси работает")
-        return bot
+        name = await _probe(bot)
+        await backend.report_tg_proxy(
+            ok=True,
+            detail=name,
+            via="env TG_PROXY" if env_url else "напрямую",
+            fingerprint=fp,
+        )
+        logging.info("Telegram: %s %s", name, "через TG_PROXY" if env_url else "напрямую")
+        return bot, fp
     except Exception as e:  # noqa: BLE001
-        logging.warning("Прокси недоступен (%s), подключаемся к Telegram напрямую", e)
         await bot.session.close()
-        return Bot(settings.tg_bot_token)
+        await backend.report_tg_proxy(ok=False, detail=str(e)[:400], fingerprint=fp)
+        raise tg_proxy.ProxyError(str(e)) from e
+
+
+async def _watch_fingerprint(current: str) -> None:
+    """Выходим, когда в админке сменили ключи — main переподключит сессию."""
+    while True:
+        await asyncio.sleep(20)
+        cfg = await backend.get_tg_proxy()
+        fp = str(cfg.get("fingerprint") or "")
+        if fp and fp != current:
+            logging.info("Telegram: ключи в админке изменились, переподключаемся")
+            return
+
+
+async def _cancel(task: asyncio.Task) -> None:
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await texts.load()
-
-    bot = await _make_bot()
     storage = RedisStorage.from_url(settings.redis_url)
     dp = Dispatcher(storage=storage)
     dp.message.outer_middleware(PendingFsmMiddleware())
     dp.include_router(router)
 
-    outbox = asyncio.create_task(_outbox_loop(bot, storage))
     try:
-        await dp.start_polling(bot)
+        while True:
+            try:
+                bot, fp = await _make_bot()
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Telegram: нет связи (%s), повтор через 12 с", e)
+                await asyncio.sleep(12)
+                continue
+            outbox = asyncio.create_task(_outbox_loop(bot, storage))
+            watcher = asyncio.create_task(_watch_fingerprint(fp))
+            polling = asyncio.create_task(dp.start_polling(bot))
+            try:
+                done, pending = await asyncio.wait(
+                    {polling, watcher}, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    await _cancel(task)
+                for task in done:
+                    exc = None if task.cancelled() else task.exception()
+                    if task is polling and exc:
+                        logging.warning("Telegram polling: %s", exc)
+            finally:
+                await _cancel(outbox)
+                await bot.session.close()
+                await tg_proxy.xray.stop()
+            await asyncio.sleep(1)
     finally:
-        outbox.cancel()
         await backend.close()
-        await bot.session.close()
+        await tg_proxy.xray.stop()
 
 
 if __name__ == "__main__":

@@ -136,7 +136,7 @@ async def _deliver(bot: Bot, item: dict) -> None:
         elif len(services) > 1:
             atts2 = [delivery_service_kb(oid, services)]
         else:
-            atts2 = [delivery_mode_kb(oid)]
+            atts2 = [delivery_mode_kb(oid, services[0])]
     await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts2)
 
 

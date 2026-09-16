@@ -81,6 +81,33 @@ async def _send_menu(bot, chat_id: int, text: str) -> None:
     await bot.send_message(chat_id=chat_id, text=text, attachments=[main_menu_kb(username, bot_id)])
 
 
+def _pay_atts(block: payments.PayBlock):
+    return [pay_kb(block.buttons)] if block.buttons else []
+
+
+async def _replace(event: MessageCallback, text: str, attachments=None) -> None:
+    """Клик по кнопкам — правим это же сообщение, а не копим новые в чате.
+
+    attachments=[] снимает старые кнопки. None тоже очищает: иначе MAX оставит
+    прежнюю клавиатуру.
+    """
+    atts = [] if attachments is None else attachments
+    try:
+        await event.message.edit(text=text, attachments=atts, notify=False)
+        return
+    except Exception:
+        logging.debug("max: не удалось заменить сообщение, шлём новое", exc_info=True)
+    chat_id = event.message.recipient.chat_id
+    await event.bot.send_message(
+        chat_id=chat_id, text=text, attachments=atts or None
+    )
+
+
+async def _replace_menu(event: MessageCallback, text: str) -> None:
+    username, bot_id = _bot_identity(event.bot)
+    await _replace(event, text, [main_menu_kb(username, bot_id)])
+
+
 async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     """Скачать файлы клиента по URL из MAX и залить на Яндекс Диск через backend."""
     links: list[str] = []
@@ -96,39 +123,67 @@ async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     return links
 
 
-async def _send_pay(bot, chat_id: int, order_id: int, code: str) -> None:
-    """«Заказ принят» + отдельная карточка оплаты с кнопкой (меню и кнопка оплаты —
-    разные вложения, в одно сообщение их не кладём)."""
-    await _send_menu(bot, chat_id, texts.get(code))
+async def _send_pay(bot, chat_id: int, order_id: int, code: str, event: MessageCallback | None = None) -> None:
     b = await payments.block(order_id)
-    await bot.send_message(
-        chat_id=chat_id,
-        text=b.text,
-        attachments=[pay_kb(b.buttons)] if b.buttons else None,
-    )
+    text = f"{texts.get(code)}\n\n{b.text}"
+    atts = _pay_atts(b)
+    if event is not None:
+        await _replace(event, text, atts)
+        return
+    await bot.send_message(chat_id=chat_id, text=text, attachments=atts or None)
 
 
-async def _send_delivery_pay(bot, chat_id: int, order_id: int, quote: dict) -> None:
-    await _send_menu(bot, chat_id, delivery.quote_text(quote))
+async def _send_delivery_pay(
+    bot, chat_id: int, order_id: int, quote: dict, event: MessageCallback | None = None
+) -> None:
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
     if (quote.get("delivery_sum") or 0) <= 0:
         try:
             await backend.delivery_fulfill(order_id)
-            await bot.send_message(
-                chat_id=chat_id,
-                text="Доставка бесплатная — заявку создаём сейчас.",
-            )
+            await _out("Доставка бесплатная — заявку создаём сейчас.")
         except Exception as e:  # noqa: BLE001
-            await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
+            await _out(delivery.api_error(e))
         return
     b = await payments.block(order_id, "delivery")
-    await bot.send_message(
-        chat_id=chat_id,
-        text=b.text,
-        attachments=[pay_kb(b.buttons)] if b.buttons else None,
+    await _out(f"{delivery.quote_text(quote)}\n\n{b.text}", _pay_atts(b) or None)
+
+
+async def _ask_ozon_city(
+    bot, chat_id: int, order_id: int, context: MemoryContext, phone: str | None,
+    event: MessageCallback | None = None,
+) -> None:
+    blocked = await delivery.ozon_blocked(phone)
+
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
+    if blocked:
+        await _out(blocked)
+        return
+    await context.set_state(OrderFlow.delivery_city)
+    await context.update_data(
+        order_id=order_id,
+        delivery_service="ozon",
+        delivery_mode="pvz",
+        delivery_points=[],
+    )
+    await _out(
+        "Ozon доставляет только в пункт выдачи. Напишите город или индекс, где заберёте заказ."
     )
 
 
-async def _start_delivery(bot, chat_id: int, order_id: int, context: MemoryContext) -> None:
+async def _start_delivery(
+    bot, chat_id: int, order_id: int, context: MemoryContext, event: MessageCallback | None = None,
+    phone: str | None = None,
+) -> None:
     services = await delivery.configured_services()
     await context.update_data(
         order_id=order_id,
@@ -137,28 +192,33 @@ async def _start_delivery(bot, chat_id: int, order_id: int, context: MemoryConte
         delivery_points=[],
         delivery_service=services[0] if len(services) == 1 else None,
     )
+
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
     if not services:
-        await bot.send_message(
-            chat_id=chat_id,
-            text="Доставка ещё не настроена. Напишите нам — отправим вручную.",
-        )
+        await _out("Доставка ещё не настроена. Напишите нам — отправим вручную.")
         return
     await context.set_state(OrderFlow.delivery_mode)
     if len(services) > 1:
-        await bot.send_message(
-            chat_id=chat_id,
-            text="Выберите службу доставки.",
-            attachments=[delivery_service_kb(order_id, services)],
-        )
+        await _out("Выберите службу доставки.", [delivery_service_kb(order_id, services)])
         return
-    await bot.send_message(
-        chat_id=chat_id,
-        text="Как удобнее получить заказ?",
-        attachments=[delivery_mode_kb(order_id)],
-    )
+    if services[0] == "ozon":
+        await _ask_ozon_city(bot, chat_id, order_id, context, phone, event=event)
+        return
+    await _out("Как удобнее получить заказ?", [delivery_mode_kb(order_id, services[0])])
 
 
-async def _ask_mode(bot, chat_id: int, order_id: int, service: str, context: MemoryContext) -> None:
+async def _ask_mode(
+    bot, chat_id: int, order_id: int, service: str, context: MemoryContext,
+    event: MessageCallback | None = None, phone: str | None = None,
+) -> None:
+    if service == "ozon":
+        await _ask_ozon_city(bot, chat_id, order_id, context, phone, event=event)
+        return
     await context.set_state(OrderFlow.delivery_mode)
     await context.update_data(
         order_id=order_id,
@@ -166,24 +226,30 @@ async def _ask_mode(bot, chat_id: int, order_id: int, service: str, context: Mem
         delivery_mode=None,
         delivery_points=[],
     )
-    await bot.send_message(
-        chat_id=chat_id,
-        text="Как удобнее получить заказ?",
-        attachments=[delivery_mode_kb(order_id)],
-    )
+    text = "Как удобнее получить заказ?"
+    atts = [delivery_mode_kb(order_id, service)]
+    if event is not None:
+        await _replace(event, text, atts)
+        return
+    await bot.send_message(chat_id=chat_id, text=text, attachments=atts)
 
 
-async def _quote_point(bot, chat_id: int, context: MemoryContext, point: dict) -> None:
+async def _quote_point(
+    bot, chat_id: int, context: MemoryContext, point: dict, event: MessageCallback | None = None
+) -> None:
     data = await context.get_data()
     order_id = int(data["order_id"])
     service = await delivery.resolve_service(data.get("delivery_service"))
     try:
         quote = await delivery.quote_pvz(order_id, point, service)
     except Exception as e:  # noqa: BLE001
-        await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
+        if event is not None:
+            await _replace(event, delivery.api_error(e))
+        else:
+            await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
         return
     await context.clear()
-    await _send_delivery_pay(bot, chat_id, order_id, quote)
+    await _send_delivery_pay(bot, chat_id, order_id, quote, event=event)
 
 
 async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
@@ -312,6 +378,7 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
             event.message.recipient.chat_id,
             int(pending_delivery),
             context,
+            phone=phone,
         )
         return
     await context.clear()
@@ -327,12 +394,11 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer(notification="Принято ✅")
     if is_custom:
         await context.set_state(OrderFlow.waiting_materials)
-        await event.message.answer(texts.get("msg_006б"))
         code = "msg_006б"
     else:
         await context.set_state(OrderFlow.waiting_name)
-        await event.message.answer(texts.get("msg_006а"))
         code = "msg_006а"
+    await _replace(event, texts.get(code))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], code)
@@ -342,29 +408,25 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
 async def on_cancel(event: MessageCallback, context: MemoryContext) -> None:
     await context.clear()
     await event.answer(notification="Заказ отменён")
-    await _send_menu(event.bot, event.message.recipient.chat_id, "Вы в главном меню.")
+    await _replace_menu(event, "Вы в главном меню.")
 
 
 # ── Пункты меню ────────────────────────────────────────
 @dp.message_callback(F.callback.payload == CB_CATALOG)
 async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> None:
-    await context.clear()
     await event.answer(
         notification="Каталог откроется в мини-приложении после публикации в MAX."
     )
 
 
-# В MAX нет постоянной reply-клавиатуры (как в Telegram): чтобы навигация не
-# «терялась», каждый ответ пункта меню отправляется новым сообщением со свежим
-# меню (гарантированно валидная inline-клавиатура).
+# В MAX нет постоянной reply-клавиатуры, поэтому меню держим на том же
+# сообщении: пункт меню заменяет текст и кнопки, а не шлёт ещё одну карточку.
 @dp.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
-    await context.clear()
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
+    await _replace_menu(
+        event,
         f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
         f"Ваш промокод для друга: {c.get('slave_code') or '—'}\n\n"
         "Приглашайте друзей — за каждого начисляется скидка (задаёт администратор).",
@@ -374,10 +436,8 @@ async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_PAYMENTS)
 async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await context.clear()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
+    await _replace_menu(
+        event,
         "Раздел «Мои оплаты» появится после подключения платёжного шлюза.",
     )
 
@@ -385,41 +445,33 @@ async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_DELIVERIES)
 async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await context.clear()
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     try:
         orders = await backend.client_orders(c["id"])
     except Exception:  # noqa: BLE001
         orders = []
-    chat_id = event.message.recipient.chat_id
-    await _send_menu(event.bot, chat_id, delivery.orders_text(orders))
     pending = [
         o
         for o in orders
         if o.get("status") in delivery.NEEDS_CHECKOUT and not o.get("tracking_code")
     ]
+    text = delivery.orders_text(orders)
     if len(pending) == 1:
-        await event.bot.send_message(
-            chat_id=chat_id,
-            text="Нажмите, чтобы оформить доставку.",
-            attachments=[delivery_start_kb(pending[0]["id"])],
-        )
+        await _replace(event, text, [delivery_start_kb(pending[0]["id"])])
     elif pending:
-        await event.bot.send_message(
-            chat_id=chat_id,
-            text="Выберите заказ:",
-            attachments=[delivery_orders_kb(pending)],
-        )
+        await _replace(event, text, [delivery_orders_kb(pending)])
+    else:
+        await _replace_menu(event, text)
 
 
 @dp.message_callback(F.callback.payload == CB_HELP)
 async def on_help(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
     await context.set_state(OrderFlow.consulting)
-    await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_help"))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_help")
+    await _replace_menu(event, texts.get("msg_help"))
 
 
 # ── Ввод имени / материалов ────────────────────────────
@@ -466,7 +518,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
     order_id = data.get("order_id")
     if not order_id:
         await event.answer(notification="Сессия истекла, начните заново")
-        await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
+        await _replace_menu(event, "Выберите раздел в меню.")
         return
     await event.answer(notification="Принято ✅")
     links = await _persist_files(order_id, data.get("materials_files", []))
@@ -476,7 +528,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
         materials_files=links,
     )
     await context.clear()
-    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007б")
+    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007б", event=event)
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_007б")
@@ -486,7 +538,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
 async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
     await context.set_state(OrderFlow.waiting_materials)
-    await event.message.answer(texts.get("msg_006б"))
+    await _replace(event, texts.get("msg_006б"))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_006б")
@@ -508,18 +560,15 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
         await event.answer(notification="Не получилось, попробуйте ещё раз")
         return
     await event.answer(notification="Принято ✅")
-    chat_id = event.message.recipient.chat_id
     if approved:
         b = await payments.block(order_id, "postpayment")
-        await event.bot.send_message(
-            chat_id=chat_id,
-            text=f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
-            attachments=[pay_kb(b.buttons)] if b.buttons else None,
+        await _replace(
+            event,
+            f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
+            _pay_atts(b),
         )
     else:
-        await _send_menu(
-            event.bot, chat_id, "Принято! Дизайнер доработает макет и пришлёт заново."
-        )
+        await _replace(event, "Принято! Дизайнер доработает макет и пришлёт заново.")
 
 
 @dp.message_callback(F.callback.payload.startswith("dlv:"))
@@ -541,15 +590,17 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
         await context.set_state(OrderFlow.waiting_phone)
         await context.update_data(pending_delivery_order_id=order_id)
         await event.answer()
-        await event.bot.send_message(
-            chat_id=chat_id,
-            text="Для доставки нужен телефон получателя. Пришлите номер в формате +7XXXXXXXXXX.",
-            attachments=[contact_kb()],
+        await _replace(
+            event,
+            "Для доставки нужен телефон получателя. Пришлите номер в формате +7XXXXXXXXXX.",
+            [contact_kb()],
         )
         return
     if action == "go":
         await event.answer()
-        await _start_delivery(event.bot, chat_id, order_id, context)
+        await _start_delivery(
+            event.bot, chat_id, order_id, context, event=event, phone=client.get("phone")
+        )
         return
     if action == "svc" and len(parts) >= 4:
         svc = parts[3]
@@ -557,11 +608,22 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
             await event.answer()
             return
         await event.answer()
-        await _ask_mode(event.bot, chat_id, order_id, svc, context)
+        await _ask_mode(
+            event.bot, chat_id, order_id, svc, context, event=event, phone=client.get("phone")
+        )
         return
     if action in ("pvz", "door"):
         data = await context.get_data()
         service = await delivery.resolve_service(data.get("delivery_service"))
+        if action == "door" and not delivery.has_door(service):
+            await event.answer(notification="Ozon доставляет только в пункт выдачи")
+            return
+        if service == "ozon":
+            await event.answer()
+            await _ask_ozon_city(
+                event.bot, chat_id, order_id, context, client.get("phone"), event=event
+            )
+            return
         await context.set_state(OrderFlow.delivery_city)
         await context.update_data(
             order_id=order_id,
@@ -575,7 +637,7 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
             else "Напишите город или индекс для курьера."
         )
         await event.answer()
-        await event.bot.send_message(chat_id=chat_id, text=hint)
+        await _replace(event, hint)
         return
     if action == "n" and len(parts) >= 4:
         try:
@@ -588,7 +650,7 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
             await event.answer(notification="Список устарел — напишите город ещё раз")
             return
         await event.answer()
-        await _quote_point(event.bot, chat_id, context, points[idx])
+        await _quote_point(event.bot, chat_id, context, points[idx], event=event)
         return
     await event.answer()
 
@@ -618,7 +680,7 @@ async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> Non
         await event.bot.send_message(
             chat_id=chat_id,
             text=delivery.empty_points_text(service),
-            attachments=[delivery_mode_kb(order_id)],
+            attachments=[delivery_mode_kb(order_id, service)],
         )
         return
     await context.update_data(
@@ -628,7 +690,7 @@ async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> Non
     await event.bot.send_message(
         chat_id=chat_id,
         text=delivery.points_text(city, points, service),
-        attachments=[delivery_points_kb(order_id, points)],
+        attachments=[delivery_points_kb(order_id, points, service)],
     )
 
 
@@ -668,10 +730,9 @@ async def on_delivery_pvz_text(event: MessageCreated, context: MemoryContext) ->
 
 
 async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
-    out: list[tuple[str, bytes]] = []
-    attachments = event.message.body.attachments or []
+    files: list[tuple[str, bytes]] = []
     async with httpx.AsyncClient(timeout=40) as http:
-        for i, att in enumerate(attachments):
+        for i, att in enumerate(event.message.body.attachments or []):
             payload = getattr(att, "payload", None)
             url = getattr(payload, "url", None)
             if not url:
@@ -679,20 +740,11 @@ async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
             try:
                 r = await http.get(url)
                 r.raise_for_status()
+                name = getattr(payload, "file_name", None) or f"file_{i + 1}"
+                files.append((name, r.content))
             except Exception as e:  # noqa: BLE001
                 logging.warning("consult max download failed: %s", e)
-                continue
-            kind = str(getattr(att, "type", None) or "file").lower()
-            if kind in ("image", "photo"):
-                name = f"photo_{i + 1}.jpg"
-            elif "video" in kind:
-                name = f"video_{i + 1}.mp4"
-            elif kind in ("audio", "voice"):
-                name = f"voice_{i + 1}.ogg"
-            else:
-                name = f"file_{i + 1}.bin"
-            out.append((name, r.content))
-    return out
+    return files
 
 
 @dp.message_created(OrderFlow.consulting)
@@ -702,14 +754,15 @@ async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
-    files = await _consult_files_max(event)
+    text = event.message.body.text or ""
     try:
-        sent = await consult.ingest(client["id"], event.message.body.text, files)
+        ok = await consult.ingest(client["id"], text, await _consult_files_max(event))
     except Exception as e:  # noqa: BLE001
-        logging.warning("consult ingest failed: %s", e)
-        await event.message.answer("Не получилось передать сообщение, напишите ещё раз.")
+        logging.warning("consult send failed: %s", e)
+        await event.message.answer("Не получилось передать сообщение, попробуйте ещё раз.")
         return
-    if not sent:
+    if not ok:
+        await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
         return
     # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
 

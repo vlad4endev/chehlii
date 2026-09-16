@@ -14,10 +14,18 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
-from app.api.v1.delivery import cdek_cfg, yandex_cfg
+from app.api.v1.delivery import cdek_cfg, ozon_cfg, yandex_cfg
 from app.api.v1.payments import robokassa_cfg, yandexpay_cfg
 from app.core.database import get_session
-from app.services import cdek, integrations, robokassa, yandex_delivery, yandex_disk, yandex_pay
+from app.services import (
+    cdek,
+    integrations,
+    ozon_delivery,
+    robokassa,
+    yandex_delivery,
+    yandex_disk,
+    yandex_pay,
+)
 
 router = APIRouter()
 
@@ -100,6 +108,13 @@ async def check_yandex_delivery(_: AdminOnly, session: Session) -> ConnectionOut
 async def check_cdek(_: AdminOnly, session: Session) -> ConnectionOut:
     """Статус связи со СДЭК: OAuth + справочник городов, заказов не создаёт."""
     ok, detail = await cdek.check_connection(await cdek_cfg(session))
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+@router.post("/ozon/check", response_model=ConnectionOut)
+async def check_ozon(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Статус связи с Ozon Доставкой: OAuth + страница ПВЗ, заказов не создаёт."""
+    ok, detail = await ozon_delivery.check_connection(await ozon_cfg(session))
     return ConnectionOut(ok=ok, detail=detail)
 
 

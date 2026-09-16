@@ -1,9 +1,10 @@
-"""Доставка: СДЭК и Яндекс Доставка.
+"""Доставка: СДЭК, Яндекс Доставка и Ozon Доставка.
 
 СДЭК: ПВЗ, расчёт, регистрация отправки (`POST /v2/orders`), ярлык, вебхук
 ORDER_STATUS. Яндекс: ПВЗ, варианты (offers/create) и бронь (offers/confirm).
-У служб разный набор входных данных, поэтому маршруты раздельные (`/cdek/*`,
-`/yandex/*`), а не общий эндпоинт с опциональными полями.
+Ozon: ПВЗ, check-client, checkout и create. У служб разный набор входных
+данных, поэтому маршруты раздельные (`/cdek/*`, `/yandex/*`, `/ozon/*`),
+а не общий эндпоинт с опциональными полями.
 
 Креды и параметры отправителя — из «Настройки → Интеграции».
 """
@@ -24,7 +25,7 @@ from app.enums import OrderStatus
 from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import cdek, cdek_checkout, integrations, pricing, yandex_delivery
+from app.services import cdek, cdek_checkout, integrations, ozon_delivery, pricing, yandex_delivery
 
 router = APIRouter()
 
@@ -99,6 +100,21 @@ async def cdek_cfg(session: AsyncSession) -> dict:
         "weight": _int(await integrations.get(session, "cdek.weight", "300"), 300),
         "sender_name": await integrations.get(session, "cdek.sender_name", "casetop"),
         "sender_phone": await integrations.get(session, "cdek.sender_phone"),
+    }
+
+
+async def ozon_cfg(session: AsyncSession) -> dict:
+    client_id = ozon_delivery.sanitize_secret(await integrations.get(session, "ozon.client_id"))
+    secret = ozon_delivery.sanitize_secret(await integrations.get(session, "ozon.client_secret"))
+    if not (client_id and secret):
+        raise HTTPException(400, "Ozon Доставка не настроена — задайте в «Настройки → Интеграции».")
+    return {
+        "client_id": client_id,
+        "client_secret": secret,
+        "shipment_method_id": await integrations.get(session, "ozon.shipment_method_id"),
+        "weight": _int(await integrations.get(session, "ozon.weight", "300"), 300),
+        "sender_name": await integrations.get(session, "ozon.sender_name", "casetop"),
+        "sender_phone": await integrations.get(session, "ozon.sender_phone"),
     }
 
 
@@ -309,6 +325,7 @@ async def cdek_fulfill(order_id: int, session: Session) -> dict:
     return {
         "uuid": (created or {}).get("uuid"),
         "request_id": (created or {}).get("request_id"),
+        "posting_number": (created or {}).get("posting_number"),
         "tracking_code": order.tracking_code,
         "cdek_number": order.tracking_code,
         "delivery_cost": float(order.delivery_cost or 0),
@@ -587,8 +604,7 @@ async def yandex_create(order_id: int, body: YandexCreateIn, session: Session) -
     order.delivery_address = cdek_checkout.encode_destination(
         pickup_point_id=body.pickup_point_id,
         to_address=body.to_address,
-        label=body.to_address
-        or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None),
+        label=body.to_address or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None),
     )
     order.delivery_cost = chosen["delivery_cost"]
     order.tracking_code = request_id
@@ -667,6 +683,143 @@ async def yandex_label(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="label-{order_id}.pdf"'},
+    )
+
+
+# ── Ozon Доставка ──────────────────────────────────────
+class OzonCheckIn(BaseModel):
+    phone: str
+
+
+class OzonCheckOut(BaseModel):
+    can_be_delivered: bool
+
+
+@router.post(
+    "/ozon/check-client",
+    response_model=OzonCheckOut,
+    dependencies=[Depends(require_internal)],
+)
+async def ozon_check_client(body: OzonCheckIn, session: Session) -> OzonCheckOut:
+    """Телефон зарегистрирован в Ozon? Без этого заказ не создаётся."""
+    cfg = await ozon_cfg(session)
+    try:
+        ok = await ozon_delivery.check_client(cfg, body.phone)
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+    return OzonCheckOut(can_be_delivered=ok)
+
+
+@router.get(
+    "/ozon/pickup-points",
+    response_model=list[PickupPointOut],
+    dependencies=[Depends(require_internal)],
+)
+async def ozon_pickup_points(
+    session: Session,
+    location: Annotated[str | None, Query(description="Город или индекс для фильтра")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> list[PickupPointOut]:
+    """ПВЗ Ozon. `location` фильтрует по адресу; без него — первые доступные."""
+    cfg = await ozon_cfg(session)
+    try:
+        points = await ozon_delivery.pickup_points(cfg, location=location, limit=limit)
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+    return [
+        PickupPointOut(
+            id=str(p["id"]),
+            name=p.get("name"),
+            address=p.get("address"),
+            latitude=p.get("latitude"),
+            longitude=p.get("longitude"),
+        )
+        for p in points
+        if p.get("id")
+    ]
+
+
+class OzonIn(BaseModel):
+    pickup_point_id: str | None = None
+    to_address: str | None = None
+
+
+@router.post(
+    "/ozon/orders/{order_id}/quote",
+    response_model=QuoteOut,
+    dependencies=[Depends(require_internal)],
+)
+async def ozon_quote(order_id: int, body: OzonIn, session: Session) -> QuoteOut:
+    """Расчёт Ozon до ПВЗ + сохранение адреса. Заявку создаём после оплаты."""
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Заказ не найден")
+    label = body.to_address or (f"ПВЗ {body.pickup_point_id}" if body.pickup_point_id else None)
+    try:
+        calc = await cdek_checkout.apply_ozon_quote(
+            session,
+            order,
+            pickup_point_id=body.pickup_point_id,
+            label=label,
+        )
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+    await session.commit()
+    return QuoteOut(**calc)
+
+
+async def _ozon_order(session: AsyncSession, order_id: int) -> Order:
+    order = await session.get(Order, order_id)
+    if order is None or not order.tracking_code or order.delivery_service != "ozon":
+        raise HTTPException(404, "Доставка Ozon для заказа не создана")
+    return order
+
+
+@router.get("/ozon/orders/{order_id}/status", dependencies=[Depends(require_internal)])
+async def ozon_status(order_id: int, session: Session) -> dict:
+    """Статус отправления Ozon; двигает заказ в «Отправлен»/«Доставлен»."""
+    order = await _ozon_order(session, order_id)
+    cfg = await ozon_cfg(session)
+    try:
+        info = await ozon_delivery.posting_info(cfg, order.tracking_code or "")
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+    status = ozon_delivery.extract_status(info)
+    mapped = ozon_delivery.map_status(status)
+    if mapped:
+        new = OrderStatus.DELIVERED if mapped == "delivered" else OrderStatus.SHIPPED
+        info["order_status_changed"] = await _advance(session, order, new, f"Ozon: {status}")
+    else:
+        info["order_status_changed"] = False
+        await session.commit()
+    info["mapped_status"] = mapped
+    return info
+
+
+@router.post("/ozon/orders/{order_id}/cancel", dependencies=[Depends(require_internal)])
+async def ozon_cancel(order_id: int, session: Session) -> dict:
+    """Отменить заявку в Ozon. Наш статус заказа не меняем — это решение оператора."""
+    order = await _ozon_order(session, order_id)
+    cfg = await ozon_cfg(session)
+    try:
+        return await ozon_delivery.cancel(cfg, order.tracking_code or "")
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+
+
+@router.get("/ozon/orders/{order_id}/label", dependencies=[Depends(require_internal)])
+async def ozon_label(order_id: int, session: Session) -> Response:
+    """PDF-ярлык отправления Ozon."""
+    order = await _ozon_order(session, order_id)
+    cfg = await ozon_cfg(session)
+    try:
+        pdf = await ozon_delivery.generate_label(cfg, order.tracking_code or "")
+    except ozon_delivery.OzonDeliveryError as e:
+        raise HTTPException(400, f"Ozon Доставка: {e}") from e
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="ozon-{order_id}.pdf"'},
     )
 
 

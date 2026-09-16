@@ -107,6 +107,22 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def ozon_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/ozon/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def ozon_check_client(self, phone: str) -> dict:
+        r = await self._client.post(
+            "/delivery/ozon/check-client", json={"phone": phone}, timeout=20.0
+        )
+        r.raise_for_status()
+        return r.json()
+
     async def cdek_quote(self, order_id: int, **fields) -> dict:
         r = await self._client.post(
             f"/delivery/cdek/orders/{order_id}/quote", json=fields, timeout=40.0
@@ -117,6 +133,13 @@ class Backend:
     async def yandex_select(self, order_id: int, **fields) -> dict:
         r = await self._client.post(
             f"/delivery/yandex/orders/{order_id}/select", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def ozon_quote(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/ozon/orders/{order_id}/quote", json=fields, timeout=40.0
         )
         r.raise_for_status()
         return r.json()
@@ -197,6 +220,38 @@ class Backend:
             return r.json().get("pending")
         except httpx.HTTPError:
             return None
+
+    async def get_tg_proxy(self) -> dict:
+        """Конфиг прокси из админки. Пустой dict — backend недоступен, остаётся env."""
+        try:
+            r = await self._client.get("/tg-proxy", timeout=10.0)
+            r.raise_for_status()
+            data = r.json()
+            return data if isinstance(data, dict) else {}
+        except httpx.HTTPError:
+            return {}
+
+    async def report_tg_proxy(
+        self,
+        *,
+        ok: bool,
+        detail: str,
+        via: str | None = None,
+        fingerprint: str | None = None,
+    ) -> None:
+        try:
+            await self._client.post(
+                "/tg-proxy/status",
+                json={
+                    "ok": ok,
+                    "detail": detail[:400],
+                    "via": via,
+                    "fingerprint": fingerprint,
+                },
+                timeout=10.0,
+            )
+        except httpx.HTTPError:
+            pass
 
 
 backend = Backend()

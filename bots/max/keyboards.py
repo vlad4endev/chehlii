@@ -94,7 +94,7 @@ def mockup_kb(order_id: int):
 
 
 def delivery_service_kb(order_id: int, services: list):
-    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка"}
+    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка", "ozon": "Ozon Доставка"}
     b = InlineKeyboardBuilder()
     for s in services:
         if s in labels:
@@ -102,16 +102,19 @@ def delivery_service_kb(order_id: int, services: list):
     return b.as_markup()
 
 
-def delivery_mode_kb(order_id: int):
+def delivery_mode_kb(order_id: int, service: str | None = None):
     b = InlineKeyboardBuilder()
-    b.row(
-        CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"),
-        CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"),
-    )
+    if service == "ozon":
+        b.row(CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"))
+    else:
+        b.row(
+            CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"),
+            CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"),
+        )
     return b.as_markup()
 
 
-def delivery_points_kb(order_id: int, points: list):
+def delivery_points_kb(order_id: int, points: list, service: str | None = None):
     b = InlineKeyboardBuilder()
     row = []
     for i in range(len(points)):
@@ -121,7 +124,8 @@ def delivery_points_kb(order_id: int, points: list):
             row = []
     if row:
         b.row(*row)
-    b.row(CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"))
+    if service != "ozon":
+        b.row(CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"))
     return b.as_markup()
 
 

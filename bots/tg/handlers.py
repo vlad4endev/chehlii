@@ -49,6 +49,33 @@ async def _client(msg: Message) -> dict:
     return await backend.upsert_client(CHANNEL, str(u.id), nickname=nickname)
 
 
+def _pay_markup(block: payments.PayBlock):
+    return pay_kb(block.buttons) if block.buttons else None
+
+
+async def _replace_or_send(message: Message | None, text: str, markup=None) -> None:
+    """Клик по кнопкам — правим это же сообщение, а не копим новые в чате."""
+    if message is None:
+        return
+    is_bot = bool(getattr(getattr(message, "from_user", None), "is_bot", False))
+    if is_bot:
+        try:
+            has_media = bool(
+                getattr(message, "photo", None)
+                or getattr(message, "document", None)
+                or getattr(message, "video", None)
+                or getattr(message, "animation", None)
+            )
+            if has_media:
+                await message.edit_caption(caption=text[:1024], reply_markup=markup)
+            else:
+                await message.edit_text(text, reply_markup=markup)
+            return
+        except Exception:
+            logging.debug("tg: не удалось заменить сообщение, шлём новое", exc_info=True)
+    await message.answer(text, reply_markup=markup)
+
+
 # ── Вход ───────────────────────────────────────────────
 @router.message(CommandStart())
 async def on_start(msg: Message, state: FSMContext) -> None:
@@ -86,7 +113,7 @@ async def on_contact(msg: Message, state: FSMContext) -> None:
         return
     pending_delivery = data.get("pending_delivery_order_id")
     if pending_delivery is not None:
-        await _start_delivery(msg, state, int(pending_delivery))
+        await _start_delivery(msg, state, int(pending_delivery), client.get("phone"))
         return
     await msg.answer(texts.get("msg_003"), reply_markup=main_menu_kb())
     await backend.mark_journey(client["id"], "msg_003")
@@ -160,15 +187,13 @@ async def on_waiting_contact_other(msg: Message) -> None:
 async def on_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     is_custom = data.get("is_custom", False)
-    await cb.message.edit_reply_markup(reply_markup=None)
     if is_custom:
         await state.set_state(OrderFlow.waiting_materials)
-        await cb.message.answer(texts.get("msg_006б"))
         code = "msg_006б"
     else:
         await state.set_state(OrderFlow.waiting_name)
-        await cb.message.answer(texts.get("msg_006а"))
         code = "msg_006а"
+    await _replace_or_send(cb.message, texts.get(code))
     u = cb.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
     await backend.mark_journey(client["id"], code)
@@ -178,8 +203,7 @@ async def on_confirm(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "order:cancel")
 async def on_cancel(cb: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Заказ отменён. Вы в главном меню.", reply_markup=main_menu_kb())
+    await _replace_or_send(cb.message, "Заказ отменён. Вы в главном меню.")
     await cb.answer()
 
 
@@ -198,23 +222,24 @@ async def on_mockup_response(cb: CallbackQuery) -> None:
     except Exception:
         await cb.answer("Не получилось сохранить, попробуйте ещё раз", show_alert=True)
         return
-    await cb.message.edit_reply_markup(reply_markup=None)
     if approved:
         b = await payments.block(order_id, "postpayment")
-        await cb.message.answer(
+        await _replace_or_send(
+            cb.message,
             f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
-            reply_markup=pay_kb(b.buttons) if b.buttons else None,
+            _pay_markup(b),
         )
     else:
-        await cb.message.answer("Принято! Дизайнер доработает макет и пришлёт заново.")
+        await _replace_or_send(
+            cb.message, "Принято! Дизайнер доработает макет и пришлёт заново."
+        )
     await cb.answer()
 
 
 # ── Главное меню ───────────────────────────────────────
 @router.message(F.text == BTN_CATALOG)
-async def on_catalog_fallback(msg: Message, state: FSMContext) -> None:
+async def on_catalog_fallback(msg: Message) -> None:
     # Срабатывает только если WebApp-URL не задан (иначе кнопка открывает мини-приложение).
-    await state.clear()
     await msg.answer(
         "Каталог открывается в мини-приложении. Оно подключится после публикации фронтенда "
         "по HTTPS (задать WEBAPP_URL)."
@@ -222,8 +247,7 @@ async def on_catalog_fallback(msg: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == BTN_DISCOUNT)
-async def on_discount(msg: Message, state: FSMContext) -> None:
-    await state.clear()
+async def on_discount(msg: Message) -> None:
     c = await _client(msg)
     await msg.answer(
         f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
@@ -233,66 +257,83 @@ async def on_discount(msg: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == BTN_PAYMENTS)
-async def on_payments(msg: Message, state: FSMContext) -> None:
-    await state.clear()
+async def on_payments(msg: Message) -> None:
     await msg.answer("Раздел «Мои оплаты» появится после подключения платёжного шлюза.")
 
 
 @router.message(F.text == BTN_DELIVERIES)
 async def on_deliveries(msg: Message, state: FSMContext) -> None:
-    await state.clear()
     client = await _client(msg)
     try:
         orders = await backend.client_orders(client["id"])
     except Exception:  # noqa: BLE001
         orders = []
-    await msg.answer(delivery.orders_text(orders), reply_markup=main_menu_kb())
     pending = [
         o
         for o in orders
         if o.get("status") in delivery.NEEDS_CHECKOUT and not o.get("tracking_code")
     ]
+    text = delivery.orders_text(orders)
     if len(pending) == 1:
-        await msg.answer(
-            "Нажмите, чтобы оформить доставку.",
-            reply_markup=delivery_start_kb(pending[0]["id"]),
-        )
+        await msg.answer(text, reply_markup=delivery_start_kb(pending[0]["id"]))
     elif pending:
-        await msg.answer("Выберите заказ:", reply_markup=delivery_orders_kb(pending))
+        await msg.answer(text, reply_markup=delivery_orders_kb(pending))
+    else:
+        await msg.answer(text, reply_markup=main_menu_kb())
 
 
 @router.message(F.text == BTN_HELP)
 async def on_help(msg: Message, state: FSMContext) -> None:
     await state.set_state(OrderFlow.consulting)
-    await msg.answer(texts.get("msg_help"), reply_markup=main_menu_kb())
     client = await _client(msg)
     await backend.mark_journey(client["id"], "msg_help")
+    await msg.answer(texts.get("msg_help"), reply_markup=main_menu_kb())
 
 
 async def _send_pay(message: Message, order_id: int, code: str) -> None:
-    """«Заказ принят» + отдельная карточка оплаты с кнопкой.
-
-    Двумя сообщениями: reply-меню и inline-кнопку Telegram в одном не отдаёт.
-    """
-    await message.answer(texts.get(code), reply_markup=main_menu_kb())
     b = await payments.block(order_id)
-    await message.answer(b.text, reply_markup=pay_kb(b.buttons) if b.buttons else None)
+    await _replace_or_send(
+        message, f"{texts.get(code)}\n\n{b.text}", _pay_markup(b)
+    )
 
 
 async def _send_delivery_pay(message: Message, order_id: int, quote: dict) -> None:
-    await message.answer(delivery.quote_text(quote), reply_markup=main_menu_kb())
     if (quote.get("delivery_sum") or 0) <= 0:
         try:
             await backend.delivery_fulfill(order_id)
-            await message.answer("Доставка бесплатная — заявку создаём сейчас.")
+            await _replace_or_send(message, "Доставка бесплатная — заявку создаём сейчас.")
         except Exception as e:  # noqa: BLE001
-            await message.answer(delivery.api_error(e))
+            await _replace_or_send(message, delivery.api_error(e))
         return
     b = await payments.block(order_id, "delivery")
-    await message.answer(b.text, reply_markup=pay_kb(b.buttons) if b.buttons else None)
+    await _replace_or_send(
+        message, f"{delivery.quote_text(quote)}\n\n{b.text}", _pay_markup(b)
+    )
 
 
-async def _start_delivery(message: Message, state: FSMContext, order_id: int) -> None:
+async def _ask_ozon_city(
+    message: Message, state: FSMContext, order_id: int, phone: str | None
+) -> None:
+    blocked = await delivery.ozon_blocked(phone)
+    if blocked:
+        await _replace_or_send(message, blocked)
+        return
+    await state.set_state(OrderFlow.delivery_city)
+    await state.update_data(
+        order_id=order_id,
+        delivery_service="ozon",
+        delivery_mode="pvz",
+        delivery_points=[],
+    )
+    await _replace_or_send(
+        message,
+        "Ozon доставляет только в пункт выдачи. Напишите город или индекс, где заберёте заказ.",
+    )
+
+
+async def _start_delivery(
+    message: Message, state: FSMContext, order_id: int, phone: str | None = None
+) -> None:
     services = await delivery.configured_services()
     await state.update_data(
         order_id=order_id,
@@ -302,23 +343,35 @@ async def _start_delivery(message: Message, state: FSMContext, order_id: int) ->
         delivery_service=services[0] if len(services) == 1 else None,
     )
     if not services:
-        await message.answer("Доставка ещё не настроена. Напишите нам — отправим вручную.")
+        await _replace_or_send(
+            message, "Доставка ещё не настроена. Напишите нам — отправим вручную."
+        )
         return
     if len(services) > 1:
         await state.set_state(OrderFlow.delivery_mode)
-        await message.answer(
-            "Выберите службу доставки.",
-            reply_markup=delivery_service_kb(order_id, services),
+        await _replace_or_send(
+            message, "Выберите службу доставки.", delivery_service_kb(order_id, services)
         )
         return
+    if services[0] == "ozon":
+        await _ask_ozon_city(message, state, order_id, phone)
+        return
     await state.set_state(OrderFlow.delivery_mode)
-    await message.answer(
-        "Как удобнее получить заказ?",
-        reply_markup=delivery_mode_kb(order_id),
+    await _replace_or_send(
+        message, "Как удобнее получить заказ?", delivery_mode_kb(order_id, services[0])
     )
 
 
-async def _ask_mode(message: Message, state: FSMContext, order_id: int, service: str) -> None:
+async def _ask_mode(
+    message: Message,
+    state: FSMContext,
+    order_id: int,
+    service: str,
+    phone: str | None = None,
+) -> None:
+    if service == "ozon":
+        await _ask_ozon_city(message, state, order_id, phone)
+        return
     await state.set_state(OrderFlow.delivery_mode)
     await state.update_data(
         order_id=order_id,
@@ -326,9 +379,8 @@ async def _ask_mode(message: Message, state: FSMContext, order_id: int, service:
         delivery_mode=None,
         delivery_points=[],
     )
-    await message.answer(
-        "Как удобнее получить заказ?",
-        reply_markup=delivery_mode_kb(order_id),
+    await _replace_or_send(
+        message, "Как удобнее получить заказ?", delivery_mode_kb(order_id, service)
     )
 
 
@@ -363,6 +415,10 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
     if not client.get("phone"):
         await state.set_state(OrderFlow.waiting_contact)
         await state.update_data(pending_delivery_order_id=order_id)
+        try:
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         await cb.message.answer(
             "Для доставки нужен телефон получателя.",
             reply_markup=contact_kb(),
@@ -371,7 +427,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         return
 
     if action == "go":
-        await _start_delivery(cb.message, state, order_id)
+        await _start_delivery(cb.message, state, order_id, client.get("phone"))
         await cb.answer()
         return
     if action == "svc" and len(parts) >= 4:
@@ -379,12 +435,19 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         if svc not in delivery.SERVICE_LABELS:
             await cb.answer()
             return
-        await _ask_mode(cb.message, state, order_id, svc)
+        await _ask_mode(cb.message, state, order_id, svc, client.get("phone"))
         await cb.answer()
         return
     if action in ("pvz", "door"):
         data = await state.get_data()
         service = await delivery.resolve_service(data.get("delivery_service"))
+        if action == "door" and not delivery.has_door(service):
+            await cb.answer("Ozon доставляет только в пункт выдачи", show_alert=True)
+            return
+        if service == "ozon":
+            await _ask_ozon_city(cb.message, state, order_id, client.get("phone"))
+            await cb.answer()
+            return
         await state.set_state(OrderFlow.delivery_city)
         await state.update_data(
             order_id=order_id,
@@ -397,7 +460,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
             if action == "pvz"
             else "Напишите город или индекс для курьера."
         )
-        await cb.message.answer(hint)
+        await _replace_or_send(cb.message, hint)
         await cb.answer()
         return
     if action == "n" and len(parts) >= 4:
@@ -439,14 +502,14 @@ async def on_delivery_city(msg: Message, state: FSMContext) -> None:
     if not points:
         await msg.answer(
             delivery.empty_points_text(service),
-            reply_markup=delivery_mode_kb(order_id),
+            reply_markup=delivery_mode_kb(order_id, service),
         )
         return
     await state.update_data(delivery_city=city, delivery_points=points, delivery_service=service)
     await state.set_state(OrderFlow.delivery_pvz)
     await msg.answer(
         delivery.points_text(city, points, service),
-        reply_markup=delivery_points_kb(order_id, points),
+        reply_markup=delivery_points_kb(order_id, points, service),
     )
 
 
@@ -545,7 +608,6 @@ async def _persist_files(bot, order_id: int, files: list[dict]) -> list[str]:
 async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     order_id = data["order_id"]
-    await cb.message.edit_reply_markup(reply_markup=None)
     await cb.answer()
     links = await _persist_files(cb.bot, order_id, data.get("materials_files", []))
     await backend.update_order(
@@ -563,54 +625,54 @@ async def on_materials_confirm(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(OrderFlow.confirming_materials, F.data == "materials:redo")
 async def on_materials_redo(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OrderFlow.waiting_materials)
-    await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer(texts.get("msg_006б"))
+    await _replace_or_send(cb.message, texts.get("msg_006б"))
     u = cb.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
     await backend.mark_journey(client["id"], "msg_006б")
     await cb.answer()
 
 
-_MENU_TEXTS = {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}
-
-
-async def _consult_files_tg(bot, msg: Message) -> list[tuple[str, bytes]]:
-    items: list[tuple[str, str]] = []
+async def _consult_files(msg: Message) -> list[tuple[str, bytes]]:
+    """Скачать вложения сообщения для консультации."""
+    bot = msg.bot
+    wanted: list[tuple[str, str]] = []
     if msg.photo:
-        items.append((msg.photo[-1].file_id, "photo.jpg"))
+        wanted.append((msg.photo[-1].file_id, "photo.jpg"))
     if msg.document:
-        items.append((msg.document.file_id, msg.document.file_name or "file.bin"))
+        wanted.append((msg.document.file_id, msg.document.file_name or "file"))
     if msg.voice:
-        items.append((msg.voice.file_id, "voice.ogg"))
-    if msg.audio:
-        items.append((msg.audio.file_id, msg.audio.file_name or "audio.mp3"))
+        wanted.append((msg.voice.file_id, "voice.ogg"))
     if msg.video:
-        items.append((msg.video.file_id, "video.mp4"))
+        wanted.append((msg.video.file_id, "video.mp4"))
     if msg.video_note:
-        items.append((msg.video_note.file_id, "note.mp4"))
+        wanted.append((msg.video_note.file_id, "note.mp4"))
+    if msg.audio:
+        wanted.append((msg.audio.file_id, msg.audio.file_name or "audio.mp3"))
     out: list[tuple[str, bytes]] = []
-    for fid, name in items:
+    for fid, name in wanted:
         try:
             buf = await bot.download(fid)
             out.append((name, buf.read()))
         except Exception as e:  # noqa: BLE001
-            logging.warning("consult tg download failed (%s): %s", name, e)
+            logging.warning("consult tg download failed: %s", e)
     return out
 
 
 @router.message(OrderFlow.consulting)
 async def on_consult(msg: Message) -> None:
-    if (msg.text or "") in _MENU_TEXTS:
+    if msg.text in {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}:
         return
     client = await _client(msg)
-    files = await _consult_files_tg(msg.bot, msg)
     try:
-        sent = await consult.ingest(client["id"], msg.caption or msg.text, files)
+        ok = await consult.ingest(
+            client["id"], msg.caption or msg.text, await _consult_files(msg)
+        )
     except Exception as e:  # noqa: BLE001
-        logging.warning("consult ingest failed: %s", e)
-        await msg.answer("Не получилось передать сообщение, напишите ещё раз.")
+        logging.warning("consult send failed: %s", e)
+        await msg.answer("Не получилось передать сообщение, попробуйте ещё раз.")
         return
-    if not sent:
+    if not ok:
+        await msg.answer("Напишите текст или пришлите фото — передадим администратору.")
         return
     # Без автоответа: клиент увидит «печатает…», когда админ начнёт набирать ответ.
 

@@ -19,7 +19,8 @@ NEEDS_CHECKOUT = frozenset(
     }
 )
 
-SERVICE_LABELS = {"cdek": "СДЭК", "yandex": "Яндекс Доставка"}
+SERVICE_LABELS = {"cdek": "СДЭК", "yandex": "Яндекс Доставка", "ozon": "Ozon Доставка"}
+PVZ_ONLY = frozenset({"ozon"})
 
 _STATUS_RU = {
     "postpayment_paid": "оплачен — оформите доставку",
@@ -50,6 +51,10 @@ def api_error(e: Exception) -> str:
 
 def service_label(code: str | None) -> str:
     return SERVICE_LABELS.get(code or "", "доставку")
+
+
+def has_door(service: str | None) -> bool:
+    return (service or "") not in PVZ_ONLY
 
 
 async def configured_services() -> list[str]:
@@ -108,8 +113,14 @@ def points_text(city: str, points: list[dict], service: str = "cdek") -> str:
 
 
 def empty_points_text(service: str = "cdek") -> str:
+    name = service_label(service)
+    if not has_door(service):
+        return (
+            f"В этом городе нет пунктов выдачи {name}. "
+            "Напишите другой город или индекс."
+        )
     return (
-        f"В этом городе нет пунктов выдачи {service_label(service)}. "
+        f"В этом городе нет пунктов выдачи {name}. "
         "Напишите другой город или выберите курьера."
     )
 
@@ -117,6 +128,8 @@ def empty_points_text(service: str = "cdek") -> str:
 async def pickup_points(city: str, service: str = "cdek") -> list[dict]:
     if service == "yandex":
         return await backend.yandex_pickup_points(city, limit=8)
+    if service == "ozon":
+        return await backend.ozon_pickup_points(city, limit=8)
     return await backend.cdek_pickup_points(city, limit=8)
 
 
@@ -124,6 +137,12 @@ async def quote_pvz(order_id: int, point: dict, service: str = "cdek") -> dict:
     point_id = str(point.get("id") or "")
     if service == "yandex":
         return await backend.yandex_select(
+            order_id,
+            pickup_point_id=point_id,
+            to_address=point.get("address"),
+        )
+    if service == "ozon":
+        return await backend.ozon_quote(
             order_id,
             pickup_point_id=point_id,
             to_address=point.get("address"),
@@ -138,6 +157,8 @@ async def quote_pvz(order_id: int, point: dict, service: str = "cdek") -> dict:
 
 
 async def quote_door(order_id: int, city: str, street: str, service: str = "cdek") -> dict:
+    if service == "ozon":
+        raise RuntimeError("Ozon Доставка пока только до пункта выдачи, без курьера.")
     postal = extract_postal(city) or extract_postal(street)
     city_name = _POSTAL.sub("", city or "").strip(" ,") or None
     address = street if city_name and city_name.lower() in street.lower() else f"{city}, {street}"
@@ -152,6 +173,22 @@ async def quote_door(order_id: int, city: str, street: str, service: str = "cdek
     )
 
 
+async def ozon_blocked(phone: str | None) -> str | None:
+    """None — можно продолжать. Иначе текст ошибки для клиента."""
+    if not phone:
+        return "Для Ozon Доставки нужен телефон получателя."
+    try:
+        data = await backend.ozon_check_client(phone)
+    except Exception as e:  # noqa: BLE001
+        return api_error(e)
+    if data.get("can_be_delivered"):
+        return None
+    return (
+        "Ozon Доставка принимает заказ только если этот номер зарегистрирован в Ozon. "
+        "Выберите другую службу или зарегистрируйтесь в Ozon с этим телефоном."
+    )
+
+
 if __name__ == "__main__":
     assert extract_postal("101000, Москва") == "101000"
     assert extract_postal("Казань") is None
@@ -160,8 +197,15 @@ if __name__ == "__main__":
     assert "2–4" in text, text
     yandex = quote_text({"delivery_sum": 400, "service": "yandex", "address": "ПВЗ"})
     assert "Яндекс" in yandex, yandex
+    ozon = quote_text({"delivery_sum": 290, "service": "ozon", "address": "ПВЗ"})
+    assert "Ozon" in ozon, ozon
     assert "нет заказов" in orders_text([]).lower()
     pts = points_text("Казань", [{"address": "Баумана 1"}], "yandex")
     assert "1. Баумана 1" in pts
     assert "Яндекс" in pts
+    empty_ozon = empty_points_text("ozon")
+    assert "Ozon" in empty_ozon
+    assert "курьер" not in empty_ozon.lower()
+    assert not has_door("ozon")
+    assert has_door("cdek")
     print("ok")
