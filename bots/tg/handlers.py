@@ -658,11 +658,10 @@ async def _consult_files(msg: Message) -> list[tuple[str, bytes]]:
     return out
 
 
-@router.message(OrderFlow.consulting)
-async def on_consult(msg: Message) -> None:
-    if msg.text in {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}:
-        return
-    client = await _client(msg)
+_MENU_TEXTS = {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}
+
+
+async def _relay_consult(msg: Message, client: dict, state: FSMContext | None = None) -> None:
     try:
         ok = await consult.ingest(
             client["id"], msg.caption or msg.text, await _consult_files(msg)
@@ -674,10 +673,29 @@ async def on_consult(msg: Message) -> None:
     if not ok:
         await msg.answer("Напишите текст или пришлите фото — передадим администратору.")
         return
+    if state is not None:
+        await state.set_state(OrderFlow.consulting)
     # Без автоответа: клиент увидит «печатает…», когда админ начнёт набирать ответ.
 
 
-# Фолбэк: любое сообщение вне сценария → в меню.
-@router.message(StateFilter(None), F.text)
-async def on_fallback(msg: Message) -> None:
-    await msg.answer("Выберите раздел в меню.", reply_markup=main_menu_kb())
+@router.message(OrderFlow.consulting)
+async def on_consult(msg: Message) -> None:
+    if msg.text in _MENU_TEXTS:
+        return
+    await _relay_consult(msg, await _client(msg))
+
+
+# Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
+# Без номера — только меню, чтобы не открывать чат анонимам.
+@router.message(StateFilter(None))
+async def on_fallback(msg: Message, state: FSMContext) -> None:
+    if msg.text in _MENU_TEXTS:
+        return
+    client = await _client(msg)
+    if not await consult.allowed_to_write(client):
+        await msg.answer(
+            "Выберите раздел в меню или нажмите «Поможем выбрать».",
+            reply_markup=main_menu_kb(),
+        )
+        return
+    await _relay_consult(msg, client, state)

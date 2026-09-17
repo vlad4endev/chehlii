@@ -318,7 +318,9 @@ export function Consult() {
           <div className="inbox__placeholder">
             <Icon name="chat" size={36} />
             <p>Выберите диалог слева — или дождитесь сообщения из бота.</p>
-            <p className="muted">Клиент пишет через кнопку «Поможем выбрать» в Telegram или MAX.</p>
+            <p className="muted">
+              Клиент пишет в боте в любой момент — если есть номер или нажата «Поможем выбрать».
+            </p>
           </div>
         )}
         {thread && detail && (

@@ -747,13 +747,12 @@ async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
     return files
 
 
-@dp.message_created(OrderFlow.consulting)
-async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
-    s = event.message.sender
-    remember(s.user_id, event.message.recipient.chat_id)
-    client = await backend.upsert_client(
-        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
-    )
+_BUSY_STATES = frozenset(OrderFlow.states())
+
+
+async def _relay_consult(
+    event: MessageCreated, client: dict, context: MemoryContext | None = None
+) -> None:
     text = event.message.body.text or ""
     try:
         ok = await consult.ingest(client["id"], text, await _consult_files_max(event))
@@ -764,10 +763,41 @@ async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
     if not ok:
         await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
         return
+    if context is not None:
+        await context.set_state(OrderFlow.consulting)
     # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
 
 
-# Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.
-@dp.message_created(F.message.body.text)
+@dp.message_created(OrderFlow.consulting)
+async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
+    s = event.message.sender
+    remember(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    await _relay_consult(event, client)
+
+
+# Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
+# Регистрируется последним, шаги заказа/доставки не перехватываем.
+@dp.message_created()
 async def on_fallback(event: MessageCreated, context: MemoryContext) -> None:
-    await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
+    current = await context.get_state()
+    if current is not None and str(current) in _BUSY_STATES:
+        return
+    text = event.message.body.text or ""
+    if text.startswith("/"):
+        return
+    s = event.message.sender
+    remember(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    if not await consult.allowed_to_write(client):
+        await _send_menu(
+            event.bot,
+            event.message.recipient.chat_id,
+            "Выберите раздел в меню или нажмите «Поможем выбрать».",
+        )
+        return
+    await _relay_consult(event, client, context)
