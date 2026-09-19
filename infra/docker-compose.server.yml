@@ -1,7 +1,7 @@
-# Серверная конфигурация (VPS 77.93.125.36, изолированный проект `casetop`).
-# Запуск:  docker compose -p casetop --env-file .env.server -f docker-compose.server.yml up -d --build
-# Отличия от локальной: postgres/redis НЕ публикуются на host (только внутри сети проекта),
-# backend слушает свободный host-порт 8090 → его проксирует nginx_proxy_manager по домену.
+# Серверная конфигурация выделенного VPS 147.45.96.86 (msk-1-vm-casetop).
+# Запуск:  docker compose -p casetop --env-file .env.server -f docker-compose.server.yml --profile bots --profile max up -d --build
+# Postgres/Redis только внутри сети проекта. Снаружи — Caddy :80/:443 → backend:8000.
+# 127.0.0.1:8090 оставлен для отладки на самой машине.
 name: casetop
 
 services:
@@ -40,7 +40,7 @@ services:
       WEBROOT: /app/webroot              # мини-приложение (SPA) на /
       WEBROOT_ADMIN: /app/webroot-admin  # админка (SPA) на /admin
     ports:
-      - "8090:8000"   # host:container — NPM форвардит домен на 8090
+      - "127.0.0.1:8090:8000"
     volumes:
       - ./webroot:/app/webroot:ro              # собранный мини-апп (dist)
       - ./webroot-admin:/app/webroot-admin:ro  # собранная админка (dist, base=/admin/)
@@ -63,9 +63,10 @@ services:
     profiles: ["bots"]   # запускается по запросу, когда задан TG_BOT_TOKEN
     environment:
       TG_BOT_TOKEN: ${TG_BOT_TOKEN}
-      TG_PROXY: ${TG_PROXY:-}   # socks5://… или http://… для обхода блокировки Telegram
+      TG_PROXY: ${TG_PROXY:-}   # fallback, если в админке нет ключей (socks5:// или http://)
+      XRAY_BIN: /usr/local/bin/xray
       BACKEND_URL: http://backend:8000/api/v1   # внутри compose-сети, не через NPM
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}   # общий секрет бот → backend
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
       REDIS_URL: redis://redis:6379/1
       WEBAPP_URL: https://test.skypath.fun
     depends_on:
@@ -87,8 +88,23 @@ services:
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
       MAX_BOT_USERNAME: ${MAX_BOT_USERNAME}
       BACKEND_URL: http://backend:8000/api/v1
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}   # общий секрет бот → backend
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
       REDIS_URL: redis://redis:6379/1
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       backend:
         condition: service_started
@@ -97,3 +113,5 @@ services:
 volumes:
   pgdata:
   redisdata:
+  caddy_data:
+  caddy_config:

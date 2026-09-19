@@ -33,6 +33,7 @@ build/
 /data/
 /tmp/
 scratchpad/
+bots/.xray/
 
 # Alembic local
 backend/alembic/versions/*.pyc

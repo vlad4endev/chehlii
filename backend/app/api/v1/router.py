@@ -20,6 +20,7 @@ from app.api.v1.orders import router as orders_router
 from app.api.v1.outbox import router as outbox_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.reviews import router as reviews_router
+from app.api.v1.tg_proxy import router as tg_proxy_router
 
 # Бот-только роутеры: требуют X-Internal-Token (см. internal.py).
 _internal = [Depends(require_internal)]
@@ -40,6 +41,9 @@ api_router.include_router(
 )
 api_router.include_router(
     consult_router, prefix="/consult", tags=["consult"], dependencies=_internal
+)
+api_router.include_router(
+    tg_proxy_router, prefix="/tg-proxy", tags=["tg-proxy"], dependencies=_internal
 )
 api_router.include_router(payments_router, prefix="/payments", tags=["payments"])
 api_router.include_router(delivery_router, prefix="/delivery", tags=["delivery"])

@@ -17,6 +17,7 @@ from app.api.v1.admin.miniapp import router as miniapp_router
 from app.api.v1.admin.orders import router as orders_router
 from app.api.v1.admin.reviews import router as reviews_router
 from app.api.v1.admin.stats import router as stats_router
+from app.api.v1.admin.tg_proxy import router as tg_proxy_router
 from app.api.v1.admin.trash import router as trash_router
 from app.api.v1.admin.users import router as users_router
 
@@ -35,6 +36,7 @@ admin_router.include_router(users_router, prefix="/users", tags=["admin-users"])
 admin_router.include_router(
     integrations_router, prefix="/integrations", tags=["admin-integrations"]
 )
+admin_router.include_router(tg_proxy_router, prefix="/tg-proxy", tags=["admin-tg-proxy"])
 admin_router.include_router(media_router, prefix="/media", tags=["admin-media"])
 admin_router.include_router(miniapp_router, prefix="/miniapp", tags=["admin-miniapp"])
 admin_router.include_router(trash_router, prefix="/trash", tags=["admin-trash"])

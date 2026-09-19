@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
+import {
+  type NotifyEvent,
+  browserPermission,
+  diffStats,
+  ensureBrowserPermission,
+  loadBaseline,
+  permissionLabel,
+  pushBrowser,
+  saveBaseline,
+  snapshotBaseline,
+  syncTitle,
+} from '../adminNotify'
 import { useAuth } from '../auth'
 import { Icon } from '../icons'
 import { type Section, groupsFor, sectionByPath } from '../sections'
@@ -8,6 +20,7 @@ import { type Stats, fetchStats } from '../statsApi'
 import { initials } from '../ui'
 
 const ROLE_LABEL: Record<string, string> = { admin: 'Администратор', designer: 'Дизайнер' }
+const TOAST_MS = 6000
 
 function badgeValue(section: Section, stats: Stats | null): number | null {
   if (!section.badge || !stats) return null
@@ -18,17 +31,57 @@ function badgeValue(section: Section, stats: Stats | null): number | null {
 export function AdminLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const [stats, setStats] = useState<Stats | null>(null)
-  // Мобильное меню: выезжающий сайдбар. На десктопе всегда виден (см. CSS).
   const [navOpen, setNavOpen] = useState(false)
+  const [toasts, setToasts] = useState<NotifyEvent[]>([])
+  const [notifPerm, setNotifPerm] = useState(() => browserPermission())
+  const timers = useRef<Map<string, number>>(new Map())
 
-  // Метрики для бейджей в меню (только у Админа — эндпоинт admin-only).
+  function dismissToast(id: string) {
+    const t = timers.current.get(id)
+    if (t) {
+      window.clearTimeout(t)
+      timers.current.delete(id)
+    }
+    setToasts((prev) => prev.filter((x) => x.id !== id))
+  }
+
+  function enqueueToasts(events: NotifyEvent[]) {
+    if (events.length === 0) return
+    setToasts((prev) => [...prev, ...events].slice(-5))
+    for (const ev of events) {
+      pushBrowser(ev)
+      const tid = window.setTimeout(() => dismissToast(ev.id), TOAST_MS)
+      timers.current.set(ev.id, tid)
+    }
+  }
+
   useEffect(() => {
-    if (user?.role !== 'admin') return
+    return () => {
+      for (const t of timers.current.values()) window.clearTimeout(t)
+      timers.current.clear()
+    }
+  }, [])
+
+  // Метрики для бейджей и уведомлений (admin + designer).
+  useEffect(() => {
+    if (!user || (user.role !== 'admin' && user.role !== 'designer')) return
     let alive = true
+    const includeConsult = user.role === 'admin'
     const load = () =>
       fetchStats()
-        .then((s) => alive && setStats(s))
+        .then((s) => {
+          if (!alive) return
+          setStats(s)
+          const prev = loadBaseline()
+          const next = snapshotBaseline(s)
+          if (prev) {
+            enqueueToasts(diffStats(prev, s, { includeConsult }))
+          }
+          saveBaseline(next)
+          syncTitle(s, includeConsult)
+        })
         .catch(() => {})
     load()
     const t = window.setInterval(load, 15000)
@@ -38,15 +91,26 @@ export function AdminLayout() {
     }
   }, [user?.role, location.pathname])
 
-  // Закрывать выезжающее меню при переходе между разделами.
   useEffect(() => {
     setNavOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    return () => {
+      syncTitle(null, false)
+    }
+  }, [])
+
+  async function onEnableNotifications() {
+    const p = await ensureBrowserPermission()
+    setNotifPerm(p)
+  }
 
   if (!user) return null
   const groups = groupsFor(user.role)
   const current = sectionByPath(location.pathname)
   const displayName = user.full_name || user.email
+  const showNotifBtn = notifPerm !== 'unsupported'
 
   return (
     <div className={`layout${navOpen ? ' layout--nav-open' : ''}`}>
@@ -108,6 +172,24 @@ export function AdminLayout() {
             casetop <Icon name="chevron" size={14} /> <b>{current?.label ?? 'Панель'}</b>
           </div>
           <div className="topbar__right">
+            {showNotifBtn && (
+              <button
+                type="button"
+                className={`topbar__notif${notifPerm === 'granted' ? ' topbar__notif--on' : ''}`}
+                onClick={onEnableNotifications}
+                disabled={notifPerm === 'granted' || notifPerm === 'denied'}
+                title={
+                  notifPerm === 'granted'
+                    ? 'Системные уведомления включены'
+                    : notifPerm === 'denied'
+                      ? 'Разрешите уведомления в настройках браузера'
+                      : 'Включить системные уведомления (когда вкладка в фоне)'
+                }
+              >
+                <Icon name="bell" size={16} />
+                <span>{permissionLabel(notifPerm)}</span>
+              </button>
+            )}
             <span className="status-dot">все системы в норме</span>
           </div>
         </header>
@@ -115,6 +197,49 @@ export function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      {toasts.length > 0 && (
+        <div className="toast-stack" aria-live="polite">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`toast toast--${t.kind}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                dismissToast(t.id)
+                navigate(t.href)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  dismissToast(t.id)
+                  navigate(t.href)
+                }
+              }}
+            >
+              <span className="toast__icon" aria-hidden>
+                <Icon name={t.kind === 'consult' ? 'chat' : 'orders'} size={18} />
+              </span>
+              <span className="toast__body">
+                <span className="toast__title">{t.title}</span>
+                <span className="toast__text">{t.body}</span>
+              </span>
+              <button
+                type="button"
+                className="toast__close"
+                aria-label="Закрыть"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  dismissToast(t.id)
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -25,6 +25,12 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   plug: <P d="M9 2v6M15 2v6M7 8h10v3a5 5 0 01-10 0zM12 16v6" />,
+  proxy: (
+    <>
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <P d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
+    </>
+  ),
   trash: <P d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
   restore: <P d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 4v4h4" />,
   check: <P d="M5 13l4 4L19 7" />,
@@ -42,6 +48,29 @@ const ICONS: Record<string, ReactNode> = {
   client: <P d="M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" />,
   star: <P d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.4 7.2 18.9l.9-5.4L4.2 9.7l5.4-.8z" />,
   chat: <P d="M21 12a8 8 0 01-8 8H7l-4 3V12a8 8 0 018-8h2a8 8 0 018 5z" />,
+  disk: (
+    <>
+      <P d="M4 7a2 2 0 012-2h12a2 2 0 012 2v12H4z" />
+      <P d="M4 11h16M8 15h3" />
+    </>
+  ),
+  truck: (
+    <>
+      <P d="M3 7h11v10H3zM14 11h4l3 3v3h-7" />
+      <circle cx="7" cy="18" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17" cy="18" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </>
+  ),
+  card: <P d="M3 7h18v11H3zM3 11h18M7 15h4" />,
+  copy: <P d="M8 8h11v12H8zM5 16V4h11" />,
+  eye: (
+    <>
+      <P d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+      <circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </>
+  ),
+  eyeOff: <P d="M3 3l18 18M10.5 6.2A9 9 0 0121 12s-1.2 2-3.4 3.6M6.1 6.7C3.8 8.4 2 12 2 12s3.5 6 10 6a10 10 0 005.2-1.5" />,
+  external: <P d="M10 5H5v14h14v-5M13 5h6v6M11 13L19 5" />,
 }
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
