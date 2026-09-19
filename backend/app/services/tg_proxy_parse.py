@@ -1,4 +1,4 @@
-"""Разбор VLESS/SOCKS/HTTP-ссылок и сборка конфига xray. Без SQLAlchemy."""
+"""Разбор VLESS / Hysteria2 / SOCKS / HTTP-ссылок и сборка клиентских конфигов."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 SOCKS_PORT = 10808
 
 _SHARE_RE = re.compile(
-    r"(?:vless|vmess|trojan|ss|socks5h?|socks|https?)://[^\s<>\"']+",
+    r"(?:vless|vmess|trojan|ss|hysteria2|hy2|hysteria|socks5h?|socks4a?|socks|https?)://[^\s<>\"']+",
     re.IGNORECASE,
 )
 
@@ -66,15 +66,19 @@ def parse_share_link(raw: str) -> dict[str, Any]:
     scheme = uri.split(":", 1)[0].lower()
     if scheme == "vless":
         return _parse_vless(uri)
-    if scheme in {"socks", "socks5", "socks5h"}:
+    if scheme in {"hysteria2", "hy2"}:
+        return _parse_hysteria2(uri)
+    if scheme in {"socks", "socks5", "socks5h", "socks4", "socks4a"}:
         return _parse_generic(uri, kind="socks")
     if scheme in {"http", "https"}:
         return _parse_generic(uri, kind="http")
     if scheme == "vmess":
-        raise ProxyParseError("VMess не поддерживается — нужен VLESS, SOCKS5 или HTTP")
-    if scheme in {"trojan", "ss", "ssr", "hysteria", "hysteria2", "hy2", "tuic"}:
-        raise ProxyParseError(f"{scheme} не поддерживается — вставьте VLESS (vless://) или SOCKS5")
-    raise ProxyParseError("Ожидалась ссылка vless://, socks5:// или http://")
+        raise ProxyParseError("VMess не поддерживается — нужен VLESS, Hysteria2 или SOCKS5")
+    if scheme == "hysteria":
+        raise ProxyParseError("Hysteria 1 не поддерживается — вставьте hysteria2:// или hy2://")
+    if scheme in {"trojan", "ss", "ssr", "tuic"}:
+        raise ProxyParseError(f"{scheme} не поддерживается — вставьте VLESS, Hysteria2 (hy2://) или SOCKS5")
+    raise ProxyParseError("Ожидалась ссылка vless://, hysteria2:// / hy2://, socks5:// или http://")
 
 
 def _parse_generic(uri: str, *, kind: str) -> dict[str, Any]:
@@ -89,8 +93,14 @@ def _parse_generic(uri: str, *, kind: str) -> dict[str, Any]:
         raise ProxyParseError("В ссылке нет хоста")
     port = u.port or (443 if u.scheme == "https" else 80 if kind == "http" else 1080)
     if kind == "socks":
-        # aiogram/aiohttp-socks понимают socks5://; socks5h — DNS на стороне прокси.
-        scheme = "socks5h" if u.scheme.lower() == "socks5h" else "socks5"
+        # aiogram/aiohttp-socks: socks5 / socks5h (DNS на прокси) / socks4.
+        raw_scheme = u.scheme.lower()
+        if raw_scheme in {"socks4", "socks4a"}:
+            scheme = raw_scheme
+        elif raw_scheme == "socks5h":
+            scheme = "socks5h"
+        else:
+            scheme = "socks5"
     else:
         scheme = "http"
     netloc = u.netloc
@@ -162,6 +172,107 @@ def _parse_vless(uri: str) -> dict[str, Any]:
         "network": network,
         "security": security,
         "xray_outbound": outbound,
+        "hysteria_config": None,
+    }
+
+
+def _truthy(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _split_hy2_hostport(hostport: str, *, default_port: int = 443) -> tuple[str, int, str]:
+    """Хост, порт для карточки и полный server (с port hopping) для клиента."""
+    hostport = (hostport or "").strip()
+    if not hostport:
+        raise ProxyParseError("В Hysteria2-ссылке нет хоста")
+    if hostport.startswith("["):
+        end = hostport.find("]")
+        if end < 0:
+            raise ProxyParseError("Некорректный IPv6 в Hysteria2-ссылке")
+        host = hostport[1:end]
+        rest = hostport[end + 1 :]
+        if rest.startswith(":"):
+            rest = rest[1:]
+        if not rest:
+            return host, default_port, f"[{host}]:{default_port}"
+        first = rest.split(",", 1)[0].split("-", 1)[0]
+        try:
+            port = int(first)
+        except ValueError as e:
+            raise ProxyParseError("Некорректный порт в Hysteria2-ссылке") from e
+        return host, port, f"[{host}]:{rest}"
+    if ":" not in hostport:
+        return hostport, default_port, f"{hostport}:{default_port}"
+    host, rest = hostport.split(":", 1)
+    if not host:
+        raise ProxyParseError("В Hysteria2-ссылке нет хоста")
+    first = rest.split(",", 1)[0].split("-", 1)[0]
+    try:
+        port = int(first)
+    except ValueError as e:
+        raise ProxyParseError("Некорректный порт в Hysteria2-ссылке") from e
+    return host, port, f"{host}:{rest}"
+
+
+def _parse_hysteria2(uri: str) -> dict[str, Any]:
+    label = ""
+    body = uri
+    if "#" in uri:
+        body, frag = uri.split("#", 1)
+        label = unquote(frag).strip()
+    if "://" not in body:
+        raise ProxyParseError("Некорректная Hysteria2-ссылка")
+    rest = body.split("://", 1)[1]
+    query = ""
+    if "?" in rest:
+        rest, query = rest.split("?", 1)
+    userinfo = ""
+    hostport = rest
+    if "@" in rest:
+        userinfo, hostport = rest.rsplit("@", 1)
+    if "/" in hostport:
+        hostport = hostport.split("/", 1)[0]
+    host, port, server = _split_hy2_hostport(unquote(hostport))
+    q = {k: v[-1] for k, v in parse_qs(query, keep_blank_values=True).items()}
+    auth = unquote(userinfo) if userinfo else (q.get("auth") or q.get("password") or "")
+    if not auth:
+        raise ProxyParseError("В Hysteria2-ссылке нет пароля (auth)")
+    obfs = (q.get("obfs") or "").strip().lower()
+    obfs_pass = (
+        q.get("obfs-password")
+        or q.get("obfs_password")
+        or q.get("obfsPassword")
+        or q.get("obfsParam")
+        or ""
+    )
+    if obfs and obfs not in {"salamander", "gecko"}:
+        raise ProxyParseError(f"obfs={obfs} не поддерживается")
+    if obfs and not obfs_pass:
+        raise ProxyParseError("Для obfuscation нужен параметр obfs-password")
+    if not label:
+        label = f"{host}:{port}"
+    cfg = hysteria_config(
+        server=server,
+        auth=auth,
+        sni=q.get("sni") or "",
+        insecure=_truthy(q.get("insecure") or q.get("allowInsecure")),
+        pin_sha256=q.get("pinSHA256") or q.get("pinsha256") or "",
+        ech=q.get("ech") or "",
+        obfs=obfs,
+        obfs_password=obfs_pass,
+        socks_port=SOCKS_PORT,
+    )
+    return {
+        "kind": "hysteria2",
+        "uri": uri,
+        "proxy_url": f"socks5://127.0.0.1:{SOCKS_PORT}",
+        "label": label,
+        "host": host,
+        "port": port,
+        "network": "udp",
+        "security": "tls",
+        "xray_outbound": None,
+        "hysteria_config": cfg,
     }
 
 
@@ -290,6 +401,41 @@ def _vless_outbound(
     return outbound
 
 
+def hysteria_config(
+    *,
+    server: str,
+    auth: str,
+    sni: str,
+    insecure: bool,
+    pin_sha256: str,
+    ech: str,
+    obfs: str,
+    obfs_password: str,
+    socks_port: int = SOCKS_PORT,
+) -> dict[str, Any]:
+    """Конфиг hysteria-клиента: локальный SOCKS → этот HY2. Только для бота."""
+    cfg: dict[str, Any] = {
+        "server": server,
+        "auth": auth,
+        "lazy": True,
+        "socks5": {"listen": f"127.0.0.1:{socks_port}", "disableUDP": True},
+    }
+    tls: dict[str, Any] = {}
+    if sni:
+        tls["sni"] = sni
+    if insecure:
+        tls["insecure"] = True
+    if pin_sha256:
+        tls["pinSHA256"] = pin_sha256
+    if ech:
+        tls["ech"] = ech
+    if tls:
+        cfg["tls"] = tls
+    if obfs:
+        cfg["obfs"] = {"type": obfs, obfs: {"password": obfs_password}}
+    return cfg
+
+
 def xray_config(outbound: dict[str, Any], socks_port: int = SOCKS_PORT) -> dict[str, Any]:
     """Полный конфиг xray: локальный SOCKS → этот VLESS. Только для бота."""
     return {
@@ -372,10 +518,17 @@ def candidate(stored: dict[str, Any]) -> dict[str, Any] | None:
     if info["kind"] == "vless" and info.get("xray_outbound"):
         item["socks_url"] = f"socks5://127.0.0.1:{SOCKS_PORT}"
         item["xray_config"] = xray_config(info["xray_outbound"], SOCKS_PORT)
+        item["hysteria_config"] = None
+        item["proxy_url"] = None
+    elif info["kind"] == "hysteria2" and info.get("hysteria_config"):
+        item["socks_url"] = f"socks5://127.0.0.1:{SOCKS_PORT}"
+        item["xray_config"] = None
+        item["hysteria_config"] = info["hysteria_config"]
         item["proxy_url"] = None
     else:
         item["socks_url"] = None
         item["xray_config"] = None
+        item["hysteria_config"] = None
         item["proxy_url"] = info.get("proxy_url")
     return item
 
@@ -384,7 +537,9 @@ def add_uris(keys: list[dict[str, Any]], blob: str) -> tuple[list[dict[str, Any]
     """Добавить ключи из текста. Возвращает (новый список, метки добавленных)."""
     uris = extract_uris(blob)
     if not uris:
-        raise ProxyParseError("Не нашли ни одной ссылки vless:// / socks5:// / http://")
+        raise ProxyParseError(
+            "Не нашли ни одной ссылки vless:// / hysteria2:// / hy2:// / socks5:// / http://"
+        )
     existing = {(k.get("uri") or "").strip() for k in keys}
     added: list[str] = []
     next_keys = list(keys)

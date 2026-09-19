@@ -368,7 +368,7 @@ export function IntegrationsPanel({ onOpenProxy }: { onOpenProxy?: () => void })
                     <span className="intile__title">Прокси Telegram</span>
                     <span className="badge">настроить</span>
                   </span>
-                  <span className="intile__blurb">Ключи VLESS / SOCKS для бота</span>
+                  <span className="intile__blurb">Ключи VLESS / Hysteria2 / SOCKS для бота</span>
                 </span>
                 <Icon name="chevron" size={14} />
               </button>

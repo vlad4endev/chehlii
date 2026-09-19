@@ -253,7 +253,7 @@ async def _probe(bot: Bot) -> str:
 
 
 async def _make_bot() -> tuple[Bot, str]:
-    """Собрать клиент Telegram. Ключи — из админки (VLESS/SOCKS), иначе TG_PROXY.
+    """Собрать клиент Telegram. Ключи — из админки (VLESS/Hysteria2/SOCKS), иначе TG_PROXY.
 
     Если прокси включён в настройках, на прямой доступ не падаем: на VPS в РФ
     api.telegram.org мёртв, и «успешный» старт без прокси = молчащий бот.
@@ -361,11 +361,11 @@ async def main() -> None:
             finally:
                 await _cancel(outbox)
                 await bot.session.close()
-                await tg_proxy.xray.stop()
+                await tg_proxy.stop_local()
             await asyncio.sleep(1)
     finally:
         await backend.close()
-        await tg_proxy.xray.stop()
+        await tg_proxy.stop_local()
 
 
 if __name__ == "__main__":

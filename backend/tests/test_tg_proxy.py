@@ -1,4 +1,4 @@
-"""Разбор VLESS/SOCKS-ссылок и сборка конфига xray. Сеть не трогаем."""
+"""Разбор VLESS / Hysteria2 / SOCKS-ссылок и сборка клиентских конфигов. Сеть не трогаем."""
 
 from app.services.tg_proxy_parse import (
     ProxyParseError,
@@ -25,6 +25,13 @@ WS_TLS = (
 )
 
 SOCKS = "socks5://user:p%40ss@10.0.0.9:1080#backup"
+SOCKS_PLAIN = "socks://10.0.0.8:1080#plain"
+HY2 = (
+    "hy2://s3cret@nl.example.com:443"
+    "?sni=www.microsoft.com&insecure=1&obfs=salamander&obfs-password=obfs-secret"
+    "#HY2-NL"
+)
+HY2_HOP = "hysteria2://letmein@de.example.com:443,5000-6000/?insecure=1#hop"
 
 
 def test_parse_vless_reality_vision():
@@ -67,6 +74,42 @@ def test_parse_socks5_keeps_password():
     assert info["label"] == "backup"
 
 
+def test_parse_socks_scheme_becomes_socks5():
+    info = parse_share_link(SOCKS_PLAIN)
+    assert info["kind"] == "socks"
+    assert info["proxy_url"] == "socks5://10.0.0.8:1080"
+    assert info["host"] == "10.0.0.8"
+    assert info["port"] == 1080
+
+
+def test_parse_hysteria2_obfs_and_tls():
+    info = parse_share_link(HY2)
+    assert info["kind"] == "hysteria2"
+    assert info["host"] == "nl.example.com"
+    assert info["port"] == 443
+    assert info["network"] == "udp"
+    assert info["security"] == "tls"
+    assert info["label"] == "HY2-NL"
+    cfg = info["hysteria_config"]
+    assert cfg["server"] == "nl.example.com:443"
+    assert cfg["auth"] == "s3cret"
+    assert cfg["tls"]["sni"] == "www.microsoft.com"
+    assert cfg["tls"]["insecure"] is True
+    assert cfg["obfs"]["type"] == "salamander"
+    assert cfg["obfs"]["salamander"]["password"] == "obfs-secret"
+    assert cfg["socks5"]["listen"] == "127.0.0.1:10808"
+    assert cfg["socks5"]["disableUDP"] is True
+    assert cfg["lazy"] is True
+
+
+def test_parse_hysteria2_port_hopping():
+    info = parse_share_link(HY2_HOP)
+    assert info["host"] == "de.example.com"
+    assert info["port"] == 443
+    assert info["hysteria_config"]["server"] == "de.example.com:443,5000-6000"
+    assert info["hysteria_config"]["auth"] == "letmein"
+
+
 def test_parse_grpc_and_httpupgrade():
     grpc = (
         "vless://33333333-3333-3333-3333-333333333333@g.example.com:443"
@@ -103,14 +146,25 @@ def test_reject_vmess_and_empty():
         raise AssertionError("expected ProxyParseError")
     except ProxyParseError as e:
         assert "pbk" in str(e)
+    try:
+        parse_share_link("hysteria://old@example.com:443")
+        raise AssertionError("expected ProxyParseError")
+    except ProxyParseError as e:
+        assert "Hysteria 1" in str(e)
+    try:
+        parse_share_link("hy2://@example.com:443")
+        raise AssertionError("expected ProxyParseError")
+    except ProxyParseError as e:
+        assert "пароля" in str(e)
 
 
 def test_extract_from_subscription_blob():
-    blob = f"# comment\n{REALITY}\n\n{SOCKS}\nnot-a-link\n"
+    blob = f"# comment\n{REALITY}\n\n{SOCKS}\n{HY2}\nnot-a-link\n"
     uris = extract_uris(blob)
     assert REALITY in uris
     assert SOCKS in uris
-    assert all(u.startswith(("vless://", "socks5://")) for u in uris)
+    assert HY2 in uris
+    assert all(u.startswith(("vless://", "socks5://", "hy2://", "hysteria2://")) for u in uris)
 
 
 def test_xray_config_routes_socks_to_vless():
@@ -143,6 +197,17 @@ def test_candidate_vless_has_local_socks():
     assert item["xray_config"]["outbounds"][0]["protocol"] == "vless"
     disabled = candidate({**stored, "enabled": False})
     assert disabled is None
+
+
+def test_candidate_hysteria2_has_local_socks():
+    stored = {"id": "hy", "uri": HY2, "enabled": True, "label": "HY2-NL"}
+    item = candidate(stored)
+    assert item is not None
+    assert item["kind"] == "hysteria2"
+    assert item["socks_url"] == "socks5://127.0.0.1:10808"
+    assert item["xray_config"] is None
+    assert item["hysteria_config"]["auth"] == "s3cret"
+    assert item["proxy_url"] is None
 
 
 def test_add_uris_skips_duplicates_and_fingerprint_changes():

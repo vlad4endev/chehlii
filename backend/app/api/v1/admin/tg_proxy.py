@@ -1,8 +1,8 @@
-"""Настройки → Прокси (только Админ): ключи VLESS/SOCKS для Telegram-бота.
+"""Настройки → Прокси (только Админ): ключи VLESS / Hysteria2 / SOCKS для Telegram-бота.
 
-Секретные URI наружу не отдаются. «Проверить» — TCP до сервера прокси,
-не запрос в Telegram (его с backend всё равно не достучаться, если он
-заблокирован). Живой статус Bot API пишет сам бот.
+Секретные URI наружу не отдаются. «Проверить» — TCP до сервера прокси
+(для Hysteria2 TCP не обязателен: протокол UDP/QUIC). Живой статус Bot API
+пишет сам бот.
 """
 
 from __future__ import annotations
@@ -132,7 +132,7 @@ async def check_tg_proxy(_: AdminOnly, session: Session) -> CheckOut:
     """TCP до каждого включённого сервера прокси. Telegram с backend не зовём."""
     enabled, keys, _status = await tg_proxy.load_state(session)
     if not keys:
-        return CheckOut(ok=False, detail="Ключей нет — вставьте VLESS или SOCKS5.", keys=[])
+        return CheckOut(ok=False, detail="Ключей нет — вставьте VLESS, Hysteria2 или SOCKS5.", keys=[])
     results: list[KeyCheckOut] = []
     any_ok = False
     for stored in keys:
@@ -150,6 +150,12 @@ async def check_tg_proxy(_: AdminOnly, session: Session) -> CheckOut:
             )
             continue
         ok, detail = await tg_proxy.check_tcp(pub["host"], pub["port"])
+        if pub["kind"] == "hysteria2" and not ok:
+            ok = True
+            detail = (
+                f"Hysteria2 идёт по UDP/QUIC — TCP до {pub['host']}:{pub['port']} "
+                "не обязателен. Живую проверку сделает бот."
+            )
         any_ok = any_ok or ok
         results.append(KeyCheckOut(id=pub["id"], label=pub["label"], ok=ok, detail=detail))
     if not results:
@@ -185,7 +191,9 @@ async def preview_uris(_: AdminOnly, body: PreviewIn) -> list[AddPreviewOut]:
     """Разобрать ссылки без сохранения — чтобы админ видел, что это VLESS Reality, а не мусор."""
     uris = tg_proxy.extract_uris(body.text)
     if not uris:
-        raise HTTPException(400, "Не нашли ни одной ссылки vless:// / socks5:// / http://")
+        raise HTTPException(
+            400, "Не нашли ни одной ссылки vless:// / hysteria2:// / hy2:// / socks5:// / http://"
+        )
     out: list[AddPreviewOut] = []
     for uri in uris:
         try:

@@ -35,6 +35,8 @@ build/
 scratchpad/
 bots/.xray/
 bots/xray
+bots/.hysteria/
+bots/hysteria
 
 # Alembic local
 backend/alembic/versions/*.pyc

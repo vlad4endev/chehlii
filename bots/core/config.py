@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     tg_bot_token: str
     # Прокси для Telegram Bot API. Формат: socks5://user:pass@host:port или
-    # http://host:port. Пусто — бот берёт ключи VLESS из админки (Настройки → Прокси).
+    # http://host:port. Пусто — бот берёт ключи VLESS / Hysteria2 / SOCKS из админки.
     tg_proxy: str | None = None
     # Токен MAX-бота (мессенджер MAX). Обязателен только для запуска MAX-канала.
     max_bot_token: str | None = None

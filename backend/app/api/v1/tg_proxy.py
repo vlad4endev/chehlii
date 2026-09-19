@@ -24,6 +24,7 @@ class CandidateOut(BaseModel):
     socks_url: str | None = None
     proxy_url: str | None = None
     xray_config: dict[str, Any] | None = None
+    hysteria_config: dict[str, Any] | None = None
 
 
 class TgProxyRuntimeOut(BaseModel):

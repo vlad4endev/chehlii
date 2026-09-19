@@ -18,7 +18,8 @@ function kindLabel(key: ProxyKey): string {
     if (key.network && key.network !== 'tcp') bits.push(key.network)
     return bits.join(' · ')
   }
-  if (key.kind === 'socks') return 'SOCKS5'
+  if (key.kind === 'hysteria2') return 'Hysteria2 · UDP'
+  if (key.kind === 'socks') return 'SOCKS'
   if (key.kind === 'http') return 'HTTP'
   return key.kind
 }
@@ -133,10 +134,11 @@ export function ProxyPanel() {
   return (
     <div>
       <p className="page__lead">
-        Telegram-бот ходит в api.telegram.org через прокси. Вставьте ключ{' '}
-        <code>vless://</code> (Reality, WS, gRPC) — на сервере поднимется локальный SOCKS
-        через xray. Подойдут и <code>socks5://</code> / <code>http://</code>. Несколько
-        ключей: бот берёт первый рабочий. Ссылки больше не показываются.
+        Telegram-бот ходит в api.telegram.org через прокси. Подойдут{' '}
+        <code>vless://</code> (Reality, WS, gRPC), <code>hysteria2://</code> / <code>hy2://</code> и
+        обычный <code>socks5://</code> (или <code>http://</code>). VLESS и Hysteria2 на сервере
+        поднимают локальный SOCKS; SOCKS/HTTP бот использует напрямую. Несколько ключей: берётся
+        первый рабочий. Ссылки больше не показываются.
       </p>
 
       <div className="card intcard">
@@ -190,7 +192,7 @@ export function ProxyPanel() {
             rows={4}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="vless://uuid@host:443?type=tcp&security=reality&pbk=…&fp=chrome&sni=…#NL"
+            placeholder={"vless://uuid@host:443?type=tcp&security=reality&pbk=…#NL\nhy2://password@host:443?sni=…&obfs=salamander&obfs-password=…#HY2\nsocks5://user:pass@host:1080#SOCKS"}
             spellCheck={false}
             autoComplete="off"
           />
