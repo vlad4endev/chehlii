@@ -409,8 +409,66 @@ _PAGE = """<!doctype html><html lang=ru><meta charset=utf-8>
 <title>casetop</title>
 <style>body{{font-family:system-ui,sans-serif;background:#f4f4f3;color:#17181a;display:grid;
 place-items:center;min-height:100vh;margin:0}}.c{{text-align:center;max-width:340px;padding:28px}}
-h1{{font-size:22px;margin:0 0 10px}}p{{color:#6d6f73;line-height:1.5}}</style>
-<div class=c><h1>{title}</h1><p>{text}</p></div>"""
+h1{{font-size:22px;margin:0 0 10px}}p{{color:#6d6f73;line-height:1.5;margin:0 0 18px}}
+a.btn{{display:inline-block;padding:12px 18px;border-radius:12px;background:#17181a;color:#fff;
+text-decoration:none;font-weight:600}}</style>
+<div class=c><h1>{title}</h1><p>{text}</p>{button}</div>"""
+
+
+def _bot_return_button(channel: str | None) -> str:
+    """Кнопка «Вернуться в бот» — Max или Telegram по каналу клиента."""
+    if channel == "max":
+        url = f"https://max.ru/{settings.max_bot_username}"
+        label = "Открыть MAX-бот"
+    else:
+        url = f"https://t.me/{settings.tg_bot_username}"
+        label = "Открыть Telegram-бот"
+    return f'<a class="btn" href="{url}">{label}</a>'
+
+
+async def _client_channel_from_params(session: AsyncSession, params: dict[str, str]) -> str | None:
+    """Канал клиента по InvId платежа или Shp_order — чтобы SuccessURL не слал всех в t.me."""
+    order_id: int | None = None
+    shp_order = params.get("Shp_order") or params.get("shp_order")
+    if shp_order and str(shp_order).isdigit():
+        order_id = int(shp_order)
+    if order_id is None:
+        inv_id = params.get("InvId") or params.get("invId") or params.get("orderId") or ""
+        if str(inv_id).isdigit():
+            payment = await session.get(Payment, int(inv_id))
+            if payment is not None:
+                order_id = payment.order_id
+    if order_id is None:
+        return None
+    order = await session.get(Order, order_id)
+    if order is None:
+        return None
+    client = await session.get(Client, order.client_id)
+    return client.channel if client else None
+
+
+@router.get("/success", response_class=HTMLResponse)
+@router.get("/robokassa/success", response_class=HTMLResponse)
+async def payment_success(request: Request, session: Session) -> str:
+    params = dict(request.query_params)
+    await _try_apply_from_redirect(session, params)
+    channel = await _client_channel_from_params(session, params)
+    return _PAGE.format(
+        title="Оплата прошла ✅",
+        text="Спасибо! Вернитесь в чат бота — продолжим оформление.",
+        button=_bot_return_button(channel),
+    )
+
+
+@router.get("/fail", response_class=HTMLResponse)
+@router.get("/robokassa/fail", response_class=HTMLResponse)
+async def payment_fail(request: Request, session: Session) -> str:
+    channel = await _client_channel_from_params(session, dict(request.query_params))
+    return _PAGE.format(
+        title="Оплата не завершена",
+        text="Платёж отменён или не прошёл. Вернитесь в бот и попробуйте снова.",
+        button=_bot_return_button(channel),
+    )
 
 
 async def _try_apply_from_redirect(session: AsyncSession, params: dict[str, str]) -> None:
@@ -451,21 +509,3 @@ async def _try_apply_from_redirect(session: AsyncSession, params: dict[str, str]
             await _apply_paid(session, payment)
     except (HTTPException, yandex_pay.YandexPayError):
         return
-
-
-@router.get("/success", response_class=HTMLResponse)
-@router.get("/robokassa/success", response_class=HTMLResponse)
-async def payment_success(request: Request, session: Session) -> str:
-    await _try_apply_from_redirect(session, dict(request.query_params))
-    return _PAGE.format(
-        title="Оплата прошла ✅", text="Спасибо! Вернитесь в чат бота — продолжим оформление."
-    )
-
-
-@router.get("/fail", response_class=HTMLResponse)
-@router.get("/robokassa/fail", response_class=HTMLResponse)
-async def payment_fail() -> str:
-    return _PAGE.format(
-        title="Оплата не завершена",
-        text="Платёж отменён или не прошёл. Вернитесь в бот и попробуйте снова.",
-    )

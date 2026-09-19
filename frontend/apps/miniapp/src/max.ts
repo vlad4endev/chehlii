@@ -27,7 +27,7 @@ interface MaxWebApp {
 
 // Публичное имя MAX-бота (для deep-link в чат бота). Совпадает с MAX_BOT_USERNAME
 // серверного compose. Переопределяется через VITE_MAX_BOT_USERNAME при сборке.
-const MAX_BOT_USERNAME = import.meta.env.VITE_MAX_BOT_USERNAME ?? 'id682401246838_bot'
+export const MAX_BOT_USERNAME = import.meta.env.VITE_MAX_BOT_USERNAME ?? 'id682401246838_bot'
 
 function maxApp(): MaxWebApp | undefined {
   return (window as unknown as { WebApp?: MaxWebApp }).WebApp

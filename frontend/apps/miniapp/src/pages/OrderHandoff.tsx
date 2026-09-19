@@ -2,17 +2,20 @@ import { useEffect } from 'react'
 
 import type { CaseType } from '@ui/types'
 
+import { isMax, MAX_BOT_USERNAME } from '../max'
 import { backButton, botStartLink } from '../telegram'
 
-// Экран после «Выбрать для заказа» вне Telegram (лендинг/браузер): подтверждает выбор
-// типа и модели, показывает, что дальше в боте, и ведёт в бот по deep link. В самом
-// Telegram этот экран не нужен — там sendData сразу передаёт выбор боту и закрывает WebApp.
-// Модель iPhone уже выбрана в приложении, поэтому в шагах её больше нет.
+// Экран после «Выбрать для заказа» вне Telegram/MAX WebApp (лендинг/браузер):
+// подтверждает выбор и ведёт в бот. В самом Telegram этот экран не нужен —
+// там sendData сразу передаёт выбор боту. В MAX заказ создаётся в CaseDetail
+// и открывается deep-link order_<id>; сюда попадаем только из браузера.
+//
+// Воронка кастома (как в боте): материалы → предоплата → макет → остаток.
 const STEPS_STANDARD = ['Напишете имя или букву', 'Внесёте предоплату', 'Выберете доставку']
 const STEPS_CUSTOM = [
   'Пришлёте фото и пожелания',
-  'Согласуете макет с дизайнером',
-  'Оплата и доставка',
+  'Внесёте предоплату',
+  'Согласуете макет — затем остаток и доставка',
 ]
 
 export function OrderHandoff({
@@ -29,6 +32,12 @@ export function OrderHandoff({
   const modelIndex = item.models.findIndex((m) => m.model_name === model)
 
   function openBot() {
+    // На всякий случай: если хэндофф всё же открыли внутри MAX — ведём в Max-бота,
+    // а не в t.me (раньше всегда открывался Telegram).
+    if (isMax()) {
+      window.open(`https://max.ru/${MAX_BOT_USERNAME}`, '_blank')
+      return
+    }
     window.open(botStartLink(item.id, caseType, modelIndex), '_blank')
   }
 

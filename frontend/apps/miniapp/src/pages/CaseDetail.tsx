@@ -34,25 +34,32 @@ export function CaseDetail({
   const selected = available.find((m) => m.model_name === model)
   const photo = mediaUrl(selected?.photo_url ?? item.photo_url)
 
+  const [orderError, setOrderError] = useState<string | null>(null)
+
   async function order() {
     if (!model || submitting) return
+    setOrderError(null)
     // Telegram: нативный sendData передаёт выбор боту и закрывает WebApp.
     if (sendOrder(item.id, caseType, model)) return
     // MAX: sendData нет — создаём заказ через backend и открываем бота deep-link'ом.
+    // При ошибке НЕ уходим в Telegram-хэндофф — иначе клиент «из Max» попадает в t.me.
     if (isMax()) {
       const user = getMaxUser()
-      if (user) {
-        setSubmitting(true)
-        try {
-          const client = await upsertClient('max', String(user.id), user.username ?? user.firstName)
-          const ord = await createOrder(client.id, item.id, caseType, model)
-          openBotWithOrder(ord.id)
-          return
-        } catch {
-          // не вышло — покажем экран-хэндофф ниже
-        } finally {
-          setSubmitting(false)
-        }
+      if (!user) {
+        setOrderError('Не удалось определить профиль MAX. Закройте и откройте каталог снова.')
+        return
+      }
+      setSubmitting(true)
+      try {
+        const client = await upsertClient('max', String(user.id), user.username ?? user.firstName)
+        const ord = await createOrder(client.id, item.id, caseType, model)
+        openBotWithOrder(ord.id)
+        return
+      } catch {
+        setOrderError('Не удалось создать заказ. Проверьте связь и нажмите ещё раз.')
+        return
+      } finally {
+        setSubmitting(false)
       }
     }
     // Лендинг/браузер: экран-хэндофф со ссылкой в бот.
@@ -163,7 +170,8 @@ export function CaseDetail({
               {submitting ? 'Оформляем…' : model ? 'Выбрать для заказа' : 'Выберите модель'}
             </button>
           </div>
-          <p className="sheet__hint">Оформление заказа продолжится в боте</p>
+          {orderError && <p className="sheet__hint" role="alert">{orderError}</p>}
+          {!orderError && <p className="sheet__hint">Оформление заказа продолжится в боте</p>}
         </>
       )}
     </div>

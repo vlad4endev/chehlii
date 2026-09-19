@@ -186,7 +186,16 @@ async def on_waiting_contact_other(msg: Message) -> None:
 @router.callback_query(F.data == "order:confirm")
 async def on_confirm(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    is_custom = data.get("is_custom", False)
+    order_id = data.get("order_id")
+    is_custom = bool(data.get("is_custom", False))
+    if order_id:
+        try:
+            order = await backend.get_order(int(order_id))
+            if order is not None:
+                is_custom = bool(order.get("is_custom", is_custom))
+                await state.update_data(is_custom=is_custom, order_id=int(order_id))
+        except Exception:  # noqa: BLE001
+            logging.warning("tg: не удалось перечитать заказ #%s", order_id, exc_info=True)
     if is_custom:
         await state.set_state(OrderFlow.waiting_materials)
         code = "msg_006б"
@@ -583,7 +592,8 @@ async def on_materials(msg: Message, state: FSMContext) -> None:
         "Проверьте кастом-чехол:\n\n"
         f"📝 Описание: {text or '—'}\n"
         f"📎 Вложений: {len(files)}\n\n"
-        "Всё верно? Нажмите «Подтвердить» — и чехол уйдёт в работу.",
+        "Всё верно? Нажмите «Подтвердить» — внесёте предоплату, "
+        "после этого дизайнер пришлёт макет на согласование.",
         reply_markup=materials_confirm_kb(),
     )
 
