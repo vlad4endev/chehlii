@@ -155,6 +155,7 @@ export function pushBrowser(event: NotifyEvent): void {
   try {
     const n = new Notification(event.title, {
       body: event.body,
+      icon: `${import.meta.env.BASE_URL}apple-touch-icon.png`,
       tag: `casetop-${event.kind}`,
       renotify: true,
     })
