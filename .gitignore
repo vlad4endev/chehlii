@@ -34,6 +34,7 @@ build/
 /tmp/
 scratchpad/
 bots/.xray/
+bots/xray
 
 # Alembic local
 backend/alembic/versions/*.pyc
