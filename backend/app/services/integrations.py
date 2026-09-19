@@ -138,7 +138,10 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             "документации API (раздел «Тестовый доступ»), не из кабинета — иначе будет "
             "401 Access denied. Склад отправителя создаётся через Platform API "
             "(warehouses/create) с адресом; в Kit CreateWarehouse адреса нет. "
-            "Ключ Геокодера уточняет координаты склада и нужен для доставки до двери."
+            "Ключ Геокодера (не OAuth Доставки) уточняет координаты и нужен только "
+            "для курьера до двери; склад Гаршина 3 создаётся по запасным координатам. "
+            "merchant_id не заполняйте — токен уже определяет магазин; чужой ID даёт "
+            "«Merchant not found»."
         ),
         "fields": [
             {
@@ -155,9 +158,9 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
             {
                 "key": "yandex.merchant_id",
-                "label": "ID магазина (merchant_id)",
+                "label": "ID мерчанта (оставьте пустым)",
                 "secret": False,
-                "placeholder": "290587090cfc4943856851c8c3b2eebf",
+                "placeholder": "только если в ЛК есть отдельные мерчанты",
             },
             {
                 "key": "yandex.platform_station_id",
@@ -215,9 +218,9 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
             {
                 "key": "yandex.geocoder_apikey",
-                "label": "API-ключ Геокодера (только для курьера до двери)",
+                "label": "API-ключ Геокодера (не OAuth Доставки)",
                 "secret": True,
-                "placeholder": "",
+                "placeholder": "UUID с developer.tech.yandex.ru",
             },
         ],
     },

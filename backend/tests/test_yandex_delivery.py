@@ -284,6 +284,49 @@ def test_build_warehouse_body_tomilino_address():
     assert body["merchant_id"] == "m-1"
 
 
+async def test_geocode_rejects_delivery_oauth_without_http():
+    with pytest.raises(yd.YandexDeliveryError, match="OAuth-токен Доставки"):
+        await yd.geocode("y0_AgAAAA-fake-delivery-token", "Томилино, улица Гаршина, 3")
+
+
+async def test_resolve_warehouse_geo_keeps_fallback_when_geocoder_forbidden(monkeypatch):
+    """Битый ключ Геокодера не блокирует склад: остаются запасные координаты БЦ."""
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, **kw):
+            assert "geocode-maps.yandex.ru" in url
+            return _FakeResponse(
+                403, {"statusCode": 403, "error": "Forbidden", "message": "Invalid api key"}
+            )
+
+        async def request(self, method, url, **kw):
+            if url.endswith("/location/detect"):
+                return _FakeResponse(200, {"variants": [{"geo_id": 10716}]})
+            raise AssertionError(f"неожиданный запрос: {url}")
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+    lat, lon, geo_id = await yd.resolve_warehouse_geo(
+        {**CFG, "geocoder_apikey": "11111111-2222-3333-4444-555555555555"},
+        address=str(yd.TOMILINO_WAREHOUSE["full_address"]),
+        latitude=float(yd.TOMILINO_WAREHOUSE["latitude"]),
+        longitude=float(yd.TOMILINO_WAREHOUSE["longitude"]),
+    )
+    assert (lat, lon) == (
+        float(yd.TOMILINO_WAREHOUSE["latitude"]),
+        float(yd.TOMILINO_WAREHOUSE["longitude"]),
+    )
+    assert geo_id == 10716
+
+
 async def test_ensure_warehouse_reuses_existing(monkeypatch):
     _fake_client(
         {
@@ -363,3 +406,43 @@ async def test_ensure_warehouse_creates_when_missing(monkeypatch):
     assert seen["body"]["location"]["address"]["house"] == "3"
     assert seen["body"]["location"]["address"]["geo_id"] == 10716
     assert seen["body"]["contact"]["phone"] == "+79990000000"
+
+
+async def test_create_warehouse_retries_without_unknown_merchant(monkeypatch):
+    """merchant_id из доки/чужого кабинета: Яндекс 404, повтор без поля проходит."""
+    seen: list[dict] = []
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            if not url.endswith("/warehouses/create"):
+                raise AssertionError(url)
+            body = kw.get("json") or {}
+            seen.append(body)
+            if body.get("merchant_id"):
+                return _FakeResponse(
+                    404, text='{"code":"not_found","message":"Merchant not found"}'
+                )
+            return _FakeResponse(200, {"station_id": "st-ok"})
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+    station = await yd.create_warehouse(
+        CFG,
+        {
+            "client_warehouse_id": "tomilino-garshina-3",
+            "name": "Томилино, Гаршина 3",
+            "merchant_id": "a1899c66801048d090cac6d0efa03a3a",
+            "contact": {"phone": "+79990000000"},
+        },
+    )
+    assert station == "st-ok"
+    assert "merchant_id" in seen[0]
+    assert "merchant_id" not in seen[1]

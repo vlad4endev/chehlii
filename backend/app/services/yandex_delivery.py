@@ -46,6 +46,12 @@ def sanitize_token(raw: str | None) -> str:
     return "".join(token.split())
 
 
+def _looks_like_delivery_oauth(apikey: str) -> bool:
+    """OAuth Доставки (`y0_…`) в поле Геокодера Яндекс отвечает 403 Invalid api key."""
+    key = sanitize_token(apikey).lower()
+    return key.startswith("y0_") or key.startswith("y1_")
+
+
 def base_url(is_test: bool) -> str:
     return TEST if is_test else PROD
 
@@ -127,16 +133,31 @@ async def pickup_points(cfg: dict, *, geo_id: int | None = None, limit: int = 50
 
 async def geocode(apikey: str, address: str) -> tuple[float, float]:
     """Адрес → (широта, долгота). Нужен только для курьера до двери."""
+    key = sanitize_token(apikey)
+    if not key:
+        raise YandexDeliveryError("не задан API-ключ Геокодера")
+    if _looks_like_delivery_oauth(key):
+        raise YandexDeliveryError(
+            "в поле Геокодера вставлен OAuth-токен Доставки. Нужен отдельный ключ "
+            "«JavaScript API и HTTP Геокодер» из Кабинета разработчика "
+            "(developer.tech.yandex.ru), UUID вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        )
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(
             GEOCODER,
             params={
-                "apikey": apikey,
+                "apikey": key,
                 "geocode": address,
                 "format": "json",
                 "lang": "ru_RU",
                 "results": 1,
             },
+        )
+    if r.status_code == 403:
+        raise YandexDeliveryError(
+            "Геокодер отклонил ключ (403 Invalid api key). Нужен ключ сервиса "
+            "«JavaScript API и HTTP Геокодер» с developer.tech.yandex.ru, не OAuth "
+            "Доставки. Если в кабинете ограничение по IP — добавьте адрес этого сервера"
         )
     if r.status_code >= 400:
         raise YandexDeliveryError(f"Геокодер: {r.status_code} {r.text[:200]}")
@@ -470,12 +491,24 @@ def _warehouse_row(w: dict) -> dict:
     }
 
 
+def _unknown_merchant(err: YandexDeliveryError) -> bool:
+    """Чужой merchant_id: токен уже определяет магазин, поле нужно только субагентам."""
+    text = str(err).lower()
+    return "merchant not found" in text or "merchant_not_found" in text
+
+
 async def warehouses(cfg: dict) -> list[dict]:
     """Склады отправителя: отсюда берётся `platform_station_id` для заявки."""
     body: dict[str, Any] = {"filter": {}}
     if cfg.get("merchant_id"):
         body["filter"]["merchant_id"] = cfg["merchant_id"]
-    data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json=body)
+    try:
+        data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json=body)
+    except YandexDeliveryError as e:
+        if body["filter"].get("merchant_id") and _unknown_merchant(e):
+            data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json={"filter": {}})
+        else:
+            raise
     return [_warehouse_row(w) for w in data.get("warehouses") or []]
 
 
@@ -496,7 +529,18 @@ def _same_warehouse(row: dict, wanted: dict) -> bool:
 
 async def create_warehouse(cfg: dict, body: dict) -> str:
     """Создать склад отправителя. Ответ — `station_id` (= platform_station_id)."""
-    data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/create", json=body)
+    try:
+        data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/create", json=body)
+    except YandexDeliveryError as e:
+        if body.get("merchant_id") and _unknown_merchant(e):
+            data = await _request(
+                cfg,
+                "POST",
+                "/api/b2b/platform/warehouses/create",
+                json={k: v for k, v in body.items() if k != "merchant_id"},
+            )
+        else:
+            raise
     station_id = data.get("station_id")
     if not station_id:
         raise YandexDeliveryError("не получили station_id при создании склада")
@@ -510,7 +554,12 @@ async def resolve_warehouse_geo(
     lat, lon = latitude, longitude
     apikey = (cfg.get("geocoder_apikey") or "").strip()
     if apikey:
-        lat, lon = await geocode(apikey, address)
+        try:
+            lat, lon = await geocode(apikey, address)
+        except YandexDeliveryError:
+            # Склад уже знает точку (БЦ «Звёздный»). Битый ключ Геокодера не должен
+            # блокировать warehouses/create — курьеру до двери ключ поправят отдельно.
+            lat, lon = latitude, longitude
     try:
         geo_id = await detect_geo_id(cfg, address)
     except YandexDeliveryError:

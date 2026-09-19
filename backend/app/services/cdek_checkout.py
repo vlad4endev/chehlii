@@ -202,7 +202,8 @@ async def load_yandex_cfg(session: AsyncSession) -> dict:
     return {
         "token": token,
         "is_test": test in _TRUE,
-        "merchant_id": await integrations.get(session, "yandex.merchant_id"),
+        "merchant_id": (await integrations.get(session, "yandex.merchant_id") or "").strip()
+        or None,
         "platform_station_id": await integrations.get(session, "yandex.platform_station_id"),
         "last_mile_policy": await integrations.get(
             session, "yandex.last_mile_policy", "time_interval"
