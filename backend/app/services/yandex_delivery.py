@@ -345,6 +345,24 @@ def map_status(status: str | None) -> str | None:
     return None
 
 
+# Склад отгрузки по умолчанию. Kit CreateWarehouse принимает только title —
+# адрес для Доставки уходит в Platform API `warehouses/create`.
+TOMILINO_WAREHOUSE = {
+    "client_warehouse_id": "tomilino-garshina-3",
+    "name": "Томилино, Гаршина 3",
+    "full_address": "Россия, Московская область, Томилино, улица Гаршина, 3",
+    "city": "Томилино",
+    "country": "Россия",
+    "region": "Московская область",
+    "street": "улица Гаршина",
+    "house": "3",
+    "postal_code": "140070",
+    # БЦ «Звёздный»; Геокодер при наличии ключа уточнит точку.
+    "latitude": 55.5574,
+    "longitude": 37.9476,
+}
+
+
 # ── Отмена, ярлыки, склады ─────────────────────────────
 async def cancel(cfg: dict, request_id: str) -> dict:
     """Отменить заявку. Курьерскую — до статуса DELIVERY_TRANSPORTATION_RECIPIENT."""
@@ -374,23 +392,192 @@ async def generate_label(cfg: dict, request_id: str, *, size_mm: str = "210x297"
     )
 
 
+def _split_person_name(name: str) -> tuple[str, str]:
+    first, _, last = (name or "").strip().partition(" ")
+    return first or "Отправитель", last or "—"
+
+
+def build_warehouse_body(
+    *,
+    name: str,
+    client_warehouse_id: str,
+    latitude: float,
+    longitude: float,
+    city: str,
+    house: str,
+    phone: str,
+    street: str | None = None,
+    country: str = "Россия",
+    region: str | None = None,
+    postal_code: str | None = None,
+    geo_id: int | None = None,
+    contact_name: str | None = None,
+    email: str | None = None,
+    merchant_id: str | None = None,
+    comment: str | None = None,
+) -> dict[str, Any]:
+    """Тело `warehouses/create`. Телефон обязателен, координаты — тоже."""
+    phone = "".join((phone or "").split())
+    if not phone:
+        raise YandexDeliveryError("для склада нужен телефон отправителя")
+    first, last = _split_person_name(contact_name or "")
+    address: dict[str, Any] = {
+        "city": city,
+        "country": country,
+        "house": house,
+    }
+    if street:
+        address["street"] = street
+    if region:
+        address["region"] = region
+    if postal_code:
+        address["postal_code"] = postal_code
+    if geo_id is not None:
+        address["geo_id"] = geo_id
+    location: dict[str, Any] = {
+        "coordinates": {"latitude": latitude, "longitude": longitude},
+        "address": address,
+    }
+    if comment:
+        location["comment"] = comment
+    contact: dict[str, Any] = {
+        "first_name": first,
+        "last_name": last,
+        "phone": phone,
+    }
+    if email:
+        contact["email"] = email
+    body: dict[str, Any] = {
+        "client_warehouse_id": client_warehouse_id,
+        "name": name,
+        "location": location,
+        "contact": contact,
+    }
+    if merchant_id:
+        body["merchant_id"] = merchant_id
+    return body
+
+
+def _warehouse_row(w: dict) -> dict:
+    addr = ((w.get("location") or {}).get("address")) or {}
+    return {
+        "station_id": w.get("station_id"),
+        "client_warehouse_id": w.get("client_warehouse_id"),
+        "name": w.get("name"),
+        "city": addr.get("city"),
+        "street": addr.get("street"),
+        "house": addr.get("house"),
+    }
+
+
 async def warehouses(cfg: dict) -> list[dict]:
     """Склады отправителя: отсюда берётся `platform_station_id` для заявки."""
     body: dict[str, Any] = {"filter": {}}
     if cfg.get("merchant_id"):
         body["filter"]["merchant_id"] = cfg["merchant_id"]
     data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json=body)
-    out = []
-    for w in data.get("warehouses") or []:
-        addr = ((w.get("location") or {}).get("address")) or {}
-        out.append(
-            {
-                "station_id": w.get("station_id"),
-                "name": w.get("name"),
-                "city": addr.get("city"),
-            }
-        )
-    return out
+    return [_warehouse_row(w) for w in data.get("warehouses") or []]
+
+
+def _same_warehouse(row: dict, wanted: dict) -> bool:
+    if row.get("client_warehouse_id") and row["client_warehouse_id"] == wanted.get(
+        "client_warehouse_id"
+    ):
+        return True
+    if row.get("name") and row["name"] == wanted.get("name"):
+        return True
+    return (
+        (row.get("city") or "") == (wanted.get("city") or "")
+        and (row.get("street") or "") == (wanted.get("street") or "")
+        and (row.get("house") or "") == (wanted.get("house") or "")
+        and bool(row.get("city") and row.get("house"))
+    )
+
+
+async def create_warehouse(cfg: dict, body: dict) -> str:
+    """Создать склад отправителя. Ответ — `station_id` (= platform_station_id)."""
+    data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/create", json=body)
+    station_id = data.get("station_id")
+    if not station_id:
+        raise YandexDeliveryError("не получили station_id при создании склада")
+    return str(station_id)
+
+
+async def resolve_warehouse_geo(
+    cfg: dict, *, address: str, latitude: float, longitude: float
+) -> tuple[float, float, int | None]:
+    """Координаты + geo_id города. Без ключа Геокодера остаются запасные координаты."""
+    lat, lon = latitude, longitude
+    apikey = (cfg.get("geocoder_apikey") or "").strip()
+    if apikey:
+        lat, lon = await geocode(apikey, address)
+    try:
+        geo_id = await detect_geo_id(cfg, address)
+    except YandexDeliveryError:
+        geo_id = None
+    return lat, lon, geo_id
+
+
+async def ensure_warehouse(
+    cfg: dict,
+    *,
+    name: str,
+    client_warehouse_id: str,
+    city: str,
+    house: str,
+    phone: str,
+    street: str | None = None,
+    full_address: str | None = None,
+    country: str = "Россия",
+    region: str | None = None,
+    postal_code: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    contact_name: str | None = None,
+    email: str | None = None,
+) -> tuple[str, bool]:
+    """Вернуть station_id существующего склада или создать новый.
+
+    Второй элемент — True, если склад уже был в Яндексе (повторно не создаём).
+    """
+    wanted = {
+        "client_warehouse_id": client_warehouse_id,
+        "name": name,
+        "city": city,
+        "street": street,
+        "house": house,
+    }
+    try:
+        found = await warehouses(cfg)
+    except YandexDeliveryError:
+        found = []
+    for row in found:
+        if _same_warehouse(row, wanted) and row.get("station_id"):
+            return str(row["station_id"]), True
+
+    lat = latitude if latitude is not None else TOMILINO_WAREHOUSE["latitude"]
+    lon = longitude if longitude is not None else TOMILINO_WAREHOUSE["longitude"]
+    query = full_address or ", ".join(p for p in (country, region, city, street, house) if p)
+    lat, lon, geo_id = await resolve_warehouse_geo(cfg, address=query, latitude=lat, longitude=lon)
+    body = build_warehouse_body(
+        name=name,
+        client_warehouse_id=client_warehouse_id,
+        latitude=lat,
+        longitude=lon,
+        city=city,
+        house=house,
+        phone=phone,
+        street=street,
+        country=country,
+        region=region,
+        postal_code=postal_code,
+        geo_id=geo_id,
+        contact_name=contact_name,
+        email=email,
+        merchant_id=cfg.get("merchant_id"),
+        comment=query,
+    )
+    return await create_warehouse(cfg, body), False
 
 
 async def check_connection(cfg: dict) -> tuple[bool, str]:

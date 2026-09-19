@@ -136,8 +136,9 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             "dostavka.yandex.ru → «Интеграция». Токен из ЛК работает только на продакшене: "
             "оставьте «Тестовый режим» = false. Для песочницы нужен тестовый токен из "
             "документации API (раздел «Тестовый доступ»), не из кабинета — иначе будет "
-            "401 Access denied. Ключ Геокодера нужен только для доставки до двери; "
-            "для ПВЗ он не требуется."
+            "401 Access denied. Склад отправителя создаётся через Platform API "
+            "(warehouses/create) с адресом; в Kit CreateWarehouse адреса нет. "
+            "Ключ Геокодера уточняет координаты склада и нужен для доставки до двери."
         ),
         "fields": [
             {
@@ -162,7 +163,25 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "key": "yandex.platform_station_id",
                 "label": "ID склада отправителя (platform_id)",
                 "secret": False,
-                "placeholder": "e1139f6d-e34f-47a9-a55f-31f032a861a6",
+                "placeholder": "создайте склад кнопкой ниже или вставьте UUID",
+            },
+            {
+                "key": "yandex.sender_name",
+                "label": "Контакт на складе (имя)",
+                "secret": False,
+                "placeholder": "как к курьеру обращаться",
+            },
+            {
+                "key": "yandex.sender_phone",
+                "label": "Телефон склада",
+                "secret": False,
+                "placeholder": "+79990000000",
+            },
+            {
+                "key": "yandex.sender_email",
+                "label": "Email склада",
+                "secret": False,
+                "placeholder": "optional@example.com",
             },
             {
                 "key": "yandex.last_mile_policy",

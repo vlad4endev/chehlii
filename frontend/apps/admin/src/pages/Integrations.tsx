@@ -70,7 +70,13 @@ const META: Record<string, ServiceMeta> = {
     category: 'delivery',
     icon: 'box',
     blurb: 'ПВЗ и доставка до двери',
-    docs: [{ label: 'Яндекс Доставка', href: 'https://dostavka.yandex.ru' }],
+    docs: [
+      { label: 'Яндекс Доставка', href: 'https://dostavka.yandex.ru' },
+      {
+        label: 'Создание склада',
+        href: 'https://yandex.ru/support/delivery-profile/ru/api/other-day/ref/6.-Upravlenie-skladami-i-otgruzkami/apib2bplatformwarehousescreate-post',
+      },
+    ],
     accessKeys: ['yandex.oauth_token', 'yandex.test'],
     booleanKeys: ['yandex.test'],
     options: {
@@ -486,15 +492,6 @@ function ServiceEditor({
     const nameField = group.fields.find((f) => f.key === 'yandex.sender_name')
     const emailField = group.fields.find((f) => f.key === 'yandex.sender_email')
     const phone = (phoneField ? rawValue(phoneField, edits) : '').trim()
-    if (!phone) {
-      const next = {
-        ok: false,
-        detail: 'Укажите телефон склада — Яндекс не создаст точку отгрузки без контакта.',
-      }
-      setStatus(next)
-      onLive(next)
-      return
-    }
     setCreatingWh(true)
     try {
       if (group.fields.some((f) => f.key in edits)) {
@@ -505,7 +502,7 @@ function ServiceEditor({
         }
       }
       const created = await createYandexWarehouse({
-        phone,
+        phone: phone || undefined,
         contact_name: nameField ? rawValue(nameField, edits).trim() || undefined : undefined,
         email: emailField ? rawValue(emailField, edits).trim() || undefined : undefined,
       })

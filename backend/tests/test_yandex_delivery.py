@@ -238,3 +238,128 @@ async def test_check_connection_lists_warehouses(monkeypatch):
     ok, detail = await yd.check_connection(CFG)
     assert ok is True
     assert "Склад МСК [st-1]" in detail
+
+
+def test_build_warehouse_body_requires_phone():
+    with pytest.raises(yd.YandexDeliveryError):
+        yd.build_warehouse_body(
+            name="Склад",
+            client_warehouse_id="wh-1",
+            latitude=55.55,
+            longitude=37.94,
+            city="Томилино",
+            house="3",
+            phone="  ",
+        )
+
+
+def test_build_warehouse_body_tomilino_address():
+    body = yd.build_warehouse_body(
+        name=str(yd.TOMILINO_WAREHOUSE["name"]),
+        client_warehouse_id=str(yd.TOMILINO_WAREHOUSE["client_warehouse_id"]),
+        latitude=float(yd.TOMILINO_WAREHOUSE["latitude"]),
+        longitude=float(yd.TOMILINO_WAREHOUSE["longitude"]),
+        city=str(yd.TOMILINO_WAREHOUSE["city"]),
+        house=str(yd.TOMILINO_WAREHOUSE["house"]),
+        phone="+7 999 000 00 00",
+        street=str(yd.TOMILINO_WAREHOUSE["street"]),
+        region=str(yd.TOMILINO_WAREHOUSE["region"]),
+        postal_code=str(yd.TOMILINO_WAREHOUSE["postal_code"]),
+        geo_id=10716,
+        contact_name="Иван Петров",
+        merchant_id="m-1",
+    )
+    assert body["client_warehouse_id"] == "tomilino-garshina-3"
+    assert body["location"]["address"] == {
+        "city": "Томилино",
+        "country": "Россия",
+        "house": "3",
+        "street": "улица Гаршина",
+        "region": "Московская область",
+        "postal_code": "140070",
+        "geo_id": 10716,
+    }
+    assert body["contact"]["phone"] == "+79990000000"
+    assert body["contact"]["first_name"] == "Иван"
+    assert body["merchant_id"] == "m-1"
+
+
+async def test_ensure_warehouse_reuses_existing(monkeypatch):
+    _fake_client(
+        {
+            "/warehouses/list": _FakeResponse(
+                200,
+                {
+                    "warehouses": [
+                        {
+                            "station_id": "st-tom",
+                            "client_warehouse_id": "tomilino-garshina-3",
+                            "name": "Томилино, Гаршина 3",
+                            "location": {
+                                "address": {
+                                    "city": "Томилино",
+                                    "street": "улица Гаршина",
+                                    "house": "3",
+                                }
+                            },
+                        }
+                    ]
+                },
+            )
+        },
+        monkeypatch,
+    )
+    station, reused = await yd.ensure_warehouse(
+        CFG,
+        name="Томилино, Гаршина 3",
+        client_warehouse_id="tomilino-garshina-3",
+        city="Томилино",
+        house="3",
+        phone="+79990000000",
+        street="улица Гаршина",
+    )
+    assert station == "st-tom"
+    assert reused is True
+
+
+async def test_ensure_warehouse_creates_when_missing(monkeypatch):
+    seen: dict = {}
+
+    class Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            if url.endswith("/warehouses/list"):
+                return _FakeResponse(200, {"warehouses": []})
+            if url.endswith("/location/detect"):
+                return _FakeResponse(200, {"variants": [{"geo_id": 10716}]})
+            if url.endswith("/warehouses/create"):
+                seen["body"] = kw.get("json")
+                return _FakeResponse(200, {"station_id": "st-new"})
+            raise AssertionError(f"неожиданный запрос: {url}")
+
+    monkeypatch.setattr(yd.httpx, "AsyncClient", Client)
+    station, reused = await yd.ensure_warehouse(
+        CFG,
+        name="Томилино, Гаршина 3",
+        client_warehouse_id="tomilino-garshina-3",
+        city="Томилино",
+        house="3",
+        phone="+79990000000",
+        street="улица Гаршина",
+        full_address=str(yd.TOMILINO_WAREHOUSE["full_address"]),
+        region="Московская область",
+        postal_code="140070",
+    )
+    assert station == "st-new"
+    assert reused is False
+    assert seen["body"]["location"]["address"]["house"] == "3"
+    assert seen["body"]["location"]["address"]["geo_id"] == 10716
+    assert seen["body"]["contact"]["phone"] == "+79990000000"
