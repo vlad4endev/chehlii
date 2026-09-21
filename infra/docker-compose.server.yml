@@ -116,3 +116,13 @@ volumes:
   redisdata:
   caddy_data:
   caddy_config:
+
+# IPv6 нужен Telegram-боту: с этого VPS api.telegram.org по IPv4 не отвечает,
+# а по IPv6 с хоста открывается. Без enable_ipv6 контейнеры остаются только на IPv4.
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+        - subnet: fd00:c5e7:6513:1::/64
