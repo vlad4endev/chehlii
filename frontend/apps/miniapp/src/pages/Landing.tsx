@@ -6,11 +6,12 @@ import type { CaseType } from '@ui/types'
 import { fetchReviews, mediaUrl, type ReviewItem } from '@ui/api'
 
 import heroCasePhoto from '../assets/hero-case.webp'
+import { MAX_BOT_USERNAME } from '../max'
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
-// Дефолты — тестовые боты. Заменяются через .env (VITE_TG_URL / VITE_MAX_URL).
-const TG_URL = (import.meta.env.VITE_TG_URL as string | undefined) ?? 'https://t.me/chehltest_bot'
-const MAX_URL = (import.meta.env.VITE_MAX_URL as string | undefined) ?? 'https://max.ru/id682401246838_bot'
+// Дефолты — боевые боты. Переопределяются через VITE_TG_URL / VITE_MAX_URL при сборке.
+const TG_URL = (import.meta.env.VITE_TG_URL as string | undefined) ?? 'https://t.me/CasetopOrderManager_bot'
+const MAX_URL = (import.meta.env.VITE_MAX_URL as string | undefined) ?? `https://max.ru/${MAX_BOT_USERNAME}`
 
 interface Hero {
   image_url: string | null

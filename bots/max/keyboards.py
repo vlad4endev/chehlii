@@ -45,7 +45,13 @@ def main_menu_kb(bot_username: str | None, bot_id: int | None):
     # Каталог — мини-приложение (OpenApp привязан к боту). Если username неизвестен —
     # callback-заглушка с пояснением.
     if bot_username:
-        b.row(OpenAppButton(text=BTN_CATALOG, web_app=bot_username, contact_id=bot_id))
+        b.row(
+            OpenAppButton(
+                text=BTN_CATALOG,
+                web_app=f"https://max.ru/{bot_username}",
+                contact_id=bot_id,
+            )
+        )
     else:
         b.row(CallbackButton(text=BTN_CATALOG, payload=CB_CATALOG))
     b.row(CallbackButton(text=BTN_DISCOUNT, payload=CB_DISCOUNT))

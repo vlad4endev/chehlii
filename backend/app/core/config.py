@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     tg_bot_token: str | None = None
     max_bot_token: str | None = None
     tg_bot_username: str = "chehltest_bot"
-    max_bot_username: str = "id682401246838_bot"
+    max_bot_username: str = "id773186317352_bot"
 
     # Оплата (R3 — выбор шлюза до Спринта 4)
     payment_gateway_tg: str | None = None

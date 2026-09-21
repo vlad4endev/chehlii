@@ -27,7 +27,7 @@ interface MaxWebApp {
 
 // Публичное имя MAX-бота (для deep-link в чат бота). Совпадает с MAX_BOT_USERNAME
 // серверного compose. Переопределяется через VITE_MAX_BOT_USERNAME при сборке.
-export const MAX_BOT_USERNAME = import.meta.env.VITE_MAX_BOT_USERNAME ?? 'id682401246838_bot'
+export const MAX_BOT_USERNAME = import.meta.env.VITE_MAX_BOT_USERNAME ?? 'id773186317352_bot'
 
 function maxApp(): MaxWebApp | undefined {
   return (window as unknown as { WebApp?: MaxWebApp }).WebApp
@@ -64,10 +64,11 @@ export function initMax(): void {
 // Открыть чат бота со стартовым payload order_<id> — бот подхватит заказ по id
 // (GET /orders/{id}) и покажет подтверждение.
 export function openBotWithOrder(orderId: number): void {
-  const w = realMax()
   const url = `https://max.ru/${MAX_BOT_USERNAME}?start=order_${orderId}`
-  if (w?.openMaxLink) w.openMaxLink(url)
-  else if (w?.openLink) w.openLink(url)
+  const w = realMax()
+  // openMaxLink возвращает в бота, к которому привязано мини-приложение в MAX.
+  // Если WebApp ещё числится за старым ботом, заказ уйдёт не туда — открываем URL явно.
+  if (w?.openLink) w.openLink(url)
   else window.open(url, '_blank')
 }
 

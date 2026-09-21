@@ -32,10 +32,11 @@ export function OrderHandoff({
   const modelIndex = item.models.findIndex((m) => m.model_name === model)
 
   function openBot() {
-    // На всякий случай: если хэндофф всё же открыли внутри MAX — ведём в Max-бота,
-    // а не в t.me (раньше всегда открывался Telegram).
     if (isMax()) {
-      window.open(`https://max.ru/${MAX_BOT_USERNAME}`, '_blank')
+      const url = `https://max.ru/${MAX_BOT_USERNAME}`
+      const w = (window as unknown as { WebApp?: { openLink?(u: string): void } }).WebApp
+      if (w?.openLink) w.openLink(url)
+      else window.open(url, '_blank')
       return
     }
     window.open(botStartLink(item.id, caseType, modelIndex), '_blank')
