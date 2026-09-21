@@ -1,4 +1,4 @@
-# Серверная конфигурация выделенного VPS 147.45.96.86 (msk-1-vm-casetop).
+# Серверная конфигурация выделенного VPS 185.207.65.130 (msk-1-vm-casetop).
 # Запуск:  docker compose -p casetop --env-file .env.server -f docker-compose.server.yml --profile bots --profile max up -d --build
 # Postgres/Redis только внутри сети проекта. Снаружи — Caddy :80/:443 → backend:8000.
 # 127.0.0.1:8090 оставлен для отладки на самой машине.
