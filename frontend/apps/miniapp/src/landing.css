@@ -477,10 +477,12 @@ body:has(.lp) { background: var(--lp-paper); }
 }
 @media (max-width: 720px) { .lp-foot__inner { grid-template-columns: 1fr; } }
 .lp-foot__brand { font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; text-transform: lowercase; color: var(--lp-ink); }
-.lp-foot__cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px; }
+.lp-foot__cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
+@media (max-width: 720px) { .lp-foot__cols { grid-template-columns: 1fr; gap: 28px; } }
 .lp-foot__cols a { display: block; color: var(--lp-ink-soft); text-decoration: none; font-size: 14px; padding: 5px 0; transition: color 0.15s; }
 .lp-foot__cols a:hover { color: var(--lp-ink); }
 .lp-foot__head { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lp-ink-faint); font-weight: 700; margin-bottom: 10px; }
+.lp-foot__legal { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--lp-ink-soft); }
 .lp-foot__copy { grid-column: 1 / -1; padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--lp-line); font-size: 12px; color: var(--lp-ink-faint); }
 
 /* Уважаем предпочтения по редукции анимаций */

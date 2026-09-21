@@ -272,12 +272,19 @@ export function Landing({ items }: { items: CaseType[] }) {
               <a href="#reviews">Отзывы</a>
             </div>
             <div>
+              <div className="lp-foot__head">Реквизиты</div>
+              <p className="lp-foot__legal">ИП Машеро Богдан Олегович</p>
+              <p className="lp-foot__legal">ИНН 773186317352</p>
+            </div>
+            <div>
               <div className="lp-foot__head">Мессенджеры</div>
               {TG_URL && <a href={TG_URL} target="_blank" rel="noreferrer">Telegram</a>}
               {MAX_URL && <a href={MAX_URL} target="_blank" rel="noreferrer">MAX</a>}
             </div>
           </div>
-          <div className="lp-foot__copy">© {new Date().getFullYear()} casetop — индивидуальные чехлы</div>
+          <div className="lp-foot__copy">
+            © {new Date().getFullYear()} ИП Машеро Богдан Олегович · ИНН 773186317352
+          </div>
         </div>
       </footer>
     </div>
