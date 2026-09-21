@@ -5,10 +5,10 @@
 но он не возвращает стоимость, а клиент оплачивает доставку до её создания
 (статус `delivery_payment` перед `shipped`) — поэтому цена нужна заранее.
 
-ПВЗ работает на одном токене Доставки (`location/detect` → `pickup-points/list`).
-Курьер до двери требует координат: `custom_location` принимает только широту/долготу,
-а `location/detect` отдаёт лишь `geo_id` города — поэтому для адресной доставки нужен
-отдельный ключ Геокодера («Настройки → Интеграции»).
+ПВЗ: `location/detect` (точный geo_id города) → `pickup-points/list`. Без geo_id
+API отдаёт все точки России — первые N выглядят случайными. Курьер до двери:
+`custom_location` принимает либо координаты, либо адрес в `details` (ключ Геокодера
+не обязателен; это отдельный продукт Карт, не токен Доставки).
 
 Единицы API: деньги — копейки, вес — граммы, габариты — сантиметры.
 Прод: https://b2b-authproxy.taxi.yandex.net, тест: https://b2b.taxi.tst.yandex.net.
@@ -17,10 +17,14 @@
 
 from __future__ import annotations
 
+import logging
+import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 PROD = "https://b2b-authproxy.taxi.yandex.net"
 TEST = "https://b2b.taxi.tst.yandex.net"
@@ -50,6 +54,39 @@ def _looks_like_delivery_oauth(apikey: str) -> bool:
     """OAuth Доставки (`y0_…`) в поле Геокодера Яндекс отвечает 403 Invalid api key."""
     key = sanitize_token(apikey).lower()
     return key.startswith("y0_") or key.startswith("y1_")
+
+
+def normalize_phone(raw: str | None) -> str:
+    """Схема заявки ждёт «+79529999999»; клиент мог ввести «8 (952) 999-99-99»."""
+    digits = "".join(c for c in (raw or "") if c.isdigit())
+    if len(digits) == 11 and digits[0] in "78":
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
+    return f"+{digits}" if digits else ""
+
+
+# Коды из справочника ошибок Platform API → что делать оператору.
+_ERROR_HINTS = {
+    "pickups_not_configured": (
+        "у склада не настроен график забора. Через API он не создаётся — его задаёт "
+        "персональный менеджер Яндекс Доставки (или ЛК) для этого склада"
+    ),
+    "no_delivery_options": (
+        "нет вариантов доставки на этот интервал забора: проверьте график забора склада "
+        "и «Забор со склада через, ч» в настройках"
+    ),
+}
+
+
+def _api_error(path: str, r: httpx.Response) -> YandexDeliveryError:
+    try:
+        code = str((r.json() or {}).get("code") or "")
+    except ValueError:
+        code = ""
+    if code in _ERROR_HINTS:
+        return YandexDeliveryError(f"{path}: {_ERROR_HINTS[code]} [{code}]")
+    return YandexDeliveryError(f"{path}: {r.status_code} {r.text[:300]}")
 
 
 def base_url(is_test: bool) -> str:
@@ -98,37 +135,132 @@ async def _request(
             params=params,
         )
     if r.status_code >= 400:
-        raise YandexDeliveryError(f"{path}: {r.status_code} {r.text[:300]}")
+        raise _api_error(path, r)
     return r.content if raw else r.json()
 
 
 # ── Геолокация и ПВЗ ───────────────────────────────────
+def _place_query(text: str) -> str:
+    return " ".join((text or "").lower().replace("ё", "е").replace(",", " ").split())
+
+
+def _geo_id_value(raw: Any) -> int | None:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def pick_geo_id(location: str, variants: list[dict]) -> int | None:
+    """Не брать первый попавшийся вариант: «Томилино» не должно стать Москвой."""
+    query = _place_query(location)
+    scored: list[tuple[int, int]] = []
+    for row in variants:
+        geo_id = _geo_id_value(row.get("geo_id"))
+        if geo_id is None:
+            continue
+        addr = _place_query(str(row.get("address") or ""))
+        if query and addr == query:
+            scored.append((3, geo_id))
+        elif query and (query in addr or addr in query):
+            scored.append((2, geo_id))
+        elif query and any(tok in addr for tok in query.split() if len(tok) > 2):
+            scored.append((1, geo_id))
+    if scored:
+        scored.sort(reverse=True)
+        return scored[0][1]
+    labeled = any(_place_query(str(row.get("address") or "")) for row in variants)
+    if query and labeled:
+        return None
+    for row in variants:
+        geo_id = _geo_id_value(row.get("geo_id"))
+        if geo_id is not None:
+            return geo_id
+    return None
+
+
+def _point_matches_location(point: dict, location: str) -> bool:
+    query = _place_query(location)
+    if not query:
+        return True
+    hay = _place_query(f"{point.get('address') or ''} {point.get('name') or ''}")
+    tokens = [tok for tok in query.split() if len(tok) > 2 and not tok.isdigit()]
+    if tokens:
+        return all(tok in hay for tok in tokens)
+    return query in hay
+
+
+def _match_score(point: dict, location: str) -> int:
+    hay = _place_query(f"{point.get('address') or ''} {point.get('name') or ''}")
+    return sum(tok in hay for tok in _place_query(location).split() if len(tok) > 2)
+
+
+def _distance_km(origin: tuple[float, float], point: dict) -> float:
+    lat, lon = point.get("latitude"), point.get("longitude")
+    if lat is None or lon is None:
+        return math.inf
+    la1, lo1, la2, lo2 = map(math.radians, (*origin, float(lat), float(lon)))
+    h = (
+        math.sin((la2 - la1) / 2) ** 2
+        + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    )
+    return 12742 * math.asin(math.sqrt(h))
+
+
 async def detect_geo_id(cfg: dict, location: str) -> int | None:
     """Адрес или его фрагмент → geo_id города (для фильтра списка ПВЗ)."""
     data = await _request(
         cfg, "POST", "/api/b2b/platform/location/detect", json={"location": location}
     )
-    variants = data.get("variants") or []
-    return variants[0].get("geo_id") if variants else None
+    return pick_geo_id(location, data.get("variants") or [])
 
 
-async def pickup_points(cfg: dict, *, geo_id: int | None = None, limit: int = 50) -> list[dict]:
-    """Список ПВЗ (пункты выдачи). Пустое тело = все доступные точки."""
-    body: dict[str, Any] = {"type": "pickup_point"}
-    if geo_id is not None:
-        body["geo_id"] = geo_id
+def _map_pickup_point(p: dict) -> dict:
+    return {
+        "id": str(p["id"]) if p.get("id") is not None else None,
+        "name": p.get("name"),
+        "address": (p.get("address") or {}).get("full_address"),
+        "latitude": (p.get("position") or {}).get("latitude"),
+        "longitude": (p.get("position") or {}).get("longitude"),
+    }
+
+
+async def pickup_points(
+    cfg: dict,
+    *,
+    location: str | None = None,
+    geo_id: int | None = None,
+    limit: int = 50,
+    dropoff: bool = False,
+) -> list[dict]:
+    """ПВЗ города. Пустое тело API = вся Россия — без geo_id так не запрашиваем.
+
+    `dropoff=True` — точки, куда отправитель (юрлицо/ИП) сам сдаёт посылки: их id идёт в
+    `source.platform_station` вместо склада, тогда график забора в ЛК не нужен.
+    """
+    query = (location or "").strip()
+    resolved = _geo_id_value(geo_id)
+    if resolved is None and query:
+        resolved = await detect_geo_id(cfg, query)
+    if query and resolved is None:
+        return []
+    body: dict[str, Any] = {"available_for_dropoff": True} if dropoff else {"type": "pickup_point"}
+    if resolved is not None:
+        body["geo_id"] = resolved
     data = await _request(cfg, "POST", "/api/b2b/platform/pickup-points/list", json=body)
-    points = data.get("points") or []
-    return [
-        {
-            "id": str(p["id"]) if p.get("id") is not None else None,
-            "name": p.get("name"),
-            "address": (p.get("address") or {}).get("full_address"),
-            "latitude": (p.get("position") or {}).get("latitude"),
-            "longitude": (p.get("position") or {}).get("longitude"),
-        }
-        for p in points[:limit]
-    ]
+    points = [_map_pickup_point(p) for p in data.get("points") or [] if p.get("id") is not None]
+    if not query:
+        return points[:limit]
+    origin = await _try_geocode(cfg, query)
+    if origin:
+        # Список API не упорядочен — без сортировки «первые N» разбросаны по городу.
+        points.sort(key=lambda p: _distance_km(origin, p))
+        return points[:limit]
+    matched = [p for p in points if _point_matches_location(p, query)]
+    points = matched or points
+    points.sort(key=lambda p: -_match_score(p, query))
+    return points[:limit]
 
 
 async def geocode(apikey: str, address: str) -> tuple[float, float]:
@@ -142,7 +274,11 @@ async def geocode(apikey: str, address: str) -> tuple[float, float]:
             "«JavaScript API и HTTP Геокодер» из Кабинета разработчика "
             "(developer.tech.yandex.ru), UUID вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
         )
-    async with httpx.AsyncClient(timeout=20) as client:
+    # Ключ Геокодера привязан к IPv4 сервера. У geocode-maps.yandex.ru есть AAAA, а контейнеры
+    # с IPv6 (нужен Telegram-боту) вышли бы с другого адреса — и получили бы 403.
+    async with httpx.AsyncClient(
+        timeout=20, transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    ) as client:
         r = await client.get(
             GEOCODER,
             params={
@@ -157,7 +293,7 @@ async def geocode(apikey: str, address: str) -> tuple[float, float]:
         raise YandexDeliveryError(
             "Геокодер отклонил ключ (403 Invalid api key). Нужен ключ сервиса "
             "«JavaScript API и HTTP Геокодер» с developer.tech.yandex.ru, не OAuth "
-            "Доставки. Если в кабинете ограничение по IP — добавьте адрес этого сервера"
+            "Доставки. Если в кабинете ограничение по IP — добавьте IPv4 этого сервера"
         )
     if r.status_code >= 400:
         raise YandexDeliveryError(f"Геокодер: {r.status_code} {r.text[:200]}")
@@ -167,6 +303,38 @@ async def geocode(apikey: str, address: str) -> tuple[float, float]:
     except (KeyError, IndexError, ValueError) as e:
         raise YandexDeliveryError(f"Геокодер не нашёл координаты для «{address}»") from e
     return float(lat), float(lon)
+
+
+async def _try_geocode(cfg: dict, address: str) -> tuple[float, float] | None:
+    """Геокодер необязателен: без ключа или при отказе возвращаем None, не роняя заказ."""
+    apikey = (cfg.get("geocoder_apikey") or "").strip()
+    if not apikey or not address:
+        return None
+    try:
+        return await geocode(apikey, address)
+    except YandexDeliveryError as e:
+        log.warning("Геокодер Яндекса недоступен: %s", e)
+        return None
+
+
+async def resolve_door_location(
+    cfg: dict,
+    *,
+    address: str | None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> tuple[float | None, float | None, int | None]:
+    """Координаты Геокодера — по возможности; иначе geo_id Доставки и адрес в details."""
+    lat, lon = latitude, longitude
+    if lat is None and lon is None and address:
+        lat, lon = await _try_geocode(cfg, address) or (None, None)
+    geo_id = None
+    if address:
+        try:
+            geo_id = await detect_geo_id(cfg, address)
+        except YandexDeliveryError:
+            geo_id = None
+    return lat, lon, geo_id
 
 
 # ── Сборка заявки ──────────────────────────────────────
@@ -186,25 +354,26 @@ def _destination(
     address: str | None,
     latitude: float | None,
     longitude: float | None,
+    geo_id: int | None = None,
 ) -> dict:
     if pickup_point_id:
         return {
             "type": "platform_station",
             "platform_station": {"platform_id": pickup_point_id},
         }
-    if latitude is None or longitude is None:
-        raise YandexDeliveryError(
-            "для курьерской доставки нужны координаты адреса — задайте API-ключ Геокодера "
-            "в «Настройки → Интеграции» или выберите ПВЗ"
-        )
-    return {
-        "type": "custom_location",
-        "custom_location": {
-            "latitude": latitude,
-            "longitude": longitude,
-            "details": {"full_address": address or ""},
-        },
-    }
+    details: dict[str, Any] = {}
+    if address:
+        details["full_address"] = address
+    if geo_id is not None:
+        details["geoId"] = geo_id
+    if latitude is not None and longitude is not None:
+        loc: dict[str, Any] = {"latitude": latitude, "longitude": longitude}
+        if details:
+            loc["details"] = details
+        return {"type": "custom_location", "custom_location": loc}
+    if details.get("full_address"):
+        return {"type": "custom_location", "custom_location": {"details": details}}
+    raise YandexDeliveryError("укажите ПВЗ или адрес доставки")
 
 
 def build_request(
@@ -218,6 +387,7 @@ def build_request(
     address: str | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
+    geo_id: int | None = None,
 ) -> dict:
     """Тело заявки — одинаковое для offers/create и request/create."""
     if not cfg.get("platform_station_id"):
@@ -239,6 +409,7 @@ def build_request(
             address=address,
             latitude=latitude,
             longitude=longitude,
+            geo_id=geo_id,
         ),
         "items": [
             {
@@ -264,7 +435,7 @@ def build_request(
         "recipient_info": {
             "first_name": first or "Получатель",
             "last_name": last or "—",
-            "phone": recipient_phone,
+            "phone": normalize_phone(recipient_phone),
         },
         "last_mile_policy": "self_pickup" if pickup_point_id else cfg["last_mile_policy"],
     }
@@ -438,7 +609,7 @@ def build_warehouse_body(
     comment: str | None = None,
 ) -> dict[str, Any]:
     """Тело `warehouses/create`. Телефон обязателен, координаты — тоже."""
-    phone = "".join((phone or "").split())
+    phone = normalize_phone(phone)
     if not phone:
         raise YandexDeliveryError("для склада нужен телефон отправителя")
     first, last = _split_person_name(contact_name or "")
@@ -506,7 +677,9 @@ async def warehouses(cfg: dict) -> list[dict]:
         data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json=body)
     except YandexDeliveryError as e:
         if body["filter"].get("merchant_id") and _unknown_merchant(e):
-            data = await _request(cfg, "POST", "/api/b2b/platform/warehouses/list", json={"filter": {}})
+            data = await _request(
+                cfg, "POST", "/api/b2b/platform/warehouses/list", json={"filter": {}}
+            )
         else:
             raise
     return [_warehouse_row(w) for w in data.get("warehouses") or []]
@@ -551,15 +724,8 @@ async def resolve_warehouse_geo(
     cfg: dict, *, address: str, latitude: float, longitude: float
 ) -> tuple[float, float, int | None]:
     """Координаты + geo_id города. Без ключа Геокодера остаются запасные координаты."""
-    lat, lon = latitude, longitude
-    apikey = (cfg.get("geocoder_apikey") or "").strip()
-    if apikey:
-        try:
-            lat, lon = await geocode(apikey, address)
-        except YandexDeliveryError:
-            # Склад уже знает точку (БЦ «Звёздный»). Битый ключ Геокодера не должен
-            # блокировать warehouses/create — курьеру до двери ключ поправят отдельно.
-            lat, lon = latitude, longitude
+    # Склад уже знает точку (БЦ «Звёздный») — битый ключ Геокодера не блокирует warehouses/create.
+    lat, lon = await _try_geocode(cfg, address) or (latitude, longitude)
     try:
         geo_id = await detect_geo_id(cfg, address)
     except YandexDeliveryError:

@@ -125,6 +125,15 @@ def empty_points_text(service: str = "cdek") -> str:
     )
 
 
+def pvz_prompt(service: str) -> str:
+    if service == "yandex":
+        return (
+            "Напишите город и район (или улицу), где удобно забрать заказ — "
+            "покажу ближайшие пункты."
+        )
+    return "Напишите город или индекс, где заберёте заказ."
+
+
 async def pickup_points(city: str, service: str = "cdek") -> list[dict]:
     if service == "yandex":
         return await backend.yandex_pickup_points(city, limit=8)

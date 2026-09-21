@@ -465,7 +465,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
             delivery_points=[],
         )
         hint = (
-            "Напишите город или индекс, где заберёте заказ."
+            delivery.pvz_prompt(service)
             if action == "pvz"
             else "Напишите город или индекс для курьера."
         )

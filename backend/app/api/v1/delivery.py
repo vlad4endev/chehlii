@@ -460,8 +460,7 @@ async def yandex_pickup_points(
     """ПВЗ Яндекса для выбора клиентом. `location` сужает список до города."""
     cfg = await yandex_cfg(session)
     try:
-        geo_id = await yandex_delivery.detect_geo_id(cfg, location) if location else None
-        points = await yandex_delivery.pickup_points(cfg, geo_id=geo_id, limit=limit)
+        points = await yandex_delivery.pickup_points(cfg, location=location, limit=limit)
     except yandex_delivery.YandexDeliveryError as e:
         raise HTTPException(400, f"Яндекс Доставка: {e}") from e
     return [PickupPointOut(**p) for p in points if p.get("id")]
@@ -507,12 +506,11 @@ async def _yandex_body(session: AsyncSession, cfg: dict, order_id: int, body: Ya
         raise HTTPException(400, "Укажите ПВЗ (pickup_point_id) или адрес (to_address).")
 
     lat, lon = body.latitude, body.longitude
-    # Курьеру до двери нужны координаты: адрес геокодируем, если задан ключ.
-    if not body.pickup_point_id and lat is None and cfg.get("geocoder_apikey"):
-        try:
-            lat, lon = await yandex_delivery.geocode(cfg["geocoder_apikey"], body.to_address or "")
-        except yandex_delivery.YandexDeliveryError as e:
-            raise HTTPException(400, f"Яндекс Доставка: {e}") from e
+    geo_id = None
+    if not body.pickup_point_id:
+        lat, lon, geo_id = await yandex_delivery.resolve_door_location(
+            cfg, address=body.to_address, latitude=lat, longitude=lon
+        )
 
     # Оценочная стоимость вложения = цена чехла со скидкой (без доставки).
     item_price = float(
@@ -531,6 +529,7 @@ async def _yandex_body(session: AsyncSession, cfg: dict, order_id: int, body: Ya
             address=body.to_address,
             latitude=lat,
             longitude=lon,
+            geo_id=geo_id,
         )
     except yandex_delivery.YandexDeliveryError as e:
         raise HTTPException(400, f"Яндекс Доставка: {e}") from e

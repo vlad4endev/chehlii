@@ -26,6 +26,7 @@ from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.services import integrations, media, pricing, stock, yandex_disk
 from app.services import order_state_machine as fsm
+from app.services.cdek_checkout import decode_destination
 
 router = APIRouter()
 
@@ -353,6 +354,16 @@ async def mockup_file(
     raise HTTPException(status.HTTP_404_NOT_FOUND, "Макет не найден")
 
 
+def _delivery_text(stored: str | None) -> str | None:
+    """В заказе адрес хранится как «pvz:<id>|адрес» — в админке показываем по-человечески."""
+    if not stored:
+        return None
+    dest = decode_destination(stored)
+    if dest["pickup_point_id"]:
+        return f"ПВЗ: {dest['label']} [ID {dest['pickup_point_id']}]"
+    return f"Курьер: {dest['label']}"
+
+
 @router.get("/{order_id}", response_model=OrderDetail)
 async def get_order(
     order_id: int,
@@ -371,7 +382,7 @@ async def get_order(
         mockup_url=order.mockup_url,
         mockup_disk_url=order.mockup_disk_url,
         delivery_service=order.delivery_service,
-        delivery_address=order.delivery_address,
+        delivery_address=_delivery_text(order.delivery_address),
         tracking_code=order.tracking_code,
         cost=float(order.cost) if admin and order.cost is not None else None,
         margin=float(order.margin) if admin and order.margin is not None else None,

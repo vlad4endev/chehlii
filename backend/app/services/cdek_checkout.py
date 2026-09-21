@@ -423,9 +423,15 @@ async def apply_yandex_quote(
         raise yd.YandexDeliveryError("нет телефона получателя")
 
     cfg = await load_yandex_cfg(session)
-    lat, lon = latitude, longitude
-    if not pickup_point_id and lat is None and cfg.get("geocoder_apikey"):
-        lat, lon = await yd.geocode(cfg["geocoder_apikey"], to_address or "")
+    if pickup_point_id:
+        lat, lon, geo_id = latitude, longitude, None
+    else:
+        lat, lon, geo_id = await yd.resolve_door_location(
+            cfg,
+            address=to_address,
+            latitude=latitude,
+            longitude=longitude,
+        )
     request = yd.build_request(
         cfg,
         order_id=order.id,
@@ -436,6 +442,7 @@ async def apply_yandex_quote(
         address=to_address,
         latitude=lat,
         longitude=lon,
+        geo_id=geo_id,
     )
     offers = [o for o in await yd.offers_create(cfg, request) if o.get("offer_id")]
     if not offers:
@@ -631,9 +638,10 @@ async def _fulfill_yandex(
 
     try:
         cfg = await load_yandex_cfg(session)
-        lat = lon = None
-        if not dest.get("pickup_point_id") and cfg.get("geocoder_apikey"):
-            lat, lon = await yd.geocode(cfg["geocoder_apikey"], dest.get("to_address") or "")
+        if dest.get("pickup_point_id"):
+            lat, lon, geo_id = None, None, None
+        else:
+            lat, lon, geo_id = await yd.resolve_door_location(cfg, address=dest.get("to_address"))
         request = yd.build_request(
             cfg,
             order_id=order.id,
@@ -644,6 +652,7 @@ async def _fulfill_yandex(
             address=dest.get("to_address"),
             latitude=lat,
             longitude=lon,
+            geo_id=geo_id,
         )
         offers = [o for o in await yd.offers_create(cfg, request) if o.get("offer_id")]
         if not offers:
