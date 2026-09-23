@@ -25,7 +25,15 @@ from app.enums import OrderStatus
 from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import cdek, cdek_checkout, integrations, ozon_delivery, pricing, yandex_delivery
+from app.services import (
+    cdek,
+    cdek_checkout,
+    integrations,
+    ozon_delivery,
+    pricing,
+    review_offer,
+    yandex_delivery,
+)
 
 router = APIRouter()
 
@@ -44,7 +52,12 @@ async def _advance(session: AsyncSession, order: Order, new: OrderStatus, trigge
     if order.status == new:
         return False
     # Опрос может вернуть промежуточный статус после выдачи — назад не откатываем.
-    if new == OrderStatus.SHIPPED and order.status == OrderStatus.DELIVERED:
+    # Повторный вебхук/опрос не должен откатывать заказ, уже ушедший в отзыв.
+    if order.status in (
+        OrderStatus.DELIVERED,
+        OrderStatus.REVIEW_OFFERED,
+        OrderStatus.REVIEW_RECEIVED,
+    ):
         return False
     order.status = new
     session.add(
@@ -69,6 +82,19 @@ async def _advance(session: AsyncSession, order: Order, new: OrderStatus, trigge
                 text=f"{txt} #{order.id}",
             )
         )
+    if new == OrderStatus.DELIVERED:
+        # После доставки сразу предлагаем отзыв: статус и сообщение (msg_016).
+        order.status = OrderStatus.REVIEW_OFFERED
+        session.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                status=OrderStatus.REVIEW_OFFERED,
+                changed_by="system",
+                trigger=trigger,
+                created_at=datetime.now(UTC),
+            )
+        )
+        await review_offer.enqueue(session, order, client)
     await session.commit()
     return True
 

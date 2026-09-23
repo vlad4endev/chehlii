@@ -24,7 +24,7 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations, media, pricing, stock, yandex_disk
+from app.services import integrations, media, pricing, review_offer, stock, yandex_disk
 from app.services import order_state_machine as fsm
 from app.services.cdek_checkout import decode_destination
 
@@ -415,7 +415,11 @@ class StatusChangeIn(BaseModel):
 async def _record(
     session: AsyncSession, order: Order, new: OrderStatus, by: AdminUser, *, forced: bool = False
 ) -> None:
+    prev = order.status
     order.status = new
+    if new == OrderStatus.REVIEW_OFFERED and prev != new:
+        # Статус «Предложение об отзыве» — сам триггер сообщения клиенту.
+        await review_offer.enqueue(session, order, await session.get(Client, order.client_id))
     if new == OrderStatus.PREPAYMENT_PAID:
         await stock.deduct_for_order(session, order)
     elif new == OrderStatus.CANCELLED:
