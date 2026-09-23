@@ -79,6 +79,79 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def client_orders(self, client_id: int) -> list[dict]:
+        r = await self._client.get(f"/clients/{client_id}/orders")
+        r.raise_for_status()
+        return r.json()
+
+    async def delivery_options(self) -> dict:
+        r = await self._client.get("/delivery/options")
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/cdek/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def yandex_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/yandex/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def ozon_pickup_points(self, location: str, limit: int = 8) -> list[dict]:
+        r = await self._client.get(
+            "/delivery/ozon/pickup-points",
+            params={"location": location, "limit": limit},
+            timeout=40.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def ozon_check_client(self, phone: str) -> dict:
+        r = await self._client.post(
+            "/delivery/ozon/check-client", json={"phone": phone}, timeout=20.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_quote(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/cdek/orders/{order_id}/quote", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def yandex_select(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/yandex/orders/{order_id}/select", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def ozon_quote(self, order_id: int, **fields) -> dict:
+        r = await self._client.post(
+            f"/delivery/ozon/orders/{order_id}/quote", json=fields, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def delivery_fulfill(self, order_id: int) -> dict:
+        r = await self._client.post(f"/delivery/orders/{order_id}/fulfill", timeout=40.0)
+        r.raise_for_status()
+        return r.json()
+
+    async def cdek_fulfill(self, order_id: int) -> dict:
+        return await self.delivery_fulfill(order_id)
+
     async def add_client_file(self, order_id: int, filename: str, content: bytes) -> dict:
         r = await self._client.post(
             f"/orders/{order_id}/client-file", files={"file": (filename, content)}
@@ -102,6 +175,83 @@ class Backend:
     async def mark_outbox_sent(self, msg_id: int) -> None:
         r = await self._client.post(f"/outbox/{msg_id}/sent")
         r.raise_for_status()
+
+    async def consult_upload(self, filename: str, content: bytes) -> dict:
+        r = await self._client.post(
+            "/consult/files", files={"file": (filename, content)}, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def consult_send(
+        self, client_id: int, text: str | None = None, media: list | None = None
+    ) -> dict:
+        r = await self._client.post(
+            "/consult/messages",
+            json={"client_id": client_id, "text": text, "media": media or []},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def consult_is_open(self, client_id: int) -> bool:
+        try:
+            r = await self._client.get(f"/consult/open/{client_id}")
+            r.raise_for_status()
+            return bool(r.json().get("open"))
+        except httpx.HTTPError:
+            return False
+
+    async def consult_take_pending(
+        self,
+        *,
+        client_id: int | None = None,
+        channel: str | None = None,
+        channel_user_id: str | None = None,
+    ) -> dict | None:
+        payload: dict = {}
+        if client_id is not None:
+            payload["client_id"] = client_id
+        if channel and channel_user_id:
+            payload["channel"] = channel
+            payload["channel_user_id"] = channel_user_id
+        try:
+            r = await self._client.post("/consult/pending/take", json=payload)
+            r.raise_for_status()
+            return r.json().get("pending")
+        except httpx.HTTPError:
+            return None
+
+    async def get_tg_proxy(self) -> dict:
+        """Конфиг прокси из админки. Пустой dict — backend недоступен, остаётся env."""
+        try:
+            r = await self._client.get("/tg-proxy", timeout=10.0)
+            r.raise_for_status()
+            data = r.json()
+            return data if isinstance(data, dict) else {}
+        except httpx.HTTPError:
+            return {}
+
+    async def report_tg_proxy(
+        self,
+        *,
+        ok: bool,
+        detail: str,
+        via: str | None = None,
+        fingerprint: str | None = None,
+    ) -> None:
+        try:
+            await self._client.post(
+                "/tg-proxy/status",
+                json={
+                    "ok": ok,
+                    "detail": detail[:400],
+                    "via": via,
+                    "fingerprint": fingerprint,
+                },
+                timeout=10.0,
+            )
+        except httpx.HTTPError:
+            pass
 
 
 backend = Backend()

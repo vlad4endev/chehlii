@@ -24,8 +24,10 @@ from maxapi.types import (
     MessageCreated,
 )
 
+from bots.core import consult, delivery, payments
 from bots.core.backend import backend
 from bots.core.texts import texts
+from bots.max.chat_map import remember
 from bots.max.keyboards import (
     CB_CANCEL,
     CB_CATALOG,
@@ -38,8 +40,14 @@ from bots.max.keyboards import (
     CB_PAYMENTS,
     confirm_kb,
     contact_kb,
+    delivery_mode_kb,
+    delivery_orders_kb,
+    delivery_points_kb,
+    delivery_service_kb,
+    delivery_start_kb,
     main_menu_kb,
     materials_confirm_kb,
+    pay_kb,
 )
 from bots.max.states import OrderFlow
 
@@ -73,6 +81,33 @@ async def _send_menu(bot, chat_id: int, text: str) -> None:
     await bot.send_message(chat_id=chat_id, text=text, attachments=[main_menu_kb(username, bot_id)])
 
 
+def _pay_atts(block: payments.PayBlock):
+    return [pay_kb(block.buttons)] if block.buttons else []
+
+
+async def _replace(event: MessageCallback, text: str, attachments=None) -> None:
+    """Клик по кнопкам — правим это же сообщение, а не копим новые в чате.
+
+    attachments=[] снимает старые кнопки. None тоже очищает: иначе MAX оставит
+    прежнюю клавиатуру.
+    """
+    atts = [] if attachments is None else attachments
+    try:
+        await event.message.edit(text=text, attachments=atts, notify=False)
+        return
+    except Exception:
+        logging.debug("max: не удалось заменить сообщение, шлём новое", exc_info=True)
+    chat_id = event.message.recipient.chat_id
+    await event.bot.send_message(
+        chat_id=chat_id, text=text, attachments=atts or None
+    )
+
+
+async def _replace_menu(event: MessageCallback, text: str) -> None:
+    username, bot_id = _bot_identity(event.bot)
+    await _replace(event, text, [main_menu_kb(username, bot_id)])
+
+
 async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     """Скачать файлы клиента по URL из MAX и залить на Яндекс Диск через backend."""
     links: list[str] = []
@@ -88,13 +123,133 @@ async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     return links
 
 
-async def _pay_line(order_id: int) -> str:
-    """Ссылка на предоплату (Robokassa); фолбэк если оплата не настроена."""
+async def _send_pay(bot, chat_id: int, order_id: int, code: str, event: MessageCallback | None = None) -> None:
+    b = await payments.block(order_id)
+    text = f"{texts.get(code)}\n\n{b.text}"
+    atts = _pay_atts(b)
+    if event is not None:
+        await _replace(event, text, atts)
+        return
+    await bot.send_message(chat_id=chat_id, text=text, attachments=atts or None)
+
+
+async def _send_delivery_pay(
+    bot, chat_id: int, order_id: int, quote: dict, event: MessageCallback | None = None
+) -> None:
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
+    if (quote.get("delivery_sum") or 0) <= 0:
+        try:
+            await backend.delivery_fulfill(order_id)
+            await _out("Доставка бесплатная — заявку создаём сейчас.")
+        except Exception as e:  # noqa: BLE001
+            await _out(delivery.api_error(e))
+        return
+    b = await payments.block(order_id, "delivery")
+    await _out(f"{delivery.quote_text(quote)}\n\n{b.text}", _pay_atts(b) or None)
+
+
+async def _ask_ozon_city(
+    bot, chat_id: int, order_id: int, context: MemoryContext, phone: str | None,
+    event: MessageCallback | None = None,
+) -> None:
+    blocked = await delivery.ozon_blocked(phone)
+
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
+    if blocked:
+        await _out(blocked)
+        return
+    await context.set_state(OrderFlow.delivery_city)
+    await context.update_data(
+        order_id=order_id,
+        delivery_service="ozon",
+        delivery_mode="pvz",
+        delivery_points=[],
+    )
+    await _out(
+        "Ozon доставляет только в пункт выдачи. Напишите город или индекс, где заберёте заказ."
+    )
+
+
+async def _start_delivery(
+    bot, chat_id: int, order_id: int, context: MemoryContext, event: MessageCallback | None = None,
+    phone: str | None = None,
+) -> None:
+    services = await delivery.configured_services()
+    await context.update_data(
+        order_id=order_id,
+        delivery_mode=None,
+        delivery_city=None,
+        delivery_points=[],
+        delivery_service=services[0] if len(services) == 1 else None,
+    )
+
+    async def _out(text: str, attachments=None) -> None:
+        if event is not None:
+            await _replace(event, text, attachments or [])
+            return
+        await bot.send_message(chat_id=chat_id, text=text, attachments=attachments or None)
+
+    if not services:
+        await _out("Доставка ещё не настроена. Напишите нам — отправим вручную.")
+        return
+    await context.set_state(OrderFlow.delivery_mode)
+    if len(services) > 1:
+        await _out("Выберите службу доставки.", [delivery_service_kb(order_id, services)])
+        return
+    if services[0] == "ozon":
+        await _ask_ozon_city(bot, chat_id, order_id, context, phone, event=event)
+        return
+    await _out("Как удобнее получить заказ?", [delivery_mode_kb(order_id, services[0])])
+
+
+async def _ask_mode(
+    bot, chat_id: int, order_id: int, service: str, context: MemoryContext,
+    event: MessageCallback | None = None, phone: str | None = None,
+) -> None:
+    if service == "ozon":
+        await _ask_ozon_city(bot, chat_id, order_id, context, phone, event=event)
+        return
+    await context.set_state(OrderFlow.delivery_mode)
+    await context.update_data(
+        order_id=order_id,
+        delivery_service=service,
+        delivery_mode=None,
+        delivery_points=[],
+    )
+    text = "Как удобнее получить заказ?"
+    atts = [delivery_mode_kb(order_id, service)]
+    if event is not None:
+        await _replace(event, text, atts)
+        return
+    await bot.send_message(chat_id=chat_id, text=text, attachments=atts)
+
+
+async def _quote_point(
+    bot, chat_id: int, context: MemoryContext, point: dict, event: MessageCallback | None = None
+) -> None:
+    data = await context.get_data()
+    order_id = int(data["order_id"])
+    service = await delivery.resolve_service(data.get("delivery_service"))
     try:
-        p = await backend.payment_link(order_id, "prepayment")
-        return f"\n\n💳 Внести предоплату {int(p['amount'])} ₽:\n{p['url']}"
-    except Exception:
-        return " Ссылка на оплату придёт следующим сообщением."
+        quote = await delivery.quote_pvz(order_id, point, service)
+    except Exception as e:  # noqa: BLE001
+        if event is not None:
+            await _replace(event, delivery.api_error(e))
+        else:
+            await bot.send_message(chat_id=chat_id, text=delivery.api_error(e))
+        return
+    await context.clear()
+    await _send_delivery_pay(bot, chat_id, order_id, quote, event=event)
 
 
 async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
@@ -216,6 +371,16 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
             event.bot, event.message.recipient.chat_id, int(pending), client["id"], context
         )
         return
+    pending_delivery = data.get("pending_delivery_order_id")
+    if pending_delivery:
+        await _start_delivery(
+            event.bot,
+            event.message.recipient.chat_id,
+            int(pending_delivery),
+            context,
+            phone=phone,
+        )
+        return
     await context.clear()
     await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_003"))
     await backend.mark_journey(client["id"], "msg_003")
@@ -225,16 +390,27 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_CONFIRM)
 async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
     data = await context.get_data()
-    is_custom = data.get("is_custom", False)
+    order_id = data.get("order_id")
+    # is_custom берём из заказа, а не только из MemoryContext: после рестарта
+    # бота контекст пустой → иначе кастом уходит в «имя/букву» и сразу в предоплату
+    # без материалов и без цикла макета.
+    is_custom = bool(data.get("is_custom", False))
+    if order_id:
+        try:
+            order = await backend.get_order(int(order_id))
+            if order is not None:
+                is_custom = bool(order.get("is_custom", is_custom))
+                await context.update_data(is_custom=is_custom, order_id=int(order_id))
+        except Exception:  # noqa: BLE001
+            logging.warning("max: не удалось перечитать заказ #%s", order_id, exc_info=True)
     await event.answer(notification="Принято ✅")
     if is_custom:
         await context.set_state(OrderFlow.waiting_materials)
-        await event.message.answer(texts.get("msg_006б"))
         code = "msg_006б"
     else:
         await context.set_state(OrderFlow.waiting_name)
-        await event.message.answer(texts.get("msg_006а"))
         code = "msg_006а"
+    await _replace(event, texts.get(code))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], code)
@@ -244,7 +420,7 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
 async def on_cancel(event: MessageCallback, context: MemoryContext) -> None:
     await context.clear()
     await event.answer(notification="Заказ отменён")
-    await _send_menu(event.bot, event.message.recipient.chat_id, "Вы в главном меню.")
+    await _replace_menu(event, "Вы в главном меню.")
 
 
 # ── Пункты меню ────────────────────────────────────────
@@ -255,16 +431,14 @@ async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> Non
     )
 
 
-# В MAX нет постоянной reply-клавиатуры (как в Telegram): чтобы навигация не
-# «терялась», каждый ответ пункта меню отправляется новым сообщением со свежим
-# меню (гарантированно валидная inline-клавиатура).
+# В MAX нет постоянной reply-клавиатуры, поэтому меню держим на том же
+# сообщении: пункт меню заменяет текст и кнопки, а не шлёт ещё одну карточку.
 @dp.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
+    await _replace_menu(
+        event,
         f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
         f"Ваш промокод для друга: {c.get('slave_code') or '—'}\n\n"
         "Приглашайте друзей — за каждого начисляется скидка (задаёт администратор).",
@@ -274,9 +448,8 @@ async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_PAYMENTS)
 async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
+    await _replace_menu(
+        event,
         "Раздел «Мои оплаты» появится после подключения платёжного шлюза.",
     )
 
@@ -284,21 +457,33 @@ async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
 @dp.message_callback(F.callback.payload == CB_DELIVERIES)
 async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Раздел «Мои доставки» появится после подключения служб доставки.",
-    )
+    c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
+    try:
+        orders = await backend.client_orders(c["id"])
+    except Exception:  # noqa: BLE001
+        orders = []
+    pending = [
+        o
+        for o in orders
+        if o.get("status") in delivery.NEEDS_CHECKOUT and not o.get("tracking_code")
+    ]
+    text = delivery.orders_text(orders)
+    if len(pending) == 1:
+        await _replace(event, text, [delivery_start_kb(pending[0]["id"])])
+    elif pending:
+        await _replace(event, text, [delivery_orders_kb(pending)])
+    else:
+        await _replace_menu(event, text)
 
 
 @dp.message_callback(F.callback.payload == CB_HELP)
 async def on_help(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Скоро поможем подобрать лучший вариант ✨ (в разработке).",
-    )
+    await context.set_state(OrderFlow.consulting)
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    await backend.mark_journey(client["id"], "msg_help")
+    await _replace_menu(event, texts.get("msg_help"))
 
 
 # ── Ввод имени / материалов ────────────────────────────
@@ -308,14 +493,31 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
     order_id = data["order_id"]
     await backend.update_order(order_id, custom_text=event.message.body.text or "")
     await context.clear()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        texts.get("msg_007а") + await _pay_line(order_id),
-    )
+    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007а")
     s = event.message.sender
     client = await backend.upsert_client(CHANNEL, str(s.user_id), nickname=(s.username or s.full_name))
     await backend.mark_journey(client["id"], "msg_007а")
+
+
+@dp.message_created(OrderFlow.confirming)
+async def on_early_content(event: MessageCreated, context: MemoryContext) -> None:
+    # Фото/текст прислали, не нажав «Подтвердить»: для кастома это уже материалы —
+    # не теряем их, для стандарта — просим подтвердить.
+    data = await context.get_data()
+    is_custom = bool(data.get("is_custom", False))
+    order_id = data.get("order_id")
+    if order_id:
+        try:
+            order = await backend.get_order(int(order_id))
+            if order is not None:
+                is_custom = bool(order.get("is_custom", is_custom))
+        except Exception:  # noqa: BLE001
+            logging.warning("max: не удалось перечитать заказ #%s", order_id, exc_info=True)
+    if is_custom:
+        await context.set_state(OrderFlow.waiting_materials)
+        await on_materials(event, context)
+        return
+    await event.message.answer("Сначала подтвердите заказ кнопкой «Подтвердить» выше.")
 
 
 @dp.message_created(OrderFlow.waiting_materials)
@@ -338,7 +540,8 @@ async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
         "Проверьте кастом-чехол:\n\n"
         f"📝 Описание: {text or '—'}\n"
         f"📎 Вложений: {len(files)}\n\n"
-        "Всё верно? Нажмите «Подтвердить» — и чехол уйдёт в работу.",
+        "Всё верно? Нажмите «Подтвердить» — внесёте предоплату, "
+        "после этого дизайнер пришлёт макет на согласование.",
         attachments=[materials_confirm_kb()],
     )
 
@@ -349,7 +552,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
     order_id = data.get("order_id")
     if not order_id:
         await event.answer(notification="Сессия истекла, начните заново")
-        await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
+        await _replace_menu(event, "Выберите раздел в меню.")
         return
     await event.answer(notification="Принято ✅")
     links = await _persist_files(order_id, data.get("materials_files", []))
@@ -359,11 +562,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
         materials_files=links,
     )
     await context.clear()
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        texts.get("msg_007б") + await _pay_line(order_id),
-    )
+    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007б", event=event)
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_007б")
@@ -373,7 +572,7 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
 async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> None:
     await event.answer()
     await context.set_state(OrderFlow.waiting_materials)
-    await event.message.answer(texts.get("msg_006б"))
+    await _replace(event, texts.get("msg_006б"))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_006б")
@@ -395,16 +594,244 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
         await event.answer(notification="Не получилось, попробуйте ещё раз")
         return
     await event.answer(notification="Принято ✅")
-    await _send_menu(
-        event.bot,
-        event.message.recipient.chat_id,
-        "Спасибо! Макет согласован — переходим к оплате."
-        if approved
-        else "Принято! Дизайнер доработает макет и пришлёт заново.",
+    if approved:
+        b = await payments.block(order_id, "postpayment")
+        await _replace(
+            event,
+            f"Спасибо! Макет согласован — переходим к оплате.\n\n{b.text}",
+            _pay_atts(b),
+        )
+    else:
+        await _replace(event, "Принято! Дизайнер доработает макет и пришлёт заново.")
+
+
+@dp.message_callback(F.callback.payload.startswith("dlv:"))
+async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None:
+    parts = (event.callback.payload or "").split(":")
+    if len(parts) < 3:
+        await event.answer()
+        return
+    action, oid_s = parts[1], parts[2]
+    try:
+        order_id = int(oid_s)
+    except ValueError:
+        await event.answer()
+        return
+    chat_id = event.message.recipient.chat_id
+    u = event.callback.user
+    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    if not client.get("phone"):
+        await context.set_state(OrderFlow.waiting_phone)
+        await context.update_data(pending_delivery_order_id=order_id)
+        await event.answer()
+        await _replace(
+            event,
+            "Для доставки нужен телефон получателя. Пришлите номер в формате +7XXXXXXXXXX.",
+            [contact_kb()],
+        )
+        return
+    if action == "go":
+        await event.answer()
+        await _start_delivery(
+            event.bot, chat_id, order_id, context, event=event, phone=client.get("phone")
+        )
+        return
+    if action == "svc" and len(parts) >= 4:
+        svc = parts[3]
+        if svc not in delivery.SERVICE_LABELS:
+            await event.answer()
+            return
+        await event.answer()
+        await _ask_mode(
+            event.bot, chat_id, order_id, svc, context, event=event, phone=client.get("phone")
+        )
+        return
+    if action in ("pvz", "door"):
+        data = await context.get_data()
+        service = await delivery.resolve_service(data.get("delivery_service"))
+        if action == "door" and not delivery.has_door(service):
+            await event.answer(notification="Ozon доставляет только в пункт выдачи")
+            return
+        if service == "ozon":
+            await event.answer()
+            await _ask_ozon_city(
+                event.bot, chat_id, order_id, context, client.get("phone"), event=event
+            )
+            return
+        await context.set_state(OrderFlow.delivery_city)
+        await context.update_data(
+            order_id=order_id,
+            delivery_mode=action,
+            delivery_service=service,
+            delivery_points=[],
+        )
+        hint = (
+            delivery.pvz_prompt(service)
+            if action == "pvz"
+            else "Напишите город или индекс для курьера."
+        )
+        await event.answer()
+        await _replace(event, hint)
+        return
+    if action == "n" and len(parts) >= 4:
+        try:
+            idx = int(parts[3])
+        except ValueError:
+            await event.answer()
+            return
+        points = (await context.get_data()).get("delivery_points") or []
+        if idx < 0 or idx >= len(points):
+            await event.answer(notification="Список устарел — напишите город ещё раз")
+            return
+        await event.answer()
+        await _quote_point(event.bot, chat_id, context, points[idx], event=event)
+        return
+    await event.answer()
+
+
+@dp.message_created(OrderFlow.delivery_city)
+async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> None:
+    city = (event.message.body.text or "").strip()
+    chat_id = event.message.recipient.chat_id
+    if not city:
+        await event.message.answer("Напишите город или индекс.")
+        return
+    data = await context.get_data()
+    mode = data.get("delivery_mode")
+    order_id = int(data["order_id"])
+    if mode == "door":
+        await context.update_data(delivery_city=city)
+        await context.set_state(OrderFlow.delivery_address)
+        await event.message.answer("Напишите улицу, дом и квартиру.")
+        return
+    service = await delivery.resolve_service(data.get("delivery_service"))
+    try:
+        points = await delivery.pickup_points(city, service)
+    except Exception as e:  # noqa: BLE001
+        await event.message.answer(delivery.api_error(e))
+        return
+    if not points:
+        await event.bot.send_message(
+            chat_id=chat_id,
+            text=delivery.empty_points_text(service),
+            attachments=[delivery_mode_kb(order_id, service)],
+        )
+        return
+    await context.update_data(
+        delivery_city=city, delivery_points=points, delivery_service=service
+    )
+    await context.set_state(OrderFlow.delivery_pvz)
+    await event.bot.send_message(
+        chat_id=chat_id,
+        text=delivery.points_text(city, points, service),
+        attachments=[delivery_points_kb(order_id, points, service)],
     )
 
 
-# Фолбэк: любое сообщение вне сценария → в меню. Регистрируется последним.
-@dp.message_created(F.message.body.text)
+@dp.message_created(OrderFlow.delivery_address)
+async def on_delivery_address(event: MessageCreated, context: MemoryContext) -> None:
+    street = (event.message.body.text or "").strip()
+    if not street:
+        await event.message.answer("Напишите улицу, дом и квартиру.")
+        return
+    data = await context.get_data()
+    order_id = int(data["order_id"])
+    service = await delivery.resolve_service(data.get("delivery_service"))
+    try:
+        quote = await delivery.quote_door(
+            order_id, data.get("delivery_city") or "", street, service
+        )
+    except Exception as e:  # noqa: BLE001
+        await event.message.answer(delivery.api_error(e))
+        return
+    await context.clear()
+    await _send_delivery_pay(event.bot, event.message.recipient.chat_id, order_id, quote)
+
+
+@dp.message_created(OrderFlow.delivery_pvz)
+async def on_delivery_pvz_text(event: MessageCreated, context: MemoryContext) -> None:
+    text = (event.message.body.text or "").strip()
+    points = (await context.get_data()).get("delivery_points") or []
+    if text.isdigit():
+        idx = int(text) - 1
+        if 0 <= idx < len(points):
+            await _quote_point(event.bot, event.message.recipient.chat_id, context, points[idx])
+            return
+        await event.message.answer("Нет такого номера. Нажмите кнопку или напишите город заново.")
+        return
+    await context.set_state(OrderFlow.delivery_city)
+    await on_delivery_city(event, context)
+
+
+async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
+    files: list[tuple[str, bytes]] = []
+    async with httpx.AsyncClient(timeout=40) as http:
+        for i, att in enumerate(event.message.body.attachments or []):
+            payload = getattr(att, "payload", None)
+            url = getattr(payload, "url", None)
+            if not url:
+                continue
+            try:
+                r = await http.get(url)
+                r.raise_for_status()
+                name = getattr(payload, "file_name", None) or f"file_{i + 1}"
+                files.append((name, r.content))
+            except Exception as e:  # noqa: BLE001
+                logging.warning("consult max download failed: %s", e)
+    return files
+
+
+_BUSY_STATES = frozenset(OrderFlow.states())
+
+
+async def _relay_consult(
+    event: MessageCreated, client: dict, context: MemoryContext | None = None
+) -> None:
+    text = event.message.body.text or ""
+    try:
+        ok = await consult.ingest(client["id"], text, await _consult_files_max(event))
+    except Exception as e:  # noqa: BLE001
+        logging.warning("consult send failed: %s", e)
+        await event.message.answer("Не получилось передать сообщение, попробуйте ещё раз.")
+        return
+    if not ok:
+        await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
+        return
+    if context is not None:
+        await context.set_state(OrderFlow.consulting)
+    # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
+
+
+@dp.message_created(OrderFlow.consulting)
+async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
+    s = event.message.sender
+    remember(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    await _relay_consult(event, client)
+
+
+# Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
+# Регистрируется последним, шаги заказа/доставки не перехватываем.
+@dp.message_created()
 async def on_fallback(event: MessageCreated, context: MemoryContext) -> None:
-    await _send_menu(event.bot, event.message.recipient.chat_id, "Выберите раздел в меню.")
+    current = await context.get_state()
+    if current is not None and str(current) in _BUSY_STATES:
+        return
+    text = event.message.body.text or ""
+    if text.startswith("/"):
+        return
+    s = event.message.sender
+    remember(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    if not await consult.allowed_to_write(client):
+        await _send_menu(
+            event.bot,
+            event.message.recipient.chat_id,
+            "Выберите раздел в меню или нажмите «Поможем выбрать».",
+        )
+        return
+    await _relay_consult(event, client, context)

@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from maxapi.types import (
     CallbackButton,
+    LinkButton,
     OpenAppButton,
     RequestContactButton,
 )
 from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
+
+from bots.core.payments import PayButton
 
 # Подписи кнопок меню.
 BTN_CATALOG = "🛍 Каталог чехлов"
@@ -40,7 +45,13 @@ def main_menu_kb(bot_username: str | None, bot_id: int | None):
     # Каталог — мини-приложение (OpenApp привязан к боту). Если username неизвестен —
     # callback-заглушка с пояснением.
     if bot_username:
-        b.row(OpenAppButton(text=BTN_CATALOG, web_app=bot_username, contact_id=bot_id))
+        b.row(
+            OpenAppButton(
+                text=BTN_CATALOG,
+                web_app=f"https://max.ru/{bot_username}",
+                contact_id=bot_id,
+            )
+        )
     else:
         b.row(CallbackButton(text=BTN_CATALOG, payload=CB_CATALOG))
     b.row(CallbackButton(text=BTN_DISCOUNT, payload=CB_DISCOUNT))
@@ -70,10 +81,68 @@ def materials_confirm_kb():
     return b.as_markup()
 
 
+def pay_kb(buttons: Sequence[PayButton]):
+    """Кнопки оплаты — по одной на шлюз. Ссылка в кнопке, а не в тексте (иначе
+    мессенджер рисует превью страницы шлюза)."""
+    b = InlineKeyboardBuilder()
+    for btn in buttons:
+        b.row(LinkButton(text=btn.label, url=btn.url))
+    return b.as_markup()
+
+
 def mockup_kb(order_id: int):
     b = InlineKeyboardBuilder()
     b.row(
         CallbackButton(text="✅ Подтвердить", payload=f"mockup:approve:{order_id}"),
         CallbackButton(text="🔄 Переделать", payload=f"mockup:redo:{order_id}"),
     )
+    return b.as_markup()
+
+
+def delivery_service_kb(order_id: int, services: list):
+    labels = {"cdek": "СДЭК", "yandex": "Яндекс Доставка", "ozon": "Ozon Доставка"}
+    b = InlineKeyboardBuilder()
+    for s in services:
+        if s in labels:
+            b.row(CallbackButton(text=labels[s], payload=f"dlv:svc:{order_id}:{s}"))
+    return b.as_markup()
+
+
+def delivery_mode_kb(order_id: int, service: str | None = None):
+    b = InlineKeyboardBuilder()
+    if service == "ozon":
+        b.row(CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"))
+    else:
+        b.row(
+            CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"),
+            CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"),
+        )
+    return b.as_markup()
+
+
+def delivery_points_kb(order_id: int, points: list, service: str | None = None):
+    b = InlineKeyboardBuilder()
+    row = []
+    for i in range(len(points)):
+        row.append(CallbackButton(text=str(i + 1), payload=f"dlv:n:{order_id}:{i}"))
+        if len(row) == 4:
+            b.row(*row)
+            row = []
+    if row:
+        b.row(*row)
+    if service != "ozon":
+        b.row(CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"))
+    return b.as_markup()
+
+
+def delivery_start_kb(order_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(CallbackButton(text="📦 Оформить доставку", payload=f"dlv:go:{order_id}"))
+    return b.as_markup()
+
+
+def delivery_orders_kb(orders: list):
+    b = InlineKeyboardBuilder()
+    for o in orders[:5]:
+        b.row(CallbackButton(text=f"#{o['id']} оформить доставку", payload=f"dlv:go:{o['id']}"))
     return b.as_markup()

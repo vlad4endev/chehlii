@@ -19,8 +19,28 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
     {
         "id": "yandex_disk",
         "title": "Яндекс.Диск",
-        "hint": "Хранилище файлов клиентов и макетов. Нужно для передачи макета клиенту.",
+        "hint": (
+            "Хранилище файлов клиентов и макетов. Создайте приложение на oauth.yandex.ru "
+            "(«для доступа к API или отладки»). В «Доступ к данным» начните вводить и "
+            "выберите из списка: cloud_api:disk.write, cloud_api:disk.read, "
+            "cloud_api:disk.info. Без этих трёх прав Яндекс вернёт invalid_scope. "
+            "Redirect URI — строго https://oauth.yandex.ru/verification_code. "
+            "После «Разрешить» скопируйте токен или весь URL в поле OAuth-токен. "
+            "«Проверить связь» папок не создаёт."
+        ),
         "fields": [
+            {
+                "key": "yandex_disk.client_id",
+                "label": "Client ID приложения",
+                "secret": False,
+                "placeholder": "из oauth.yandex.ru",
+            },
+            {
+                "key": "yandex_disk.client_secret",
+                "label": "Client secret (для обмена code)",
+                "secret": True,
+                "placeholder": "нужен, если Яндекс вернёт code, а не токен",
+            },
             {
                 "key": "yandex_disk.oauth_token",
                 "label": "OAuth-токен",
@@ -38,7 +58,12 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
     {
         "id": "cdek",
         "title": "СДЭК",
-        "hint": "Служба доставки: расчёт стоимости, заявка, статус. Отправитель — ваш склад.",
+        "hint": (
+            "Служба доставки: расчёт, ПВЗ, заявка, статус, ярлык. Ключи — ЛК СДЭК → "
+            "Интеграция → «Создать ключ» (две длинные строки Account и Secure), не "
+            "логин кабинета. Ключи ЛК работают только на продакшене: тестовый режим "
+            "= false. Для api.edu.cdek.ru нужны отдельные ключи песочницы."
+        ),
         "fields": [
             {
                 "key": "cdek.account",
@@ -51,19 +76,37 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "key": "cdek.test",
                 "label": "Тестовый режим (true/false)",
                 "secret": False,
-                "placeholder": "true",
+                "placeholder": "false (ключи из ЛК — продакшен)",
+            },
+            {
+                "key": "cdek.shipment_point",
+                "label": "Код ПВЗ отгрузки (склад)",
+                "secret": False,
+                "placeholder": "MSK1",
             },
             {
                 "key": "cdek.from_postal",
-                "label": "Индекс отправителя (склад)",
+                "label": "Индекс отправителя (для расчёта, если ПВЗ не задан)",
                 "secret": False,
                 "placeholder": "101000",
             },
             {
+                "key": "cdek.from_address",
+                "label": "Адрес отправителя (только тарифы «от двери»)",
+                "secret": False,
+                "placeholder": "",
+            },
+            {
                 "key": "cdek.tariff_code",
-                "label": "Код тарифа",
+                "label": "Код тарифа до двери",
                 "secret": False,
                 "placeholder": "137 (склад-дверь)",
+            },
+            {
+                "key": "cdek.tariff_pickup",
+                "label": "Код тарифа до ПВЗ",
+                "secret": False,
+                "placeholder": "136 (склад-склад)",
             },
             {
                 "key": "cdek.weight",
@@ -77,6 +120,12 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "secret": False,
                 "placeholder": "casetop",
             },
+            {
+                "key": "cdek.sender_phone",
+                "label": "Телефон отправителя",
+                "secret": False,
+                "placeholder": "+79990000000",
+            },
         ],
     },
     {
@@ -84,10 +133,15 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "title": "Яндекс Доставка",
         "hint": (
             "Служба доставки: ПВЗ и курьер до двери. Токен — в личном кабинете "
-            "dostavka.yandex.ru → «Интеграция». Ключ Геокодера нужен только для доставки "
-            "до двери (координаты адреса); для ПВЗ он не требуется. В тестовом режиме "
-            "нужен тестовый токен из документации API — токен из ЛК работает только "
-            "на продакшене."
+            "dostavka.yandex.ru → «Интеграция». Токен из ЛК работает только на продакшене: "
+            "оставьте «Тестовый режим» = false. Для песочницы нужен тестовый токен из "
+            "документации API (раздел «Тестовый доступ»), не из кабинета — иначе будет "
+            "401 Access denied. Склад отправителя создаётся через Platform API "
+            "(warehouses/create) с адресом; в Kit CreateWarehouse адреса нет. "
+            "Ключ Геокодера (не OAuth Доставки) необязателен: курьер уходит с адресом "
+            "через Доставку. Склад Гаршина 3 — по запасным координатам. "
+            "merchant_id не заполняйте — токен уже определяет магазин; чужой ID даёт "
+            "«Merchant not found»."
         ),
         "fields": [
             {
@@ -100,19 +154,37 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "key": "yandex.test",
                 "label": "Тестовый режим (true/false)",
                 "secret": False,
-                "placeholder": "true",
+                "placeholder": "false",
             },
             {
                 "key": "yandex.merchant_id",
-                "label": "ID магазина (merchant_id)",
+                "label": "ID мерчанта (оставьте пустым)",
                 "secret": False,
-                "placeholder": "290587090cfc4943856851c8c3b2eebf",
+                "placeholder": "только если в ЛК есть отдельные мерчанты",
             },
             {
                 "key": "yandex.platform_station_id",
                 "label": "ID склада отправителя (platform_id)",
                 "secret": False,
-                "placeholder": "e1139f6d-e34f-47a9-a55f-31f032a861a6",
+                "placeholder": "создайте склад кнопкой ниже или вставьте UUID",
+            },
+            {
+                "key": "yandex.sender_name",
+                "label": "Контакт на складе (имя)",
+                "secret": False,
+                "placeholder": "как к курьеру обращаться",
+            },
+            {
+                "key": "yandex.sender_phone",
+                "label": "Телефон склада",
+                "secret": False,
+                "placeholder": "+79990000000",
+            },
+            {
+                "key": "yandex.sender_email",
+                "label": "Email склада",
+                "secret": False,
+                "placeholder": "optional@example.com",
             },
             {
                 "key": "yandex.last_mile_policy",
@@ -146,9 +218,59 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
             {
                 "key": "yandex.geocoder_apikey",
-                "label": "API-ключ Геокодера (только для курьера до двери)",
+                "label": "API-ключ Геокодера (не OAuth Доставки)",
+                "secret": True,
+                "placeholder": "UUID с developer.tech.yandex.ru",
+            },
+        ],
+    },
+    {
+        "id": "ozon",
+        "title": "Ozon Доставка",
+        "hint": (
+            "Доставка заказов со своего сайта через ПВЗ Ozon (не витрина маркетплейса). "
+            "В ЛК Ozon Доставки создайте частное приложение с типом Delivery API и "
+            "скоупом delivery-api.all — скопируйте Client ID и Client Secret. "
+            "ID метода доставки указан в ЛК под штрих-кодом метода после его добавления. "
+            "Клиентский телефон должен быть зарегистрирован в Ozon, иначе заказ "
+            "не создастся. Это не Seller API и не старый Ozon Rocket."
+        ),
+        "fields": [
+            {
+                "key": "ozon.client_id",
+                "label": "Client ID приложения (UUID)",
+                "secret": False,
+                "placeholder": "из ЛК → частные приложения",
+            },
+            {
+                "key": "ozon.client_secret",
+                "label": "Client Secret",
                 "secret": True,
                 "placeholder": "",
+            },
+            {
+                "key": "ozon.shipment_method_id",
+                "label": "ID метода доставки",
+                "secret": False,
+                "placeholder": "число под штрих-кодом метода в ЛК",
+            },
+            {
+                "key": "ozon.weight",
+                "label": "Вес посылки, г",
+                "secret": False,
+                "placeholder": "300",
+            },
+            {
+                "key": "ozon.sender_name",
+                "label": "Имя отправителя",
+                "secret": False,
+                "placeholder": "casetop",
+            },
+            {
+                "key": "ozon.sender_phone",
+                "label": "Телефон отправителя",
+                "secret": False,
+                "placeholder": "+79990000000",
             },
         ],
     },
@@ -156,14 +278,17 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "payment",
         "title": "Оплата (Robokassa)",
         "hint": (
-            "Приём предоплаты и постоплаты. Поле «Платёжный шлюз» выбирает, по какому "
-            "провайдеру бот выдаёт ссылку. В ЛК Robokassa укажите ResultURL, Success и "
-            "Fail (см. подсказку под полями)."
+            "Приём предоплаты и постоплаты. Бот показывает кнопку на каждый настроенный "
+            "шлюз, а поле «Платёжный шлюз» задаёт, какой из них идёт первым. В ЛК "
+            "Robokassa укажите ResultURL, Success и Fail на адрес backend "
+            "(…/api/v1/payments/robokassa/success|fail) — не на t.me, иначе после оплаты "
+            "клиентов из MAX уведёт в Telegram. Кнопка «Проверить связь» опрашивает "
+            "Robokassa сохранёнными кредами и платежей не создаёт."
         ),
         "fields": [
             {
                 "key": "payment.provider",
-                "label": "Платёжный шлюз (robokassa / yandex_pay)",
+                "label": "Шлюз по умолчанию, первый в списке (robokassa / yandex_pay)",
                 "secret": False,
                 "placeholder": "robokassa",
             },
@@ -203,11 +328,11 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "id": "yandex_pay",
         "title": "Оплата (Яндекс Пэй)",
         "hint": (
-            "Альтернативный шлюз: ссылка на форму Яндекс Пэй. API-ключ выпускается в ЛК "
+            "Второй шлюз: ссылка на форму Яндекс Пэй. API-ключ выпускается в ЛК "
             "pay.yandex.ru — если он выдан (вид «мерчант-без-дефисов.секрет»), вписывайте "
             "целиком. В песочнице ключ можно не выпускать: подойдёт сам Merchant ID. "
             "В ЛК укажите Callback URL = {публичный адрес}/api/v1/payments/yandex-pay/webhook. "
-            "Чтобы включить шлюз, поставьте «Платёжный шлюз» = yandex_pay. Кнопка "
+            "Заполненный ключ сам добавляет кнопку «Яндекс Пэй» в блок оплаты. Кнопка "
             "«Проверить связь» опрашивает Пэй сохранёнными кредами и заказов не создаёт."
         ),
         "fields": [
@@ -245,6 +370,8 @@ SECRET_KEYS: set[str] = {f["key"] for g in INTEGRATION_SCHEMA for f in g["fields
 # Фоллбэк из переменных окружения для известных ключей.
 _ENV_FALLBACK = {
     "yandex_disk.oauth_token": lambda: settings.yandex_disk_oauth_token,
+    "yandex_disk.client_id": lambda: settings.yandex_disk_client_id,
+    "yandex_disk.client_secret": lambda: settings.yandex_disk_client_secret,
     "yandex_disk.root": lambda: settings.yandex_disk_root,
 }
 
@@ -271,6 +398,18 @@ async def set_many(session: AsyncSession, values: dict[str, str]) -> None:
         # Пустое значение для секрета = «не менять» (не затираем существующий).
         if k in SECRET_KEYS and v == "":
             continue
+        if k in ("cdek.account", "cdek.secret", "ozon.client_id", "ozon.client_secret"):
+            from app.services.cdek import sanitize_secret
+
+            v = sanitize_secret(v)
+            if not v:
+                continue
+        if k == "yandex_disk.oauth_token":
+            from app.services.yandex_disk import sanitize_token
+
+            v = sanitize_token(v)
+            if not v:
+                continue
         row = await session.get(IntegrationSetting, k)
         if row is None:
             session.add(IntegrationSetting(key=k, value=v))

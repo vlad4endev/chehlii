@@ -8,32 +8,32 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import httpx
 from maxapi import Bot
+from maxapi.enums.sender_action import SenderAction
 from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
 
+from bots.core import delivery
 from bots.core.backend import backend
 from bots.core.config import settings
+from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
+from bots.core.scenario import STATE_WAITING_CONTACT, pending_payload
 from bots.core.texts import texts
+from bots.max.chat_map import chat_for
 from bots.max.handlers import dp
-from bots.max.keyboards import mockup_kb
+from bots.max.keyboards import (
+    contact_kb,
+    delivery_mode_kb,
+    delivery_service_kb,
+    delivery_start_kb,
+    main_menu_kb,
+    mockup_kb,
+)
+from bots.max.pending_fsm import PendingFsmMiddleware
 
 
 async def _fetch_media(path_or_url: str) -> bytes | None:
-    """Скачать изображение (из backend по внутреннему адресу) для отправки вложением."""
-    try:
-        if path_or_url.startswith("http"):
-            u = path_or_url
-        else:
-            origin = settings.backend_url.split("/api/")[0]  # http://backend:8000
-            u = f"{origin}{path_or_url}"
-        async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.get(u)
-            r.raise_for_status()
-            return r.content
-    except Exception:  # noqa: BLE001
-        return None
+    return await fetch_bytes(path_or_url)
 
 
 def _media_of(item: dict) -> list[dict]:
@@ -41,13 +41,68 @@ def _media_of(item: dict) -> list[dict]:
     media = list(item.get("media") or [])
     if not media and item.get("kind") == "photo" and item.get("attachment_url"):
         media = [{"url": item["attachment_url"], "type": "image"}]
-    return media[:10]
+    return [m for m in media[:10] if isinstance(m, dict) and m.get("url")]
+
+
+async def _deliver_mockup(bot: Bot, item: dict) -> None:
+    """Макет — картинка в чате с кнопками, не ссылка на Яндекс.Диск."""
+    uid = int(item["channel_user_id"])
+    text = item.get("text") or "Ваш макет готов."
+    url = item.get("attachment_url") or ""
+    kb = [mockup_kb(item["order_id"])] if item.get("order_id") else []
+    data = await fetch_bytes(url)
+    if data and looks_like_image(data):
+        atts = [
+            InputMediaBuffer(buffer=data, filename="mockup.jpg", type=UploadType.IMAGE),
+            *kb,
+        ]
+        await bot.send_message(user_id=uid, text=text, attachments=atts)
+        return
+    if data:
+        file_type = getattr(UploadType, "FILE", None)
+        name = "mockup.pdf" if looks_like_pdf(data) else "mockup.bin"
+        if file_type is not None:
+            atts = [InputMediaBuffer(buffer=data, filename=name, type=file_type), *kb]
+            await bot.send_message(user_id=uid, text=text, attachments=atts)
+            return
+    extra = f"\n\n📎 {url}" if url else ""
+    await bot.send_message(
+        user_id=uid, text=f"{text}{extra}", attachments=kb or None
+    )
+
+
+async def _scenario_attachments(bot: Bot, state: str | None) -> list:
+    me = getattr(bot, "me", None) or getattr(bot, "_me", None)
+    username = getattr(me, "username", None) if me else None
+    bot_id = getattr(me, "user_id", None) if me else None
+    if state == STATE_WAITING_CONTACT:
+        return [contact_kb()]
+    return [main_menu_kb(username, bot_id)]
+
+
+async def _deliver_scenario(bot: Bot, item: dict) -> None:
+    uid = int(item["channel_user_id"])
+    pending = pending_payload(item)
+    text = item.get("text") or "Новое сообщение"
+    atts = await _scenario_attachments(bot, pending.get("state"))
+    await bot.send_message(user_id=uid, text=text, attachments=atts)
+    # FSM для MAX ставит outer middleware на следующем апдейте (MemoryContext).
 
 
 async def _deliver(bot: Bot, item: dict) -> None:
     text = item.get("text") or ""
     kind = item.get("kind")
     uid = int(item["channel_user_id"])
+    if kind == "typing":
+        # channel_user_id = user_id; send_action нужен chat_id диалога.
+        await bot.send_action(chat_id=chat_for(uid), action=SenderAction.TYPING_ON)
+        return
+    if kind == "mockup":
+        await _deliver_mockup(bot, item)
+        return
+    if kind == "scenario":
+        await _deliver_scenario(bot, item)
+        return
 
     # Рассылка с медиа → одно сообщение с несколькими вложениями (фото/видео).
     media = _media_of(item)
@@ -56,18 +111,32 @@ async def _deliver(bot: Bot, item: dict) -> None:
         for i, mm in enumerate(media):
             data = await _fetch_media(mm.get("url", ""))
             if data:
-                # В MAX кружков нет — video_note уходит обычным видео.
-                is_video = mm.get("type") in ("video", "video_note")
-                utype = UploadType.VIDEO if is_video else UploadType.IMAGE
+                t = mm.get("type")
+                if t in ("video", "video_note"):
+                    utype = UploadType.VIDEO
+                elif t == "audio":
+                    utype = getattr(UploadType, "AUDIO", None) or getattr(
+                        UploadType, "FILE", UploadType.IMAGE
+                    )
+                elif t == "file":
+                    utype = getattr(UploadType, "FILE", UploadType.IMAGE)
+                else:
+                    utype = UploadType.IMAGE
                 atts.append(InputMediaBuffer(buffer=data, filename=f"m{i}", type=utype))
         if atts:
             await bot.send_message(user_id=uid, text=(text or None), attachments=atts)
             return
 
-    url = item.get("attachment_url")
-    if url and kind == "mockup":
-        text = f"{text or 'Новое сообщение'}\n\n📎 Макет: {url}"
-    atts2 = [mockup_kb(item["order_id"])] if kind == "mockup" and item.get("order_id") else None
+    atts2 = None
+    if kind == "delivery" and item.get("order_id"):
+        oid = item["order_id"]
+        services = await delivery.configured_services()
+        if not services:
+            atts2 = [delivery_start_kb(oid)]
+        elif len(services) > 1:
+            atts2 = [delivery_service_kb(oid, services)]
+        else:
+            atts2 = [delivery_mode_kb(oid, services[0])]
     await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts2)
 
 
@@ -83,7 +152,7 @@ async def _outbox_loop(bot: Bot) -> None:
                     logging.warning("outbox max: доставка не удалась: %s", e)
         except Exception:  # noqa: BLE001
             pass
-        await asyncio.sleep(5)
+        await asyncio.sleep(1.5)
 
 
 async def main() -> None:
@@ -93,6 +162,7 @@ async def main() -> None:
 
     await texts.load()
     bot = Bot(settings.max_bot_token)
+    dp.register_outer_middleware(PendingFsmMiddleware())
     outbox = asyncio.create_task(_outbox_loop(bot))
     try:
         await dp.start_polling(bot)

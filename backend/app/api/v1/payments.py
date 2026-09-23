@@ -1,8 +1,8 @@
 """Оплата: генерация ссылки (для бота), вебхуки шлюзов, страницы Success/Fail.
 
-Шлюз выбирается настройкой `payment.provider` (robokassa | yandex_pay) — бот всегда
-зовёт один и тот же POST /payments/link. Модель платежей двухступенчатая: предоплата
-(% от цены со скидкой) и постоплата (остаток).
+POST /payments/link отдаёт по ссылке на каждый настроенный шлюз (robokassa, yandex_pay) —
+клиент выбирает способ кнопкой в боте; `payment.provider` задаёт лишь порядок. Модель
+платежей двухступенчатая: предоплата (% от цены со скидкой) и постоплата (остаток).
 
 Подтверждение оплаты: Robokassa — вебхук с подписью (Пароль №2); Яндекс Пэй — вебхук
 без проверки подписи, статус перечитывается по API (см. services/yandex_pay.py).
@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.internal import require_internal
@@ -26,7 +27,8 @@ from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
-from app.services import integrations, pricing, robokassa, stock, yandex_pay
+from app.services import cdek_checkout, integrations, pricing, robokassa, stock, yandex_pay
+from app.services.order_state_machine import can_transition
 
 router = APIRouter()
 
@@ -37,6 +39,32 @@ _PAID_STATUS = {
     PaymentKind.PREPAYMENT: OrderStatus.PREPAYMENT_PAID,
     PaymentKind.POSTPAYMENT: OrderStatus.POSTPAYMENT_PAID,
 }
+# Если заказ уже ушёл дальше по воронке, поздний вебхук оплаты не откатывает статус.
+_PAST_PREPAY = {
+    OrderStatus.HANDED_TO_DESIGN,
+    OrderStatus.DESIGN_IN_PROGRESS,
+    OrderStatus.MOCKUP_SENT,
+    OrderStatus.MOCKUP_APPROVAL,
+    OrderStatus.MOCKUP_REVISION,
+    OrderStatus.POSTPAYMENT_ISSUED,
+    OrderStatus.POSTPAYMENT_PAID,
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REVIEW_OFFERED,
+    OrderStatus.REVIEW_RECEIVED,
+}
+_PAST_POSTPAY = {
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REVIEW_OFFERED,
+    OrderStatus.REVIEW_RECEIVED,
+}
 
 _KIND_RU = {"prepayment": "предоплата", "postpayment": "постоплата", "delivery": "доставка"}
 
@@ -46,10 +74,23 @@ class LinkIn(BaseModel):
     kind: PaymentKind = PaymentKind.PREPAYMENT
 
 
-class LinkOut(BaseModel):
+class PayOption(BaseModel):
+    """Один способ оплаты = одна кнопка в боте и своя строка в payments."""
+
+    provider: str
     url: str
-    amount: float
     inv_id: int
+
+
+class LinkOut(BaseModel):
+    amount: float
+    # Доля предоплаты — боту, чтобы подписать блок («Предоплата 50%») без похода в настройки.
+    percent: float = 0
+    # Все настроенные шлюзы; первым — выбранный в `payment.provider`.
+    options: list[PayOption]
+    # Первая ссылка — для старых ботов, которые ещё читают `url`, а не `options`.
+    url: str = ""
+    inv_id: int = 0
 
 
 def _discounted(order: Order) -> float:
@@ -69,7 +110,8 @@ def _amount(order: Order, kind: PaymentKind, percent: float) -> float:
     return 0.0
 
 
-async def _robokassa_cfg(session: AsyncSession) -> dict:
+async def robokassa_cfg(session: AsyncSession) -> dict:
+    """Креды Robokassa из настроек. Публичная — админка использует её для проверки связи."""
     login = await integrations.get(session, "payment.robokassa_login")
     pass1 = await integrations.get(session, "payment.robokassa_pass1")
     pass2 = await integrations.get(session, "payment.robokassa_pass2")
@@ -100,6 +142,10 @@ async def yandexpay_cfg(session: AsyncSession) -> dict:
     }
 
 
+# Все поддерживаемые шлюзы: клиент видит кнопку на каждый настроенный.
+PROVIDERS = ("robokassa", "yandex_pay")
+
+
 async def _provider(session: AsyncSession) -> str:
     return (await integrations.get(session, "payment.provider", "robokassa") or "robokassa").strip()
 
@@ -124,7 +170,7 @@ async def _yandexpay_link(session: AsyncSession, payment: Payment, description: 
 async def _robokassa_link(
     session: AsyncSession, payment: Payment, order: Order, description: str
 ) -> str:
-    cfg = await _robokassa_cfg(session)
+    cfg = await robokassa_cfg(session)
     return robokassa.payment_url(
         login=cfg["login"],
         password1=cfg["pass1"],
@@ -138,34 +184,76 @@ async def _robokassa_link(
 
 @router.post("/link", response_model=LinkOut, dependencies=[Depends(require_internal)])
 async def create_link(body: LinkIn, session: Session) -> LinkOut:
-    """Создать ссылку оплаты для заказа (вызывает бот). Шлюз — из `payment.provider`."""
+    """Ссылки оплаты для заказа (вызывает бот) — по одной на каждый настроенный шлюз.
+
+    Клиент выбирает способ сам, поэтому создаём свою строку `payments` под каждый:
+    у Robokassa и Пэй свои идентификаторы платежа, общей строкой их не развести.
+    Ненастроенный (или не ответивший) шлюз просто выпадает из списка.
+    `payment.provider` больше не единственный шлюз, а лишь тот, что показываем первым.
+    """
     order = await session.get(Order, body.order_id)
     if order is None:
         raise HTTPException(404, "Заказ не найден")
-    provider = await _provider(session)
     percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
     amount = _amount(order, body.kind, percent)
     if amount <= 0:
         raise HTTPException(400, "Сумма оплаты равна нулю")
+    # Ссылка постоплаты после макета / стандарта — статус «выставлена», иначе
+    # админка и вебхук видят ещё «согласование макета», хотя клиент уже платит.
+    if body.kind == PaymentKind.POSTPAYMENT and can_transition(
+        order.status, OrderStatus.POSTPAYMENT_ISSUED
+    ):
+        order.status = OrderStatus.POSTPAYMENT_ISSUED
+        session.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                status=OrderStatus.POSTPAYMENT_ISSUED,
+                changed_by="system",
+                trigger="Ссылка постоплаты",
+                created_at=datetime.now(UTC),
+            )
+        )
 
-    payment = Payment(
-        order_id=order.id,
-        kind=body.kind,
-        gateway=provider,
-        amount=amount,
-        status=PaymentStatus.PENDING,
-    )
-    session.add(payment)
-    await session.flush()
-
+    default = await _provider(session)
     description = f"casetop заказ #{order.id} ({_KIND_RU.get(body.kind, body.kind)})"
-    if provider == "yandex_pay":
-        url = await _yandexpay_link(session, payment, description)
-    else:
-        url = await _robokassa_link(session, payment, order, description)
-    payment.payment_url = url
+    options: list[PayOption] = []
+    errors: list[str] = []
+    for provider in sorted(PROVIDERS, key=lambda p: p != default):
+        payment = Payment(
+            order_id=order.id,
+            kind=body.kind,
+            gateway=provider,
+            amount=amount,
+            status=PaymentStatus.PENDING,
+        )
+        session.add(payment)
+        await session.flush()  # нужен payment.id: он же InvId у Robokassa и orderId у Пэй
+        try:
+            if provider == "yandex_pay":
+                url = await _yandexpay_link(session, payment, description)
+            else:
+                url = await _robokassa_link(session, payment, order, description)
+        except HTTPException as e:
+            # Шлюз не настроен или не ответил — строку не держим, чтобы в оплатах
+            # не копились «висяки» без ссылки.
+            await session.delete(payment)
+            errors.append(f"{provider}: {e.detail}")
+            continue
+        payment.payment_url = url
+        options.append(PayOption(provider=provider, url=url, inv_id=payment.id))
+
+    if not options:
+        await session.rollback()
+        raise HTTPException(400, " ".join(errors) or "Платёжные шлюзы не настроены")
     await session.commit()
-    return LinkOut(url=url, amount=amount, inv_id=payment.id)
+    first = options[0]
+    return LinkOut(
+        amount=amount,
+        percent=percent,
+        options=options,
+        url=first.url,
+        inv_id=first.inv_id,
+    )
 
 
 async def _params(request: Request) -> dict[str, str]:
@@ -185,7 +273,7 @@ async def _robokassa_result(request: Request, session: AsyncSession):
     if payment is None:
         return PlainTextResponse("bad invoice", status_code=400)
 
-    cfg = await _robokassa_cfg(session)
+    cfg = await robokassa_cfg(session)
     if not robokassa.verify_result(
         password2=cfg["pass2"], out_sum=out_sum, inv_id=inv_id, signature=sig, shp=shp
     ):
@@ -264,11 +352,26 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
         return
     payment.status = PaymentStatus.PAID
     payment.paid_at = datetime.now(UTC)
+    # На заказ выставлено по счёту на каждый шлюз — оставшиеся закрываем, иначе в
+    # оплатах висят дубли на ту же сумму и клиент может заплатить дважды.
+    await session.execute(
+        update(Payment)
+        .where(
+            Payment.order_id == payment.order_id,
+            Payment.kind == payment.kind,
+            Payment.id != payment.id,
+            Payment.status == PaymentStatus.PENDING,
+        )
+        .values(status=PaymentStatus.CANCELLED)
+    )
     order = await session.get(Order, payment.order_id)
     if order is not None:
         order.payment_status = PaymentStatus.PAID
         new = _PAID_STATUS.get(payment.kind)
-        if new is not None:
+        rewind = (new == OrderStatus.PREPAYMENT_PAID and order.status in _PAST_PREPAY) or (
+            new == OrderStatus.POSTPAYMENT_PAID and order.status in _PAST_POSTPAY
+        )
+        if new is not None and not rewind:
             order.status = new
             if new == OrderStatus.PREPAYMENT_PAID:
                 await stock.deduct_for_order(session, order)
@@ -282,7 +385,12 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
                 )
             )
         client = await session.get(Client, order.client_id)
-        if client is not None:
+        if payment.kind == PaymentKind.POSTPAYMENT:
+            # Дальше бот показывает выбор службы и ПВЗ/курьера (outbox kind=delivery).
+            await cdek_checkout.start_after_postpayment(session, order, client)
+        elif payment.kind == PaymentKind.DELIVERY:
+            await cdek_checkout.fulfill(session, order, client)
+        elif client is not None:
             session.add(
                 OutboundMessage(
                     client_id=client.id,
@@ -301,22 +409,103 @@ _PAGE = """<!doctype html><html lang=ru><meta charset=utf-8>
 <title>casetop</title>
 <style>body{{font-family:system-ui,sans-serif;background:#f4f4f3;color:#17181a;display:grid;
 place-items:center;min-height:100vh;margin:0}}.c{{text-align:center;max-width:340px;padding:28px}}
-h1{{font-size:22px;margin:0 0 10px}}p{{color:#6d6f73;line-height:1.5}}</style>
-<div class=c><h1>{title}</h1><p>{text}</p></div>"""
+h1{{font-size:22px;margin:0 0 10px}}p{{color:#6d6f73;line-height:1.5;margin:0 0 18px}}
+a.btn{{display:inline-block;padding:12px 18px;border-radius:12px;background:#17181a;color:#fff;
+text-decoration:none;font-weight:600}}</style>
+<div class=c><h1>{title}</h1><p>{text}</p>{button}</div>"""
+
+
+def _bot_return_button(channel: str | None) -> str:
+    """Кнопка «Вернуться в бот» — Max или Telegram по каналу клиента."""
+    if channel == "max":
+        url = f"https://max.ru/{settings.max_bot_username}"
+        label = "Открыть MAX-бот"
+    else:
+        url = f"https://t.me/{settings.tg_bot_username}"
+        label = "Открыть Telegram-бот"
+    return f'<a class="btn" href="{url}">{label}</a>'
+
+
+async def _client_channel_from_params(session: AsyncSession, params: dict[str, str]) -> str | None:
+    """Канал клиента по InvId платежа или Shp_order — чтобы SuccessURL не слал всех в t.me."""
+    order_id: int | None = None
+    shp_order = params.get("Shp_order") or params.get("shp_order")
+    if shp_order and str(shp_order).isdigit():
+        order_id = int(shp_order)
+    if order_id is None:
+        inv_id = params.get("InvId") or params.get("invId") or params.get("orderId") or ""
+        if str(inv_id).isdigit():
+            payment = await session.get(Payment, int(inv_id))
+            if payment is not None:
+                order_id = payment.order_id
+    if order_id is None:
+        return None
+    order = await session.get(Order, order_id)
+    if order is None:
+        return None
+    client = await session.get(Client, order.client_id)
+    return client.channel if client else None
 
 
 @router.get("/success", response_class=HTMLResponse)
 @router.get("/robokassa/success", response_class=HTMLResponse)
-async def payment_success() -> str:
+async def payment_success(request: Request, session: Session) -> str:
+    params = dict(request.query_params)
+    await _try_apply_from_redirect(session, params)
+    channel = await _client_channel_from_params(session, params)
     return _PAGE.format(
-        title="Оплата прошла ✅", text="Спасибо! Вернитесь в чат бота — продолжим оформление."
+        title="Оплата прошла ✅",
+        text="Спасибо! Вернитесь в чат бота — продолжим оформление.",
+        button=_bot_return_button(channel),
     )
 
 
 @router.get("/fail", response_class=HTMLResponse)
 @router.get("/robokassa/fail", response_class=HTMLResponse)
-async def payment_fail() -> str:
+async def payment_fail(request: Request, session: Session) -> str:
+    channel = await _client_channel_from_params(session, dict(request.query_params))
     return _PAGE.format(
         title="Оплата не завершена",
         text="Платёж отменён или не прошёл. Вернитесь в бот и попробуйте снова.",
+        button=_bot_return_button(channel),
     )
+
+
+async def _try_apply_from_redirect(session: AsyncSession, params: dict[str, str]) -> None:
+    """SuccessURL — запасной вход, если ResultURL/вебхук не дошёл. Идемпотентно."""
+    inv_id = params.get("InvId") or params.get("invId") or params.get("orderId") or ""
+    if not str(inv_id).isdigit():
+        return
+    payment = await session.get(Payment, int(inv_id))
+    if payment is None or payment.status == PaymentStatus.PAID:
+        return
+    if payment.gateway == "robokassa":
+        try:
+            cfg = await robokassa_cfg(session)
+        except HTTPException:
+            return
+        shp = {k: v for k, v in params.items() if k.startswith("Shp_")}
+        if not robokassa.verify_success(
+            password1=cfg["pass1"],
+            out_sum=params.get("OutSum", ""),
+            inv_id=str(inv_id),
+            signature=params.get("SignatureValue", ""),
+            shp=shp,
+        ):
+            return
+        payment.raw_webhook = params
+        await _apply_paid(session, payment)
+        return
+    if payment.gateway != "yandex_pay":
+        return
+    try:
+        cfg = await yandexpay_cfg(session)
+        status = await yandex_pay.order_status(cfg, str(inv_id))
+        if status == "AUTHORIZED":
+            if await yandex_pay.capture(cfg, str(inv_id), float(payment.amount)) == "SUCCESS":
+                status = "CAPTURED"
+        if status in yandex_pay.PAID_STATUSES:
+            payment.raw_webhook = params
+            await _apply_paid(session, payment)
+    except (HTTPException, yandex_pay.YandexPayError):
+        return

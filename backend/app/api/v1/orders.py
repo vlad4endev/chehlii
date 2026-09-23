@@ -50,6 +50,10 @@ class OrderOut(BaseModel):
     base_price: float
     total_discount: float
     client_price: float  # цена со скидкой клиента
+    delivery_service: str | None = None
+    delivery_address: str | None = None
+    delivery_cost: float | None = None
+    tracking_code: str | None = None
 
 
 async def _record_status(
@@ -81,6 +85,10 @@ async def _to_out(session: AsyncSession, order: Order) -> OrderOut:
         base_price=float(breakdown.case_price),
         total_discount=disc,
         client_price=float(breakdown.price_with_discount),
+        delivery_service=order.delivery_service,
+        delivery_address=order.delivery_address,
+        delivery_cost=float(order.delivery_cost) if order.delivery_cost is not None else None,
+        tracking_code=order.tracking_code,
     )
 
 

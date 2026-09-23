@@ -115,7 +115,7 @@ def build_order(
     if redirect_base:
         base = redirect_base.rstrip("/")
         body["redirectUrls"] = {
-            "onSuccess": f"{base}/api/v1/payments/success",
+            "onSuccess": f"{base}/api/v1/payments/success?InvId={order_id}",
             "onError": f"{base}/api/v1/payments/fail",
             "onAbort": f"{base}/api/v1/payments/fail",
         }

@@ -12,8 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.enums import Channel
+from app.enums import Channel, OrderStatus
+from app.models.catalog import CaseType
 from app.models.client import Client
+from app.models.order import Order
+from app.services.cdek_checkout import decode_destination
 
 router = APIRouter()
 
@@ -115,3 +118,66 @@ async def mark_journey(
     c.last_msg_at = datetime.now(UTC)
     await session.commit()
     return {"ok": True}
+
+
+_DELIVERY_STATUSES = (
+    OrderStatus.POSTPAYMENT_PAID,
+    OrderStatus.DELIVERY_SERVICE_SELECTION,
+    OrderStatus.DELIVERY_ADDRESS_SELECTION,
+    OrderStatus.DELIVERY_PAYMENT,
+    OrderStatus.SHIPPED,
+    OrderStatus.DELIVERED,
+)
+
+
+class ClientOrderOut(BaseModel):
+    id: int
+    status: OrderStatus
+    case_name: str
+    model_name: str | None
+    delivery_service: str | None
+    delivery_address: str | None
+    delivery_cost: float | None
+    tracking_code: str | None
+
+
+@router.get("/{client_id}/orders", response_model=list[ClientOrderOut])
+async def client_orders(
+    client_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[ClientOrderOut]:
+    """Заказы клиента, по которым можно оформить или отследить доставку."""
+    c = await session.get(Client, client_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "client not found")
+    rows = (
+        await session.scalars(
+            select(Order)
+            .where(
+                Order.client_id == client_id,
+                Order.deleted_at.is_(None),
+                Order.status.in_(_DELIVERY_STATUSES),
+            )
+            .order_by(Order.id.desc())
+            .limit(20)
+        )
+    ).all()
+    out: list[ClientOrderOut] = []
+    for order in rows:
+        ct = await session.get(CaseType, order.case_type_id) if order.case_type_id else None
+        dest = decode_destination(order.delivery_address)
+        out.append(
+            ClientOrderOut(
+                id=order.id,
+                status=order.status,
+                case_name=ct.name if ct else "",
+                model_name=order.model_name,
+                delivery_service=order.delivery_service,
+                delivery_address=dest.get("label") or None,
+                delivery_cost=(
+                    float(order.delivery_cost) if order.delivery_cost is not None else None
+                ),
+                tracking_code=order.tracking_code,
+            )
+        )
+    return out

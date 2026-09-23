@@ -7,6 +7,7 @@ import { AdminLayout } from './layout/AdminLayout'
 import { Broadcasts } from './pages/Broadcasts'
 import { Catalog } from './pages/Catalog'
 import { Clients } from './pages/Clients'
+import { Consult } from './pages/Consult'
 import { Journeys } from './pages/Journeys'
 import { Dashboard } from './pages/Dashboard'
 import { Login } from './pages/Login'
@@ -22,6 +23,7 @@ import { SECTIONS } from './sections'
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
   '/orders': <Orders />,
+  '/consult': <Consult />,
   '/clients': <Clients />,
   '/journeys': <Journeys />,
   '/reviews': <Reviews />,

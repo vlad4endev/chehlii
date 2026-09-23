@@ -8,12 +8,32 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from typing import Annotated
 
-from app.api.v1.admin.deps import AdminOnly
+from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
+
+from app.api.v1.admin.deps import AdminOnly, CurrentAdmin
 from app.services import media
 
 router = APIRouter()
+
+
+@router.get("/preview")
+async def preview_media(
+    _: CurrentAdmin,
+    url: Annotated[str, Query(min_length=1, max_length=1024)],
+) -> Response:
+    """Превью файла в карточке заказа: локальное /media или публичный Яндекс.Диск."""
+    got = await media.bytes_for_url(url)
+    if not got:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл недоступен")
+    data, mime = got
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=120"},
+    )
 
 
 @router.post("")

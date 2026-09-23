@@ -38,6 +38,8 @@ export interface Stats {
   clients_total: number
   reviews_pending: number
   broadcasts_drafts: number
+  consult_unread: number
+  consult_waiting: number
   revenue_paid: number | null
   pipeline_value: number | null
   avg_check: number | null

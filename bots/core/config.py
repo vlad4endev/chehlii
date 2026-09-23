@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_ENV, extra="ignore", case_sensitive=False)
 
     tg_bot_token: str
-    # Прокси для Telegram Bot API (api.telegram.org заблокирован в РФ).
-    # Формат: socks5://user:pass@host:port или http://host:port. Пусто — без прокси.
+    # Прокси для Telegram Bot API. Формат: socks5://user:pass@host:port или
+    # http://host:port. Пусто — бот берёт ключи VLESS / Hysteria2 / SOCKS из админки.
     tg_proxy: str | None = None
     # Токен MAX-бота (мессенджер MAX). Обязателен только для запуска MAX-канала.
     max_bot_token: str | None = None

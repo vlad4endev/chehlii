@@ -79,6 +79,15 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
   )
 }
 
+export async function apiGetBlob(path: string): Promise<Blob> {
+  const t = getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+  })
+  if (!res.ok) throw new ApiError(res.status, `Ошибка ${res.status}`)
+  return res.blob()
+}
+
 // Абсолютный URL медиа из относительного пути (`/media/...`). API отдаёт медиа
 // с корня своего домена; в проде админка на том же домене — путь остаётся как есть.
 const API_ORIGIN = import.meta.env.VITE_API_BASE ?? ''

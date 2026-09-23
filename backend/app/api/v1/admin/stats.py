@@ -21,8 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.admin.deps import CurrentAdmin, is_admin
 from app.api.v1.admin.orders import STATUS_LABELS, order_value
 from app.core.database import get_session
-from app.enums import Channel, OrderStatus, PaymentStatus, ReviewStatus
+from app.enums import Channel, ConsultStatus, OrderStatus, PaymentStatus, ReviewStatus
 from app.models.client import Client
+from app.models.consult import ConsultThread
 from app.models.engagement import Review
 from app.models.messaging import Broadcast
 from app.models.order import Order
@@ -109,6 +110,8 @@ class StatsOut(BaseModel):
     clients_total: int
     reviews_pending: int
     broadcasts_drafts: int
+    consult_unread: int
+    consult_waiting: int
     # Финансы — None для Дизайнера
     revenue_paid: float | None
     pipeline_value: float | None
@@ -157,6 +160,25 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         )
         or 0
     )
+    consult_unread = int(
+        await session.scalar(
+            select(func.coalesce(func.sum(ConsultThread.unread_admin), 0)).where(
+                ConsultThread.status == ConsultStatus.OPEN
+            )
+        )
+        or 0
+    )
+    consult_waiting = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ConsultThread)
+            .where(
+                ConsultThread.status == ConsultStatus.OPEN,
+                ConsultThread.unread_admin > 0,
+            )
+        )
+        or 0
+    )
 
     # Требует внимания — показываем только ненулевые actionable-пункты.
     def _count(statuses: set[OrderStatus]) -> int:
@@ -182,6 +204,7 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
             "/orders?status=design_in_progress",
         ),
         ("review", "Отзывы на модерации", reviews_pending, "/reviews"),
+        ("consult", "Ждут ответа в чате", consult_waiting, "/consult"),
     ]
     attention = [
         AttentionItem(key=k, label=lbl, count=c, href=href)
@@ -249,6 +272,8 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         clients_total=clients_total,
         reviews_pending=reviews_pending,
         broadcasts_drafts=drafts,
+        consult_unread=consult_unread,
+        consult_waiting=consult_waiting,
         revenue_paid=revenue_paid,
         pipeline_value=pipeline_value,
         avg_check=avg_check,

@@ -27,6 +27,15 @@ VIDEO_EXT = {
     "video/quicktime": "mov",
     "video/webm": "webm",
 }
+AUDIO_EXT = {
+    "audio/ogg": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+    "audio/wav": "wav",
+    "audio/webm": "webm",
+    "audio/x-wav": "wav",
+}
 MAX_BYTES = 12 * 1024 * 1024  # 12 МБ (фото/док)
 MAX_VIDEO_BYTES = 45 * 1024 * 1024  # 45 МБ (видео)
 
@@ -57,6 +66,28 @@ def media_kind(content_type: str | None, filename: str | None) -> tuple[str, str
     return None
 
 
+def consult_kind(content_type: str | None, filename: str | None) -> tuple[str, str]:
+    """(расширение, тип) для консультации. тип = image|video|audio|file."""
+    known = media_kind(content_type, filename)
+    if known:
+        return known
+    ct = (content_type or "").lower()
+    if ct in AUDIO_EXT:
+        return AUDIO_EXT[ct], "audio"
+    if ct in DOC_EXT:
+        return DOC_EXT[ct], "file"
+    if filename and "." in filename:
+        tail = filename.rsplit(".", 1)[1].lower()
+        audio = {"ogg": "ogg", "oga": "ogg", "mp3": "mp3", "m4a": "m4a", "aac": "aac", "wav": "wav"}
+        if tail in audio:
+            return audio[tail], "audio"
+        if tail == "pdf":
+            return "pdf", "file"
+        if tail:
+            return tail[:8], "file"
+    return "bin", "file"
+
+
 def ext_for(
     content_type: str | None, filename: str | None, *, allow_docs: bool = False
 ) -> str | None:
@@ -83,3 +114,62 @@ def save_bytes(content: bytes, ext: str, subdir: str) -> str:
     name = f"{uuid.uuid4().hex}.{ext}"
     (folder / name).write_bytes(content)
     return f"/media/{subdir}/{name}"
+
+
+def resolve_local(url: str) -> Path | None:
+    """Путь на диске для `/media/...`. Посторонние URL и `..` — None."""
+    path = (url or "").split("?", 1)[0].strip()
+    if not path.startswith("/media/"):
+        return None
+    rel = path[len("/media/") :].lstrip("/")
+    if not rel or ".." in Path(rel).parts:
+        return None
+    root = Path(settings.media_root).resolve()
+    full = (root / rel).resolve()
+    try:
+        full.relative_to(root)
+    except ValueError:
+        return None
+    return full if full.is_file() else None
+
+
+def sniff_mime(data: bytes, *, name: str = "") -> str:
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:4] == b"%PDF":
+        return "application/pdf"
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+        "gif": "image/gif",
+        "pdf": "application/pdf",
+        "heic": "image/heic",
+        "heif": "image/heif",
+    }.get(ext, "application/octet-stream")
+
+
+async def bytes_for_url(url: str) -> tuple[bytes, str] | None:
+    """Байты локального `/media` или публичного файла Яндекс.Диска."""
+    local = resolve_local(url)
+    if local is not None:
+        data = local.read_bytes()
+        return data, sniff_mime(data, name=local.name)
+    from app.services import yandex_disk
+
+    if yandex_disk.is_public_url(url):
+        try:
+            data = await yandex_disk.download_public(url)
+        except yandex_disk.YandexDiskError:
+            return None
+        if data:
+            return data, sniff_mime(data)
+    return None

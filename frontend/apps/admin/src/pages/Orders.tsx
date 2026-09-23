@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, mediaUrl } from '../api'
+import { ApiError, apiGetBlob, mediaUrl } from '../api'
 import { useAuth } from '../auth'
 import {
   CHANNELS,
@@ -10,6 +10,7 @@ import {
   changeStatus,
   deleteOrder,
   downloadOrdersXlsx,
+  fetchFilePreview,
   fetchOrder,
   fetchOrders,
   uploadMockup,
@@ -256,8 +257,11 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [error, setError] = useState<string | null>(null)
   const [nextStatus, setNextStatus] = useState('')
   const [forceStatus, setForceStatus] = useState('')
-  const [mockupFile, setMockupFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
+  const [mockupBusy, setMockupBusy] = useState(false)
+  const [mockupErr, setMockupErr] = useState<string | null>(null)
+  const [mockupOk, setMockupOk] = useState<string | null>(null)
+  const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -265,8 +269,9 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     try {
       const d = await fetchOrder(id)
       setOrder(d)
-      setMockupFile(null)
       setNextStatus('')
+      setMockupErr(null)
+      setMockupOk(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить заказ')
     }
@@ -311,18 +316,27 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     }
   }
 
-  async function sendMockup() {
-    if (!mockupFile) return
+  async function sendMockup(file: File) {
+    setMockupBusy(true)
     setBusy(true)
+    setMockupErr(null)
+    setMockupOk(null)
     try {
-      const d = await uploadMockup(id, mockupFile)
+      const d = await uploadMockup(id, file)
       setOrder(d)
-      setMockupFile(null)
+      const sent = d.status === 'mockup_sent'
+      setMockupOk(
+        sent
+          ? 'Макет отправлен клиенту, статус — «Отправка макета».'
+          : `Макет отправлен клиенту. Статус заказа: «${d.status_label}».`,
+      )
       onChanged()
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : 'Не удалось отправить макет')
+      setMockupErr(e instanceof ApiError ? e.message : 'Не удалось отправить макет')
     } finally {
+      setMockupBusy(false)
       setBusy(false)
+      if (mockupInputRef.current) mockupInputRef.current.value = ''
     }
   }
 
@@ -341,7 +355,12 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   }
 
   return (
-    <div className="modal" onClick={onClose}>
+    <div
+      className="modal"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div className="modal__card modal__card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">
@@ -393,6 +412,53 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               </div>
             )}
 
+            <div className="block">
+              <div className="field__label">Макет</div>
+              {order.mockup_url && (
+                <div className="photogrid photogrid--mockup">
+                  <ClientFile
+                    key={order.mockup_url}
+                    file={order.mockup_url}
+                    index={0}
+                    label="Макет"
+                    previewApi={`/admin/orders/${id}/mockup-file`}
+                  />
+                </div>
+              )}
+              {order.mockup_disk_url && (
+                <a className="linkbtn" href={order.mockup_disk_url} target="_blank" rel="noreferrer">
+                  Копия на Яндекс.Диске ↗
+                </a>
+              )}
+              <div className="inline-form">
+                <input
+                  ref={mockupInputRef}
+                  className="input"
+                  type="file"
+                  accept="image/*,.pdf"
+                  disabled={busy || mockupBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void sendMockup(file)
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={busy || mockupBusy}
+                  onClick={() => mockupInputRef.current?.click()}
+                >
+                  {mockupBusy ? 'Отправка…' : 'Загрузить и отправить'}
+                </button>
+              </div>
+              {mockupErr && <div className="form-msg form-msg--err">{mockupErr}</div>}
+              {mockupOk && <div className="form-msg form-msg--ok">{mockupOk}</div>}
+              <div className="card__hint">
+                Файл сохранится локально и на Яндекс.Диске. Клиент увидит картинку в чате
+                с кнопками «Подтвердить / Переделать», статус станет «Отправка макета».
+              </div>
+            </div>
+
             <div className="deflist">
               <Row label="Клиент" value={order.client_name || '—'} />
               <Row label="Телефон" value={order.client_phone || '—'} />
@@ -410,34 +476,6 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                   <Row label="Итог" value={order.final_price != null ? money(order.final_price) : '—'} strong />
                 </>
               )}
-            </div>
-
-            <div className="block">
-              <div className="field__label">Макет</div>
-              {order.mockup_url && (
-                <a className="linkbtn" href={order.mockup_url} target="_blank" rel="noreferrer">
-                  Текущий макет ↗
-                </a>
-              )}
-              <div className="inline-form">
-                <input
-                  className="input"
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setMockupFile(e.target.files?.[0] ?? null)}
-                />
-                <button
-                  className="btn btn--primary"
-                  onClick={sendMockup}
-                  disabled={busy || !mockupFile}
-                >
-                  Загрузить и отправить
-                </button>
-              </div>
-              <div className="card__hint">
-                Файл уйдёт на Яндекс.Диск, статус станет «Отправка макета», а клиент получит его
-                в боте с кнопками «Подтвердить / Переделать».
-              </div>
             </div>
 
             <div className="block">
@@ -558,26 +596,129 @@ function OrderThumb({
   )
 }
 
-// Файл клиента: фото показываем миниатюрой (клик — открыть), иначе ссылка.
-function ClientFile({ file, index }: { file: unknown; index: number }) {
-  const [failed, setFailed] = useState(false)
-  const url = typeof file === 'string' ? mediaUrl(file) : null
-  const isImage =
-    typeof file === 'string' && /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.split('?')[0])
+// Файл: фото показываем миниатюрой (клик — открыть), иначе ссылка.
+// Макеты со старых заказов — страница yadi.sk, её нельзя ставить в <img src>.
+// Качаем байты с API (Bearer) и рисуем blob.
+function resolveFileRef(file: unknown): string | null {
+  if (typeof file === 'string' && file.trim()) return file.trim()
+  if (file && typeof file === 'object') {
+    const rec = file as Record<string, unknown>
+    if (typeof rec.url === 'string') return rec.url
+    if (typeof rec.href === 'string') return rec.href
+  }
+  return null
+}
 
-  if (url && isImage && !failed) {
+function isYandexUrl(url: string): boolean {
+  return /(?:yadi\.sk|disk\.yandex\.)/i.test(url)
+}
+
+function isDirectImage(url: string): boolean {
+  const path = url.split('?')[0]
+  return /\.(jpe?g|png|webp|gif)$/i.test(path)
+}
+
+function ClientFile({
+  file,
+  index,
+  label,
+  previewApi,
+}: {
+  file: unknown
+  index: number
+  label?: string
+  previewApi?: string
+}) {
+  const raw = resolveFileRef(file)
+  const href = raw ? mediaUrl(raw) : null
+  const title = label ?? `Фото ${index + 1}`
+  const canDirect = Boolean(raw && isDirectImage(raw) && !isYandexUrl(raw) && !previewApi)
+  const [src, setSrc] = useState<string | null>(canDirect && raw ? mediaUrl(raw) : null)
+  const [kind, setKind] = useState<'img' | 'file' | 'empty' | 'loading'>(
+    !raw ? 'empty' : canDirect ? 'img' : 'loading',
+  )
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+
+    async function load() {
+      if (!raw) {
+        setSrc(null)
+        setKind('empty')
+        return
+      }
+      const needsFetch = Boolean(previewApi) || isYandexUrl(raw) || !isDirectImage(raw)
+      if (!needsFetch) {
+        setSrc(mediaUrl(raw))
+        setKind('img')
+        return
+      }
+      setKind('loading')
+      try {
+        const blob = await (previewApi ? apiGetBlob(previewApi) : fetchFilePreview(raw))
+        if (cancelled) return
+        if (blob.type.includes('pdf')) {
+          setSrc(mediaUrl(raw))
+          setKind('file')
+          return
+        }
+        if (
+          blob.size > 0 &&
+          (!blob.type || blob.type.startsWith('image/')) &&
+          !blob.type.includes('heic') &&
+          !blob.type.includes('heif')
+        ) {
+          objectUrl = URL.createObjectURL(blob)
+          if (cancelled) {
+            URL.revokeObjectURL(objectUrl)
+            return
+          }
+          setSrc(objectUrl)
+          setKind('img')
+          return
+        }
+        setSrc(mediaUrl(raw))
+        setKind('file')
+      } catch {
+        if (!cancelled) {
+          setSrc(mediaUrl(raw))
+          setKind('file')
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [raw, previewApi])
+
+  if (kind === 'loading') {
+    return <span className="photocard photocard--file photocard--muted">Загрузка…</span>
+  }
+  if (kind === 'img' && src) {
     return (
-      <a className="photocard" href={url} target="_blank" rel="noreferrer" title={`Фото ${index + 1}`}>
-        <img src={url} alt={`Фото ${index + 1}`} onError={() => setFailed(true)} />
+      <a className="photocard" href={src} target="_blank" rel="noreferrer" title={title}>
+        <img
+          src={src}
+          alt={title}
+          onError={() => {
+            setKind(href ? 'file' : 'empty')
+          }}
+        />
       </a>
     )
   }
-  if (url) {
+  if (href) {
     return (
-      <a className="photocard photocard--file" href={url} target="_blank" rel="noreferrer">
-        <span>Файл {index + 1} ↗</span>
+      <a className="photocard photocard--file" href={href} target="_blank" rel="noreferrer">
+        <span>{label ?? `Файл ${index + 1}`} ↗</span>
       </a>
     )
   }
-  return <span className="photocard photocard--file photocard--muted">Файл {index + 1}</span>
+  return (
+    <span className="photocard photocard--file photocard--muted">{label ?? `Файл ${index + 1}`}</span>
+  )
 }
