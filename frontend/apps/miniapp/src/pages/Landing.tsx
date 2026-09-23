@@ -276,6 +276,7 @@ export function Landing({ items }: { items: CaseType[] }) {
               <div className="lp-foot__head">Реквизиты</div>
               <p className="lp-foot__legal">ИП Машеро Богдан Олегович</p>
               <p className="lp-foot__legal">ИНН 773186317352</p>
+              <a href="/oferta.html">Публичная оферта</a>
             </div>
             <div>
               <div className="lp-foot__head">Мессенджеры</div>
