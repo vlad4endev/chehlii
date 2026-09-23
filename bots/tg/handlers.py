@@ -570,6 +570,27 @@ async def on_name(msg: Message, state: FSMContext) -> None:
     await backend.mark_journey(client["id"], "msg_007а")
 
 
+@router.message(OrderFlow.confirming)
+async def on_early_content(msg: Message, state: FSMContext) -> None:
+    # Фото/текст прислали, не нажав «Подтвердить»: для кастома это уже материалы —
+    # не теряем их и не заставляем слать заново, для стандарта — просим подтвердить.
+    data = await state.get_data()
+    is_custom = bool(data.get("is_custom", False))
+    order_id = data.get("order_id")
+    if order_id:
+        try:
+            order = await backend.get_order(int(order_id))
+            if order is not None:
+                is_custom = bool(order.get("is_custom", is_custom))
+        except Exception:  # noqa: BLE001
+            logging.warning("tg: не удалось перечитать заказ #%s", order_id, exc_info=True)
+    if is_custom:
+        await state.set_state(OrderFlow.waiting_materials)
+        await on_materials(msg, state)
+        return
+    await msg.answer("Сначала подтвердите заказ кнопкой «Подтвердить» выше.")
+
+
 @router.message(OrderFlow.waiting_materials)
 async def on_materials(msg: Message, state: FSMContext) -> None:
     # Фиксируем file_id + имя; на подтверждении скачаем и зальём на Яндекс Диск.

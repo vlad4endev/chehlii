@@ -499,6 +499,27 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
     await backend.mark_journey(client["id"], "msg_007а")
 
 
+@dp.message_created(OrderFlow.confirming)
+async def on_early_content(event: MessageCreated, context: MemoryContext) -> None:
+    # Фото/текст прислали, не нажав «Подтвердить»: для кастома это уже материалы —
+    # не теряем их, для стандарта — просим подтвердить.
+    data = await context.get_data()
+    is_custom = bool(data.get("is_custom", False))
+    order_id = data.get("order_id")
+    if order_id:
+        try:
+            order = await backend.get_order(int(order_id))
+            if order is not None:
+                is_custom = bool(order.get("is_custom", is_custom))
+        except Exception:  # noqa: BLE001
+            logging.warning("max: не удалось перечитать заказ #%s", order_id, exc_info=True)
+    if is_custom:
+        await context.set_state(OrderFlow.waiting_materials)
+        await on_materials(event, context)
+        return
+    await event.message.answer("Сначала подтвердите заказ кнопкой «Подтвердить» выше.")
+
+
 @dp.message_created(OrderFlow.waiting_materials)
 async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
     text = event.message.body.text or ""
