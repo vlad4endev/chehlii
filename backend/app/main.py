@@ -8,7 +8,7 @@ from pathlib import Path
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -101,6 +101,12 @@ app.mount("/media", StaticFiles(directory=settings.media_root), name="media")
 # /health имеют приоритет). Админка — на /admin (монтируется до корня), мини-
 # приложение — на /. Более специфичный маршрут регистрируется первым.
 if settings.webroot_admin and os.path.isdir(settings.webroot_admin):
+    # /admin без слэша не матчится Mount'ом и иначе проваливается в корневой
+    # SPA-маршрут мини-аппа (Starlette не редиректит bare-путь сам).
+    @app.get("/admin", include_in_schema=False)
+    async def admin_root_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/admin/")
+
     app.mount("/admin", SPAStaticFiles(directory=settings.webroot_admin, html=True), name="admin")
 
 if settings.webroot and os.path.isdir(settings.webroot):
