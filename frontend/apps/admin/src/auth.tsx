@@ -25,6 +25,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(setUser)
       .catch(() => clearToken())
       .finally(() => setLoading(false))
+
+    const onSessionExpired = () => setUser(null)
+    window.addEventListener('casetop:admin:session-expired', onSessionExpired)
+    return () => window.removeEventListener('casetop:admin:session-expired', onSessionExpired)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {

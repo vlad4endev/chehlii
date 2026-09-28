@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Безопасность AdminUI
     jwt_secret: str = "change_me"
-    jwt_access_ttl_minutes: int = 60
+    jwt_access_ttl_minutes: int = 60 * 24
     jwt_refresh_ttl_days: int = 14
 
     # Яндекс Диск (OAuth-приложение на oauth.yandex.ru)

@@ -43,6 +43,10 @@ async function handle<T>(res: Response): Promise<T> {
     } catch {
       /* нет тела */
     }
+    if (res.status === 401) {
+      clearToken()
+      window.dispatchEvent(new Event('casetop:admin:session-expired'))
+    }
     throw new ApiError(res.status, detail)
   }
   if (res.status === 204) return undefined as T
