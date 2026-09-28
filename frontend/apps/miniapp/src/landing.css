@@ -412,6 +412,7 @@ body:has(.lp) { background: var(--lp-paper); }
 .lp-gcard__ph { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(155deg, #eae5d8, #cfc6b1); color: #fff; font-size: 84px; font-family: var(--font-serif); font-style: italic; }
 .lp-gcard__body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 8px; }
 .lp-gcard__name { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+.lp-gcard__price { font-size: 14px; color: var(--lp-ink-soft); }
 
 .lp-chip {
   align-self: flex-start;

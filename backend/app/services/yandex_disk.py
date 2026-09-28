@@ -285,6 +285,10 @@ def client_path(root: str, order_id: int, filename: str) -> str:
     return f"{root.rstrip('/')}/{order_id}/client/{safe_filename(filename, f'client_{order_id}')}"
 
 
+def catalog_path(root: str, filename: str) -> str:
+    return f"{root.rstrip('/')}/catalog/{safe_filename(filename, 'catalog')}"
+
+
 def _space_hint(data: dict) -> str:
     used, total = data.get("used_space"), data.get("total_space")
     if not isinstance(used, int | float) or not isinstance(total, int | float) or total <= 0:

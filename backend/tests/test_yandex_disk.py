@@ -63,6 +63,9 @@ def test_safe_filename_strips_path_and_punctuation():
     assert yd.safe_filename("a/b\\c.jpeg") == "c.jpeg"
     path = yd.design_path("/chechlii/orders", 20, "Макет, v2.png")
     assert path.endswith("/20/design/Макет_v2.png")
+    assert yd.catalog_path("/chechlii/orders", "Чехол, iPhone 15.png").endswith(
+        "/catalog/Чехол_iPhone_15.png"
+    )
 
 
 def test_is_public_url_accepts_yadisk_only() -> None:

@@ -385,6 +385,7 @@ function GalleryCard({ item }: { item: CaseType }) {
           {item.is_custom ? 'Кастом' : 'Минимализм'}
         </span>
         <h3 className="lp-gcard__name">{item.name}</h3>
+        <span className="lp-gcard__price">{MIN_PRICE_LABEL}</span>
       </div>
     </div>
   )
