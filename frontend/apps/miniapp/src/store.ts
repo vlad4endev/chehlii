@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { getMaxUser } from './max'
 import { getTelegramUser } from './telegram'
 
 // Избранное. По ТЗ хранится на сервере и привязано к клиенту (tg_id/max_id) — серверные
 // эндпоинты появятся позже. Пока используем localStorage, но ключ уже привязан к клиенту
-// (у каждого Telegram-аккаунта своё избранное). Интерфейс хука не изменится при переходе
+// (у каждого Telegram/MAX-аккаунта своё избранное). Интерфейс хука не изменится при переходе
 // на серверное хранилище.
 function storageKey(): string {
-  const user = getTelegramUser()
+  const user = getTelegramUser() ?? getMaxUser()
   return user ? `casetop:favorites:${user.id}` : 'casetop:favorites'
 }
 

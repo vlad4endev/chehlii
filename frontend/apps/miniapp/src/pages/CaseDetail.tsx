@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { createOrder, formatPrice, mediaUrl, upsertClient } from '@ui/api'
+import { MIN_PRICE_LABEL, createOrder, mediaUrl, upsertClient } from '@ui/api'
 import { CaseMockup } from '@ui/CaseMockup'
 import { HeartIcon } from '@ui/CatalogView'
 
-import { getMaxUser, isMax, openBotWithOrder } from '../max'
+import { getMaxUser, isMax, maxBackButton, openBotWithOrder } from '../max'
 import { backButton, isTelegram, mainButton, sendOrder } from '../telegram'
 
 // Экран типа чехла. Модель iPhone выбирается здесь же, в мини-приложении.
@@ -78,6 +78,18 @@ export function CaseDetail({
     }
   }, [onClose])
 
+  // Нативная кнопка «Назад» MAX — тот же жест, что и в Telegram.
+  useEffect(() => {
+    const bb = maxBackButton()
+    if (!bb) return
+    bb.show()
+    bb.onClick(onClose)
+    return () => {
+      bb.offClick?.(onClose)
+      bb.hide()
+    }
+  }, [onClose])
+
   // Нативная кнопка Telegram: показываем только когда модель выбрана.
   useEffect(() => {
     const mb = mainButton()
@@ -126,7 +138,7 @@ export function CaseDetail({
         </div>
 
         <h1 className="detail__name">{item.name}</h1>
-        <div className="price detail__price">{formatPrice(item.client_price)}</div>
+        <div className="price detail__price">{MIN_PRICE_LABEL}</div>
 
         {item.description && <p className="detail__desc">{item.description}</p>}
 

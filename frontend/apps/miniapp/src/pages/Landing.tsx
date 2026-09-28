@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { fetchReviews, mediaUrl, type ReviewItem } from '@ui/api'
+import { MIN_PRICE_LABEL, fetchReviews, mediaUrl, type ReviewItem } from '@ui/api'
 
 import heroCasePhoto from '../assets/hero-case.webp'
 import { MAX_BOT_USERNAME } from '../max'
@@ -124,6 +124,7 @@ export function Landing({ items }: { items: CaseType[] }) {
               </button>
             </div>
             <div className="lp-hero__meta lp-word lp-word--7">
+              <span><b>{MIN_PRICE_LABEL}</b> · чехол с принтом</span>
               <span><b>iPhone 14 — 17 Air</b> · все модели</span>
               <span><b>3–5 дней</b> · от заказа до отправки</span>
             </div>
@@ -216,9 +217,12 @@ export function Landing({ items }: { items: CaseType[] }) {
               <GalleryCard key={c.id} item={c} />
             ))}
           </div>
-          <div className="lp-center">
+          <div className="lp-center lp-cta__buttons">
             <button className="lp-btn lp-btn--dark lp-btn--lg" onClick={openTg} disabled={!TG_URL}>
-              Смотреть весь каталог в боте <span className="lp-arrow">→</span>
+              Смотреть весь каталог в Telegram <span className="lp-arrow">→</span>
+            </button>
+            <button className="lp-btn lp-btn--ghost lp-btn--lg" onClick={openMax} disabled={!MAX_URL}>
+              Смотреть весь каталог в MAX
             </button>
           </div>
         </Section>

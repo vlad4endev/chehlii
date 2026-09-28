@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 
 import type { CaseType } from '@ui/types'
 
-import { isMax, MAX_BOT_USERNAME } from '../max'
+import { isMax, MAX_BOT_USERNAME, maxBackButton, openMaxLink } from '../max'
 import { backButton, botStartLink } from '../telegram'
 
 // Экран после «Выбрать для заказа» вне Telegram/MAX WebApp (лендинг/браузер):
@@ -33,10 +33,7 @@ export function OrderHandoff({
 
   function openBot() {
     if (isMax()) {
-      const url = `https://max.ru/${MAX_BOT_USERNAME}`
-      const w = (window as unknown as { WebApp?: { openLink?(u: string): void } }).WebApp
-      if (w?.openLink) w.openLink(url)
-      else window.open(url, '_blank')
+      openMaxLink(`https://max.ru/${MAX_BOT_USERNAME}`)
       return
     }
     window.open(botStartLink(item.id, caseType, modelIndex), '_blank')
@@ -49,6 +46,17 @@ export function OrderHandoff({
     bb.onClick(onBack)
     return () => {
       bb.offClick(onBack)
+      bb.hide()
+    }
+  }, [onBack])
+
+  useEffect(() => {
+    const bb = maxBackButton()
+    if (!bb) return
+    bb.show()
+    bb.onClick(onBack)
+    return () => {
+      bb.offClick?.(onBack)
       bb.hide()
     }
   }, [onBack])

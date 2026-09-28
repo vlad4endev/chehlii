@@ -1,5 +1,5 @@
 import type { CaseType } from './types'
-import { formatPrice, mediaUrl } from './api'
+import { MIN_PRICE_LABEL, mediaUrl } from './api'
 import { CaseMockup } from './CaseMockup'
 
 // Общий компонент каталога — рендерится и в Telegram/MAX WebApp, и на лендинге.
@@ -42,7 +42,7 @@ export function CatalogView({ items, favorites, onOpen, onToggleFavorite }: Cata
                 {item.is_custom ? 'Кастом' : 'Минимализм'}
               </span>
               <h3 className="card__name">{item.name}</h3>
-              <div className="price card__price">{formatPrice(item.client_price)}</div>
+              <div className="price card__price">{MIN_PRICE_LABEL}</div>
             </div>
           </article>
         )

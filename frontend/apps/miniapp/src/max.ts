@@ -61,15 +61,19 @@ export function initMax(): void {
   w.expand?.()
 }
 
+// Открыть произвольную ссылку на чат бота MAX.
+// openMaxLink возвращает в бота, к которому привязано мини-приложение в MAX.
+// Если WebApp ещё числится за старым ботом, заказ уйдёт не туда — открываем URL явно.
+export function openMaxLink(url: string): void {
+  const w = realMax()
+  if (w?.openLink) w.openLink(url)
+  else window.open(url, '_blank')
+}
+
 // Открыть чат бота со стартовым payload order_<id> — бот подхватит заказ по id
 // (GET /orders/{id}) и покажет подтверждение.
 export function openBotWithOrder(orderId: number): void {
-  const url = `https://max.ru/${MAX_BOT_USERNAME}?start=order_${orderId}`
-  const w = realMax()
-  // openMaxLink возвращает в бота, к которому привязано мини-приложение в MAX.
-  // Если WebApp ещё числится за старым ботом, заказ уйдёт не туда — открываем URL явно.
-  if (w?.openLink) w.openLink(url)
-  else window.open(url, '_blank')
+  openMaxLink(`https://max.ru/${MAX_BOT_USERNAME}?start=order_${orderId}`)
 }
 
 export function maxBackButton(): MaxBackButton | undefined {

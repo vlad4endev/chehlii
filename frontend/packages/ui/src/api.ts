@@ -98,6 +98,9 @@ export function formatPrice(value: number): string {
   return new Intl.NumberFormat('ru-RU').format(value) + ' ₽'
 }
 
+// Витринная минимальная цена: везде показываем «от 1 000 ₽».
+export const MIN_PRICE_LABEL = 'от ' + formatPrice(1000)
+
 // Русская плюрализация: plural(3, ['тип','типа','типов']) → 'типа'.
 export function plural(n: number, forms: [string, string, string]): string {
   const abs = Math.abs(n) % 100
