@@ -1,4 +1,4 @@
-import { apiGet, apiUrl, getToken } from './api'
+import { apiGet, apiSend, apiUrl, getToken } from './api'
 
 export interface JourneyRow {
   client_id: number
@@ -13,6 +13,9 @@ export interface JourneyRow {
 }
 
 export const fetchJourneys = () => apiGet<JourneyRow[]>('/admin/journeys')
+
+export const deleteJourney = (clientId: number) =>
+  apiSend<void>('DELETE', `/admin/journeys/${clientId}`)
 
 export async function downloadJourneysXlsx(): Promise<void> {
   const res = await fetch(apiUrl('/admin/journeys/export.xlsx'), {

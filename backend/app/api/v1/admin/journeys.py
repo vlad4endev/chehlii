@@ -6,7 +6,7 @@ import io
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -75,6 +75,21 @@ async def list_journeys(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[JourneyRow]:
     return await _load(session)
+
+
+@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_journey(
+    client_id: int,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Удалить клиентский путь: сбросить позицию в диалоге. Клиент и заказы остаются."""
+    c = await session.get(Client, client_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Клиент не найден")
+    c.last_msg_code = None
+    c.last_msg_at = None
+    await session.commit()
 
 
 @router.get("/export.xlsx")

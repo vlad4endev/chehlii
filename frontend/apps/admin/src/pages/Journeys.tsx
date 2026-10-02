@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { ApiError } from '../api'
 import { fetchBotMessages } from '../botTextsApi'
-import { type JourneyRow, downloadJourneysXlsx, fetchJourneys } from '../journeysApi'
+import { type JourneyRow, deleteJourney, downloadJourneysXlsx, fetchJourneys } from '../journeysApi'
 
 // Tooltip через portal — не обрезается overflow родителя.
 function Tip({ text, children }: { text: string; children: React.ReactNode }) {
@@ -62,6 +62,17 @@ export function Journeys() {
       .finally(() => setLoading(false))
   }, [])
 
+  async function remove(j: JourneyRow) {
+    const name = j.nickname || j.phone || `#${j.client_id}`
+    if (!confirm(`Удалить клиентский путь «${name}»? Клиент и заказы останутся.`)) return
+    try {
+      await deleteJourney(j.client_id)
+      setItems((prev) => prev.filter((x) => x.client_id !== j.client_id))
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : 'Не удалось удалить')
+    }
+  }
+
   return (
     <div>
       <div className="page__head">
@@ -96,6 +107,7 @@ export function Journeys() {
                 <th>Код сообщения</th>
                 <th>Промокод</th>
                 <th className="num">Успешные заказы</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -123,6 +135,11 @@ export function Journeys() {
                   </td>
                   <td className="mono">{j.master_code ?? '—'}</td>
                   <td className="num strong">{j.successful_orders}</td>
+                  <td>
+                    <button className="btn btn--ghost" onClick={() => remove(j)}>
+                      Удалить
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
