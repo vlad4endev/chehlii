@@ -53,6 +53,12 @@ class TrashOut(BaseModel):
     orders: list[TrashOrder]
 
 
+class ClearTrashOut(BaseModel):
+    purged_orders: int
+    purged_clients: int
+    skipped_clients: int
+
+
 @router.get("", response_model=TrashOut)
 async def list_trash(_: AdminOnly, session: Session) -> TrashOut:
     # Клиенты в корзине + число их заказов.
@@ -153,3 +159,46 @@ async def purge_order(order_id: int, _: AdminOnly, session: Session) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Заказ не найден")
     await session.delete(o)
     await session.commit()
+
+
+@router.delete("", response_model=ClearTrashOut)
+async def clear_trash(_: AdminOnly, session: Session) -> ClearTrashOut:
+    """Очистить корзину: удалить навсегда все мягко удалённые заказы и клиентов.
+
+    Сначала удаляются заказы из корзины, затем клиенты без оставшихся заказов.
+    Клиенты с активными (не в корзине) заказами пропускаются — их нельзя
+    уничтожить, пока история заказов на месте.
+    """
+    orders = (
+        await session.scalars(select(Order).where(Order.deleted_at.is_not(None)))
+    ).all()
+    purged_orders = 0
+    for o in orders:
+        await session.delete(o)
+        purged_orders += 1
+    await session.flush()
+
+    clients = (
+        await session.scalars(select(Client).where(Client.deleted_at.is_not(None)))
+    ).all()
+    purged_clients = 0
+    skipped_clients = 0
+    for c in clients:
+        n = await session.scalar(select(func.count(Order.id)).where(Order.client_id == c.id))
+        if n:
+            skipped_clients += 1
+            continue
+        await session.execute(
+            update(PromoActivation)
+            .where(PromoActivation.owner_client_id == c.id)
+            .values(owner_client_id=None)
+        )
+        await session.delete(c)
+        purged_clients += 1
+
+    await session.commit()
+    return ClearTrashOut(
+        purged_orders=purged_orders,
+        purged_clients=purged_clients,
+        skipped_clients=skipped_clients,
+    )

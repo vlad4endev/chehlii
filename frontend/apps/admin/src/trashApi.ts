@@ -24,6 +24,12 @@ export interface Trash {
   orders: TrashOrder[]
 }
 
+export interface ClearTrashResult {
+  purged_orders: number
+  purged_clients: number
+  skipped_clients: number
+}
+
 export const fetchTrash = () => apiGet<Trash>('/admin/trash')
 
 export const restoreClient = (id: number) =>
@@ -32,3 +38,4 @@ export const restoreOrder = (id: number) =>
   apiSend<void>('POST', `/admin/trash/orders/${id}/restore`)
 export const purgeClient = (id: number) => apiSend<void>('DELETE', `/admin/trash/clients/${id}`)
 export const purgeOrder = (id: number) => apiSend<void>('DELETE', `/admin/trash/orders/${id}`)
+export const clearTrash = () => apiSend<ClearTrashResult>('DELETE', '/admin/trash')

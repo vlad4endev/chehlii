@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../api'
 import {
   type Trash as TrashData,
+  clearTrash,
   fetchTrash,
   purgeClient,
   purgeOrder,
@@ -57,11 +58,39 @@ export function Trash() {
   }
 
   const empty = data && data.clients.length === 0 && data.orders.length === 0
+  const canClear = Boolean(data && !empty)
+
+  function confirmClear() {
+    if (
+      !confirm(
+        'Очистить корзину? Все удалённые клиенты и заказы будут уничтожены навсегда. Это действие нельзя отменить.',
+      )
+    )
+      return
+    run('clear', async () => {
+      const result = await clearTrash()
+      if (result.skipped_clients > 0) {
+        alert(
+          `Удалено заказов: ${result.purged_orders}, клиентов: ${result.purged_clients}. ` +
+            `Пропущено клиентов с активными заказами: ${result.skipped_clients}.`,
+        )
+      }
+    })
+  }
 
   return (
     <div>
       <div className="page__head">
         <h1 className="page__title">Корзина</h1>
+        {canClear && (
+          <button
+            className="btn btn--danger"
+            disabled={busy === 'clear'}
+            onClick={confirmClear}
+          >
+            {busy === 'clear' ? 'Очистка…' : 'Очистить корзину'}
+          </button>
+        )}
       </div>
       <p className="page__lead">
         Удалённые клиенты и заказы. Их можно восстановить или удалить окончательно.
