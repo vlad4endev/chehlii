@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.services.ycp import cabinet_path
 
 BRAND_DIR = Path(__file__).resolve().parent / "static" / "brand"
 FAVICON_SVG = "/favicon.svg"
@@ -42,6 +43,28 @@ app = FastAPI(
     redoc_url=None,
 )
 
+
+class YcpCabinetPaths:
+    """Кабинет YCP зовёт `{URL для API}/api/v1/...`, а фид лежит рядом: `/ycp/feed.yml`.
+
+    Хендлеры зарегистрированы на `/api/v1/ycp/...`. Здесь только переписываем путь,
+    чтобы в кабинет вставлялась база `https://домен/ycp/`.
+    """
+
+    def __init__(self, app):  # noqa: ANN001
+        self.app = app
+
+    async def __call__(self, scope, receive, send):  # noqa: ANN001
+        if scope["type"] == "http":
+            rewritten = cabinet_path(scope.get("path", ""))
+            if rewritten is not None:
+                scope = dict(scope)
+                scope["path"] = rewritten
+                scope["raw_path"] = rewritten.encode()
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(YcpCabinetPaths)
 app.include_router(api_router, prefix="/api/v1")
 
 

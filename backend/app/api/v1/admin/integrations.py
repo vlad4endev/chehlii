@@ -11,12 +11,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly
 from app.api.v1.delivery import cdek_cfg, ozon_cfg, yandex_cfg
 from app.api.v1.payments import robokassa_cfg, yandexpay_cfg
 from app.core.database import get_session
+from app.models.catalog import CaseType, CaseTypeModel
 from app.services import (
     cdek,
     integrations,
@@ -25,6 +27,7 @@ from app.services import (
     yandex_delivery,
     yandex_disk,
     yandex_pay,
+    ycp,
 )
 
 router = APIRouter()
@@ -59,6 +62,9 @@ class ConnectionOut(BaseModel):
 
 @router.get("", response_model=list[GroupOut])
 async def get_integrations(_: AdminOnly, session: Session) -> list[GroupOut]:
+    if not await integrations.get(session, ycp.TOKEN_KEY):
+        # Токен выпускаем сами и показываем в открытом виде — его копируют в ЛК YCP.
+        await integrations.set_many(session, {ycp.TOKEN_KEY: ycp.new_token()})
     current = await integrations.current_values(session)
     groups: list[GroupOut] = []
     for g in integrations.INTEGRATION_SCHEMA:
@@ -67,6 +73,9 @@ async def get_integrations(_: AdminOnly, session: Session) -> list[GroupOut]:
             key = f["key"]
             # Текущее значение с учётом env-фоллбэка.
             resolved = await integrations.get(session, key)
+            # Тумблер YCP по умолчанию включён, даже если ключ ещё не сохраняли.
+            if key == ycp.ENABLED_KEY and not resolved:
+                resolved = "true"
             is_set = bool(current.get(key) or resolved)
             fields.append(
                 FieldOut(
@@ -299,6 +308,57 @@ async def check_yandex_disk(_: AdminOnly, session: Session) -> ConnectionOut:
         )
     root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
     ok, detail = await yandex_disk.check_connection(token=token, root=root)
+    return ConnectionOut(ok=ok, detail=detail)
+
+
+class YcpTokenOut(BaseModel):
+    token: str
+
+
+@router.post("/ycp/rotate", response_model=YcpTokenOut)
+async def rotate_ycp_token(_: AdminOnly, session: Session) -> YcpTokenOut:
+    """Новый токен доступа. Старый в кабинете YCP перестанет проходить, пока его не заменят."""
+    token = ycp.new_token()
+    await integrations.set_many(session, {ycp.TOKEN_KEY: token})
+    return YcpTokenOut(token=token)
+
+
+@router.post("/ycp/check", response_model=ConnectionOut)
+async def check_ycp(_: AdminOnly, session: Session) -> ConnectionOut:
+    """Готовность к кнопке «Проверить подключение» в кабинете: настройки, фид и публичный URL."""
+    token = await integrations.get(session, ycp.TOKEN_KEY)
+    public_base = await integrations.get(session, ycp.PUBLIC_BASE_KEY)
+    address = await integrations.get(session, "ycp.warehouse_address")
+    phone = await integrations.get(session, "ycp.warehouse_phone") or await integrations.get(
+        session, "cdek.sender_phone"
+    )
+    api_token = await integrations.get(session, ycp.API_TOKEN_KEY)
+    checkout_offers = await session.scalar(
+        select(func.count())
+        .select_from(CaseTypeModel)
+        .join(CaseType, CaseType.id == CaseTypeModel.case_type_id)
+        .where(
+            CaseTypeModel.is_available.is_(True),
+            CaseTypeModel.stock > 0,
+            CaseType.is_active.is_(True),
+            CaseType.is_custom.is_(False),
+        )
+    )
+    ok, detail = ycp.readiness(
+        enabled=ycp.enabled_flag(await integrations.get(session, ycp.ENABLED_KEY)),
+        token=token,
+        public_base=public_base,
+        address=address,
+        phone=phone,
+        checkout_offers=int(checkout_offers or 0),
+        api_token_set=bool(api_token),
+    )
+    if token and (public_base or "").strip():
+        problem = await ycp.probe_public(public_base or "", token)
+        if problem:
+            return ConnectionOut(ok=False, detail=f"{detail}. {problem}")
+        if ok:
+            detail += " Публичный адрес ответил на /ycp/api/v1/warehouses."
     return ConnectionOut(ok=ok, detail=detail)
 
 

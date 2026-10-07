@@ -78,3 +78,8 @@ export const completeYandexDiskOAuth = (body: {
 
 export const checkRobokassa = () =>
   apiSend<ConnectionStatus>('POST', '/admin/integrations/robokassa/check')
+
+export const checkYcp = () => apiSend<ConnectionStatus>('POST', '/admin/integrations/ycp/check')
+
+export const regenerateYcpToken = () =>
+  apiSend<{ token: string }>('POST', '/admin/integrations/ycp/rotate')

@@ -362,6 +362,73 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "ycp",
+        "title": "Яндекс: покупка в 1 клик (YCP)",
+        "hint": (
+            "Яндекс (Поиск, Алиса) сам вызывает API магазина. Красное поле «Токен доступа» "
+            "в кабинете YCP заполняется токеном, который выпущен здесь — кабинет его не выдаёт. "
+            "«URL для API» заканчивается на /ycp/: кабинет сам дописывает /api/v1/.... "
+            "Кнопка «Купить» включается у товаров фида с is_checkout_enabled=true "
+            "(некастомные чехлы в наличии)."
+        ),
+        "fields": [
+            {
+                "key": "ycp.enabled",
+                "label": "Принимать заказы YCP",
+                "secret": False,
+                "placeholder": "Выключите, чтобы временно остановить заказы из Яндекса",
+            },
+            {
+                "key": "ycp.public_base_url",
+                "label": "Публичный адрес сайта",
+                "secret": False,
+                "placeholder": "https://casetop.ru",
+            },
+            {
+                "key": "ycp.shop_url",
+                "label": "Адрес витрины в фиде",
+                "secret": False,
+                "placeholder": "если пусто — берётся публичный адрес",
+            },
+            {
+                "key": "ycp.api_token",
+                "label": "Токен API YCP из кабинета Яндекса",
+                "secret": True,
+                "placeholder": "",
+            },
+            {
+                "key": "ycp.access_token",
+                "label": "Токен доступа (вставить в ЛК YCP)",
+                "secret": False,
+                "placeholder": "генерируется автоматически",
+            },
+            {
+                "key": "ycp.delivery_cost",
+                "label": "Стоимость доставки, ₽",
+                "secret": False,
+                "placeholder": "300",
+            },
+            {
+                "key": "ycp.delivery_days",
+                "label": "Срок доставки, дней до начала окна",
+                "secret": False,
+                "placeholder": "5",
+            },
+            {
+                "key": "ycp.warehouse_address",
+                "label": "Адрес склада",
+                "secret": False,
+                "placeholder": "Россия, Московская область, Томилино, улица Гаршина, 3",
+            },
+            {
+                "key": "ycp.warehouse_phone",
+                "label": "Телефон склада",
+                "secret": False,
+                "placeholder": "+7 ...",
+            },
+        ],
+    },
 ]
 
 ALL_KEYS: list[str] = [f["key"] for g in INTEGRATION_SCHEMA for f in g["fields"]]
@@ -397,6 +464,9 @@ async def set_many(session: AsyncSession, values: dict[str, str]) -> None:
             continue
         # Пустое значение для секрета = «не менять» (не затираем существующий).
         if k in SECRET_KEYS and v == "":
+            continue
+        # Токен доступа YCP перевыпускается отдельной кнопкой, пустым полем его не стираем.
+        if k == "ycp.access_token" and not v.strip():
             continue
         if k in ("cdek.account", "cdek.secret", "ozon.client_id", "ozon.client_secret"):
             from app.services.cdek import sanitize_secret

@@ -21,6 +21,8 @@ from app.api.v1.outbox import router as outbox_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.reviews import router as reviews_router
 from app.api.v1.tg_proxy import router as tg_proxy_router
+from app.api.v1.ycp import feed_router as ycp_feed_router
+from app.api.v1.ycp import router as ycp_router
 
 # Бот-только роутеры: требуют X-Internal-Token (см. internal.py).
 _internal = [Depends(require_internal)]
@@ -47,4 +49,8 @@ api_router.include_router(
 )
 api_router.include_router(payments_router, prefix="/payments", tags=["payments"])
 api_router.include_router(delivery_router, prefix="/delivery", tags=["delivery"])
+# YCP: вызывает Яндекс, защита — Bearer-токен (см. ycp.py).
+# Фид без токена: его забирает Яндекс Товары по ссылке из админки.
+api_router.include_router(ycp_feed_router, prefix="/ycp", tags=["ycp"])
+api_router.include_router(ycp_router, prefix="/ycp", tags=["ycp"])
 api_router.include_router(admin_router, prefix="/admin")

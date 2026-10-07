@@ -12,9 +12,11 @@ import {
   checkYandexDelivery,
   checkYandexDisk,
   checkYandexPay,
+  checkYcp,
   completeYandexDiskOAuth,
   createYandexWarehouse,
   fetchIntegrations,
+  regenerateYcpToken,
   saveIntegrations,
 } from '../integrationsApi'
 import { StatLine } from '../ui'
@@ -128,6 +130,17 @@ const META: Record<string, ServiceMeta> = {
     ],
     booleanKeys: ['payment.yandexpay_test'],
   },
+  ycp: {
+    category: 'payments',
+    icon: 'catalog',
+    blurb: 'Кнопка «Купить в 1 клик»',
+    docs: [
+      { label: 'Кабинет магазина', href: 'https://checkout.merchants.yandex.ru/stores' },
+      { label: 'Кнопка «Купить»', href: 'https://yandex.ru/support/merchants/ru/buy-button' },
+    ],
+    accessKeys: ['ycp.enabled', 'ycp.public_base_url', 'ycp.shop_url', 'ycp.api_token'],
+    booleanKeys: ['ycp.enabled'],
+  },
 }
 
 const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
@@ -137,6 +150,7 @@ const GROUP_CHECK: Record<string, () => Promise<ConnectionStatus>> = {
   cdek: checkCdek,
   ozon: checkOzon,
   payment: checkRobokassa,
+  ycp: checkYcp,
 }
 
 function metaFor(id: string): ServiceMeta {
@@ -156,9 +170,20 @@ function fieldLabel(field: IntegrationField): string {
   return field.label.replace(/\s*\(true\/false\)\s*/i, '')
 }
 
+function ycpPublicBase(group: IntegrationGroup, edits: Record<string, string>): string {
+  const field = group.fields.find((f) => f.key === 'ycp.public_base_url')
+  const raw = field ? rawValue(field, edits) : ''
+  return raw.trim().replace(/\/+$/, '')
+}
+
 function isConnected(group: IntegrationGroup): boolean {
   if (group.id === 'yandex_disk') {
     return group.fields.some((f) => f.key === 'yandex_disk.oauth_token' && f.is_set)
+  }
+  if (group.id === 'ycp') {
+    const token = group.fields.find((f) => f.key === 'ycp.access_token')?.value
+    const base = group.fields.find((f) => f.key === 'ycp.public_base_url')?.value
+    return Boolean(token) && Boolean(base)
   }
   const secrets = group.fields.filter((f) => f.secret)
   return secrets.length > 0 ? secrets.some((f) => f.is_set) : group.fields.some((f) => f.is_set)
@@ -444,6 +469,7 @@ function ServiceEditor({
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [creatingWh, setCreatingWh] = useState(false)
+  const [rotating, setRotating] = useState(false)
   const [status, setStatus] = useState<ConnectionStatus | null>(initialStatus ?? null)
   const [copied, setCopied] = useState<string | null>(null)
 
@@ -465,11 +491,20 @@ function ServiceEditor({
     'yandex.sender_email',
   ]
   const warehouseFields = extra.filter((f) => warehouseFieldKeys.includes(f.key))
-  const accessFields = access.length > 0 ? access : group.fields
+  const hiddenKeys = group.id === 'ycp' ? ['ycp.access_token'] : []
+  const accessFields = (access.length > 0 ? access : group.fields).filter(
+    (f) => !hiddenKeys.includes(f.key),
+  )
   const extraFields =
     access.length > 0
-      ? extra.filter((f) => group.id !== 'yandex_delivery' || !warehouseFieldKeys.includes(f.key))
+      ? extra.filter(
+          (f) =>
+            !hiddenKeys.includes(f.key) &&
+            (group.id !== 'yandex_delivery' || !warehouseFieldKeys.includes(f.key)),
+        )
       : []
+  const ycpBase = group.id === 'ycp' ? ycpPublicBase(group, edits) : ''
+  const ycpToken = group.fields.find((f) => f.key === 'ycp.access_token')?.value ?? ''
 
   async function runCheck() {
     if (!check) return
@@ -558,6 +593,33 @@ function ServiceEditor({
     }
   }
 
+  async function rotateYcpToken() {
+    const agreed = window.confirm(
+      'Старый токен перестанет подходить. В кабинете YCP нужно будет вставить новый. Перевыпустить?',
+    )
+    if (!agreed) return
+    setRotating(true)
+    try {
+      await regenerateYcpToken()
+      onGroups(await fetchIntegrations())
+      const next = {
+        ok: true,
+        detail: 'Новый токен доступа выпущен. Вставьте его в красное поле кабинета YCP.',
+      }
+      setStatus(next)
+      onLive(next)
+    } catch (e) {
+      const next = {
+        ok: false,
+        detail: e instanceof ApiError ? e.message : 'Не удалось перевыпустить токен',
+      }
+      setStatus(next)
+      onLive(next)
+    } finally {
+      setRotating(false)
+    }
+  }
+
   async function onCopy(label: string, text: string) {
     const ok = await copyText(text)
     if (ok) {
@@ -592,6 +654,26 @@ function ServiceEditor({
       <details className="int-help">
         <summary>Как подключить</summary>
         <p>{group.hint}</p>
+        {group.id === 'ycp' && (
+          <ol className="int-help__steps">
+            <li>Зарегистрируйте магазин в кабинете YCP.</li>
+            <li>Укажите публичный адрес сайта и сохраните.</li>
+            <li>
+              Скопируйте «URL для API» и «Токен доступа» в кабинет. Красное поле заполняется
+              отсюда — Яндекс этот токен не генерирует.
+            </li>
+            <li>Если кабинет показал «Токен API YCP», вставьте его в поле ниже и сохраните.</li>
+            <li>Заполните адрес и телефон склада.</li>
+            <li>
+              Скопируйте ссылку YML-фида в Яндекс Товары. В фид попадают некастомные чехлы;
+              кнопка «Купить» включается у тех, что в наличии.
+            </li>
+            <li>
+              В кабинете нажмите «Проверить подключение». Кнопка в Поиске и Алисе появляется
+              после модерации фида, обычно в течение 36 часов.
+            </li>
+          </ol>
+        )}
         {group.id === 'yandex_disk' && (
           <div className="int-help__box">
             <CopyRow
@@ -623,6 +705,50 @@ function ServiceEditor({
           </div>
         )}
       </details>
+
+      {group.id === 'ycp' && (
+        <div className="int-sec">
+          <div className="int-sec__title">В кабинет YCP</div>
+          <p className="int-wh__lead">
+            Кабинет сам дописывает к URL путь /api/v1/…. Токен доступа скопируйте в красное
+            поле целиком.
+          </p>
+          <div className="int-help__box">
+            <CopyRow
+              label="URL для API"
+              value={ycpBase ? `${ycpBase}/ycp/` : 'Сначала укажите публичный адрес'}
+              copied={copied === 'ycp-api'}
+              onCopy={() => {
+                if (ycpBase) void onCopy('ycp-api', `${ycpBase}/ycp/`)
+              }}
+            />
+            <CopyRow
+              label="Токен доступа"
+              value={ycpToken || 'Токен появится после открытия настроек'}
+              copied={copied === 'ycp-token'}
+              onCopy={() => {
+                if (ycpToken) void onCopy('ycp-token', ycpToken)
+              }}
+            />
+            <CopyRow
+              label="YML-фид для Яндекс Товаров"
+              value={ycpBase ? `${ycpBase}/ycp/feed.yml` : 'Сначала укажите публичный адрес'}
+              copied={copied === 'ycp-feed'}
+              onCopy={() => {
+                if (ycpBase) void onCopy('ycp-feed', `${ycpBase}/ycp/feed.yml`)
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => void rotateYcpToken()}
+            disabled={rotating || saving}
+          >
+            {rotating ? 'Выпускаем…' : 'Перевыпустить токен доступа'}
+          </button>
+        </div>
+      )}
 
       <div className="int-sec">
         <div className="int-sec__title">Доступ</div>
