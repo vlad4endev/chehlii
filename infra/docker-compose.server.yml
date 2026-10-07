@@ -94,6 +94,8 @@ services:
     depends_on:
       backend:
         condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   caddy:

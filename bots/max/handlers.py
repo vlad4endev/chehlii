@@ -15,8 +15,8 @@ import logging
 import re
 
 import httpx
-from maxapi import Dispatcher, F
-from maxapi.context import MemoryContext
+from maxapi import F, Router
+from maxapi.context.base import BaseContext
 from maxapi.types import (
     BotStarted,
     CommandStart,
@@ -26,8 +26,10 @@ from maxapi.types import (
 
 from bots.core import consult, delivery, payments
 from bots.core.backend import backend
+from bots.core.config import settings
+from bots.core.phone import normalize_phone
 from bots.core.texts import texts
-from bots.max.chat_map import remember
+from bots.max.chat_map import remember_async
 from bots.max.keyboards import (
     CB_CANCEL,
     CB_CATALOG,
@@ -51,10 +53,9 @@ from bots.max.keyboards import (
 )
 from bots.max.states import OrderFlow
 
-dp = Dispatcher()
+router = Router()
 CHANNEL = "max"
 
-_PHONE_RE = re.compile(r"(?:\+?7|8)?\s*\(?(\d{3})\)?\s*(\d{3})[\s-]?(\d{2})[\s-]?(\d{2})")
 _PAYLOAD_ORDER_RE = re.compile(r"order[_-](\d+)")
 
 
@@ -62,18 +63,14 @@ def _fmt_price(value: float) -> str:
     return f"{int(round(value)):,}".replace(",", " ")
 
 
-def _normalize_phone(text: str) -> str | None:
-    m = _PHONE_RE.search(text or "")
-    if not m:
-        return None
-    return "+7" + "".join(m.groups())
-
-
 def _bot_identity(bot) -> tuple[str | None, int | None]:
+    """username из .env (MAX_BOT_USERNAME) надёжнее, чем me после холодного старта."""
     me = getattr(bot, "me", None) or getattr(bot, "_me", None)
-    if me is None:
-        return None, None
-    return getattr(me, "username", None), getattr(me, "user_id", None)
+    bot_id = getattr(me, "user_id", None) if me else None
+    username = settings.max_bot_username or (
+        getattr(me, "username", None) if me else None
+    )
+    return username, bot_id
 
 
 async def _send_menu(bot, chat_id: int, text: str) -> None:
@@ -154,7 +151,7 @@ async def _send_delivery_pay(
 
 
 async def _ask_ozon_city(
-    bot, chat_id: int, order_id: int, context: MemoryContext, phone: str | None,
+    bot, chat_id: int, order_id: int, context: BaseContext, phone: str | None,
     event: MessageCallback | None = None,
 ) -> None:
     blocked = await delivery.ozon_blocked(phone)
@@ -181,7 +178,7 @@ async def _ask_ozon_city(
 
 
 async def _start_delivery(
-    bot, chat_id: int, order_id: int, context: MemoryContext, event: MessageCallback | None = None,
+    bot, chat_id: int, order_id: int, context: BaseContext, event: MessageCallback | None = None,
     phone: str | None = None,
 ) -> None:
     services = await delivery.configured_services()
@@ -213,7 +210,7 @@ async def _start_delivery(
 
 
 async def _ask_mode(
-    bot, chat_id: int, order_id: int, service: str, context: MemoryContext,
+    bot, chat_id: int, order_id: int, service: str, context: BaseContext,
     event: MessageCallback | None = None, phone: str | None = None,
 ) -> None:
     if service == "ozon":
@@ -235,7 +232,7 @@ async def _ask_mode(
 
 
 async def _quote_point(
-    bot, chat_id: int, context: MemoryContext, point: dict, event: MessageCallback | None = None
+    bot, chat_id: int, context: BaseContext, point: dict, event: MessageCallback | None = None
 ) -> None:
     data = await context.get_data()
     order_id = int(data["order_id"])
@@ -252,20 +249,23 @@ async def _quote_point(
     await _send_delivery_pay(bot, chat_id, order_id, quote, event=event)
 
 
-async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
+async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: int, context: BaseContext) -> None:
     """Запрос контакта на моменте заказа: запоминаем заказ, просим телефон."""
-    await context.set_state(OrderFlow.waiting_phone)
+    await context.set_state(OrderFlow.waiting_contact)
     await context.update_data(pending_order_id=order_id)
     await bot.send_message(
         chat_id=chat_id,
-        text="Отличный выбор! 🎉\n\n" + texts.get("msg_002")
-        + "\n\nОтправьте номер в формате +7XXXXXXXXXX или нажмите кнопку ниже.",
+        text=(
+            "Отличный выбор! 🎉\n\n"
+            + texts.get("msg_002")
+            + "\n\nОтправьте номер в формате +7XXXXXXXXXX или нажмите кнопку ниже."
+        ),
         attachments=[contact_kb()],
     )
     await backend.mark_journey(client_id, "msg_002")
 
 
-async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, context: MemoryContext) -> None:
+async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, context: BaseContext) -> None:
     """Показать подтверждение заказа (тип+модель+цена)."""
     try:
         order = await backend.get_order(order_id)
@@ -313,8 +313,9 @@ async def _resume_after_pay(bot, chat_id: int, payment_id: int) -> None:
 
 
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
-                 context: MemoryContext) -> None:
+                 context: BaseContext) -> None:
     """Единый вход: /start, первый старт бота или возврат из мини-приложения."""
+    await remember_async(user_id, chat_id)
     pay_id = payments.pay_start_id(payload)
     if pay_id is not None:
         await _resume_after_pay(bot, chat_id, pay_id)
@@ -343,16 +344,16 @@ async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload:
 
 
 # ── Вход ───────────────────────────────────────────────
-@dp.bot_started()
-async def on_bot_started(event: BotStarted, context: MemoryContext) -> None:
+@router.bot_started()
+async def on_bot_started(event: BotStarted, context: BaseContext) -> None:
     await context.clear()
     await _enter(
         event.bot, event.chat_id, event.user.user_id, event.user.username, event.payload, context
     )
 
 
-@dp.message_created(CommandStart())
-async def on_start_cmd(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(CommandStart())
+async def on_start_cmd(event: MessageCreated, context: BaseContext) -> None:
     await context.clear()
     sender = event.message.sender
     text = event.message.body.text or ""
@@ -369,16 +370,16 @@ def _extract_contact_phone(event: MessageCreated) -> str | None:
         payload = getattr(att, "payload", None)
         vcf = getattr(payload, "vcf_info", None)
         if vcf:
-            phone = _normalize_phone(re.sub(r"[^\d+]", "", vcf.replace("TEL", " ")))
+            phone = normalize_phone(re.sub(r"[^\d+]", "", vcf.replace("TEL", " ")))
             if phone:
                 return phone
     return None
 
 
-@dp.message_created(OrderFlow.waiting_phone)
-async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.waiting_contact)
+async def on_phone(event: MessageCreated, context: BaseContext) -> None:
     sender = event.message.sender
-    phone = _extract_contact_phone(event) or _normalize_phone(event.message.body.text or "")
+    phone = _extract_contact_phone(event) or normalize_phone(event.message.body.text or "")
     if not phone:
         await event.message.answer(
             "Не разобрал номер. Пришлите его в формате +7XXXXXXXXXX.",
@@ -412,13 +413,12 @@ async def on_phone(event: MessageCreated, context: MemoryContext) -> None:
 
 
 # ── Подтверждение заказа ───────────────────────────────
-@dp.message_callback(F.callback.payload == CB_CONFIRM)
-async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_CONFIRM)
+async def on_confirm(event: MessageCallback, context: BaseContext) -> None:
     data = await context.get_data()
     order_id = data.get("order_id")
-    # is_custom берём из заказа, а не только из MemoryContext: после рестарта
-    # бота контекст пустой → иначе кастом уходит в «имя/букву» и сразу в предоплату
-    # без материалов и без цикла макета.
+    # is_custom берём из заказа, а не только из FSM: после рестарта
+    # контекст мог быть пуст → иначе кастом уходит в «имя/букву» без материалов.
     is_custom = bool(data.get("is_custom", False))
     if order_id:
         try:
@@ -428,6 +428,11 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
                 await context.update_data(is_custom=is_custom, order_id=int(order_id))
         except Exception:  # noqa: BLE001
             logging.warning("max: не удалось перечитать заказ #%s", order_id, exc_info=True)
+    if not order_id:
+        await event.answer(notification="Сессия истекла")
+        await context.clear()
+        await _replace_menu(event, "Выберите чехол в каталоге ещё раз.")
+        return
     await event.answer(notification="Принято ✅")
     if is_custom:
         await context.set_state(OrderFlow.waiting_materials)
@@ -441,25 +446,29 @@ async def on_confirm(event: MessageCallback, context: MemoryContext) -> None:
     await backend.mark_journey(client["id"], code)
 
 
-@dp.message_callback(F.callback.payload == CB_CANCEL)
-async def on_cancel(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_CANCEL)
+async def on_cancel(event: MessageCallback, context: BaseContext) -> None:
     await context.clear()
     await event.answer(notification="Заказ отменён")
     await _replace_menu(event, "Вы в главном меню.")
 
 
 # ── Пункты меню ────────────────────────────────────────
-@dp.message_callback(F.callback.payload == CB_CATALOG)
-async def on_catalog_stub(event: MessageCallback, context: MemoryContext) -> None:
-    await event.answer(
-        notification="Каталог откроется в мини-приложении после публикации в MAX."
+@router.message_callback(F.callback.payload == CB_CATALOG)
+async def on_catalog_stub(event: MessageCallback, context: BaseContext) -> None:
+    # Срабатывает только если OpenApp недоступен (нет username бота).
+    await event.answer()
+    await _replace_menu(
+        event,
+        "Каталог открывается в мини-приложении. Задайте MAX_BOT_USERNAME в "
+        "bots/.env и перезапустите бота — появится кнопка «Каталог».",
     )
 
 
 # В MAX нет постоянной reply-клавиатуры, поэтому меню держим на том же
 # сообщении: пункт меню заменяет текст и кнопки, а не шлёт ещё одну карточку.
-@dp.message_callback(F.callback.payload == CB_DISCOUNT)
-async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_DISCOUNT)
+async def on_discount(event: MessageCallback, context: BaseContext) -> None:
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
     await _replace_menu(
@@ -470,8 +479,8 @@ async def on_discount(event: MessageCallback, context: MemoryContext) -> None:
     )
 
 
-@dp.message_callback(F.callback.payload == CB_PAYMENTS)
-async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_PAYMENTS)
+async def on_payments(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
     await _replace_menu(
         event,
@@ -479,8 +488,8 @@ async def on_payments(event: MessageCallback, context: MemoryContext) -> None:
     )
 
 
-@dp.message_callback(F.callback.payload == CB_DELIVERIES)
-async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_DELIVERIES)
+async def on_deliveries(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     try:
@@ -501,8 +510,8 @@ async def on_deliveries(event: MessageCallback, context: MemoryContext) -> None:
         await _replace_menu(event, text)
 
 
-@dp.message_callback(F.callback.payload == CB_HELP)
-async def on_help(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_HELP)
+async def on_help(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
     await context.set_state(OrderFlow.consulting)
     u = event.callback.user
@@ -512,8 +521,8 @@ async def on_help(event: MessageCallback, context: MemoryContext) -> None:
 
 
 # ── Ввод имени / материалов ────────────────────────────
-@dp.message_created(OrderFlow.waiting_name)
-async def on_name(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.waiting_name)
+async def on_name(event: MessageCreated, context: BaseContext) -> None:
     data = await context.get_data()
     order_id = data["order_id"]
     await backend.update_order(order_id, custom_text=event.message.body.text or "")
@@ -524,8 +533,8 @@ async def on_name(event: MessageCreated, context: MemoryContext) -> None:
     await backend.mark_journey(client["id"], "msg_007а")
 
 
-@dp.message_created(OrderFlow.confirming)
-async def on_early_content(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.confirming)
+async def on_early_content(event: MessageCreated, context: BaseContext) -> None:
     # Фото/текст прислали, не нажав «Подтвердить»: для кастома это уже материалы —
     # не теряем их, для стандарта — просим подтвердить.
     data = await context.get_data()
@@ -545,8 +554,8 @@ async def on_early_content(event: MessageCreated, context: MemoryContext) -> Non
     await event.message.answer("Сначала подтвердите заказ кнопкой «Подтвердить» выше.")
 
 
-@dp.message_created(OrderFlow.waiting_materials)
-async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.waiting_materials)
+async def on_materials(event: MessageCreated, context: BaseContext) -> None:
     text = event.message.body.text or ""
     files: list[str] = []
     for att in event.message.body.attachments or []:
@@ -571,8 +580,8 @@ async def on_materials(event: MessageCreated, context: MemoryContext) -> None:
     )
 
 
-@dp.message_callback(F.callback.payload == CB_MAT_CONFIRM)
-async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_MAT_CONFIRM)
+async def on_materials_confirm(event: MessageCallback, context: BaseContext) -> None:
     data = await context.get_data()
     order_id = data.get("order_id")
     if not order_id:
@@ -593,8 +602,8 @@ async def on_materials_confirm(event: MessageCallback, context: MemoryContext) -
     await backend.mark_journey(client["id"], "msg_007б")
 
 
-@dp.message_callback(F.callback.payload == CB_MAT_REDO)
-async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload == CB_MAT_REDO)
+async def on_materials_redo(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
     await context.set_state(OrderFlow.waiting_materials)
     await _replace(event, texts.get("msg_006б"))
@@ -604,8 +613,8 @@ async def on_materials_redo(event: MessageCallback, context: MemoryContext) -> N
 
 
 # ── Ответ клиента на макет («Подтвердить» / «Переделать») ──
-@dp.message_callback(F.callback.payload.startswith("mockup:"))
-async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload.startswith("mockup:"))
+async def on_mockup_response(event: MessageCallback, context: BaseContext) -> None:
     try:
         _, action, oid = event.callback.payload.split(":")
         order_id = int(oid)
@@ -630,8 +639,8 @@ async def on_mockup_response(event: MessageCallback, context: MemoryContext) -> 
         await _replace(event, "Принято! Дизайнер доработает макет и пришлёт заново.")
 
 
-@dp.message_callback(F.callback.payload.startswith("dlv:"))
-async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None:
+@router.message_callback(F.callback.payload.startswith("dlv:"))
+async def on_delivery_cb(event: MessageCallback, context: BaseContext) -> None:
     parts = (event.callback.payload or "").split(":")
     if len(parts) < 3:
         await event.answer()
@@ -646,7 +655,7 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     if not client.get("phone"):
-        await context.set_state(OrderFlow.waiting_phone)
+        await context.set_state(OrderFlow.waiting_contact)
         await context.update_data(pending_delivery_order_id=order_id)
         await event.answer()
         await _replace(
@@ -714,8 +723,8 @@ async def on_delivery_cb(event: MessageCallback, context: MemoryContext) -> None
     await event.answer()
 
 
-@dp.message_created(OrderFlow.delivery_city)
-async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.delivery_city)
+async def on_delivery_city(event: MessageCreated, context: BaseContext) -> None:
     city = (event.message.body.text or "").strip()
     chat_id = event.message.recipient.chat_id
     if not city:
@@ -753,8 +762,8 @@ async def on_delivery_city(event: MessageCreated, context: MemoryContext) -> Non
     )
 
 
-@dp.message_created(OrderFlow.delivery_address)
-async def on_delivery_address(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.delivery_address)
+async def on_delivery_address(event: MessageCreated, context: BaseContext) -> None:
     street = (event.message.body.text or "").strip()
     if not street:
         await event.message.answer("Напишите улицу, дом и квартиру.")
@@ -773,8 +782,8 @@ async def on_delivery_address(event: MessageCreated, context: MemoryContext) -> 
     await _send_delivery_pay(event.bot, event.message.recipient.chat_id, order_id, quote)
 
 
-@dp.message_created(OrderFlow.delivery_pvz)
-async def on_delivery_pvz_text(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.delivery_pvz)
+async def on_delivery_pvz_text(event: MessageCreated, context: BaseContext) -> None:
     text = (event.message.body.text or "").strip()
     points = (await context.get_data()).get("delivery_points") or []
     if text.isdigit():
@@ -810,7 +819,7 @@ _BUSY_STATES = frozenset(OrderFlow.states())
 
 
 async def _relay_consult(
-    event: MessageCreated, client: dict, context: MemoryContext | None = None
+    event: MessageCreated, client: dict, context: BaseContext | None = None
 ) -> None:
     text = event.message.body.text or ""
     try:
@@ -827,10 +836,10 @@ async def _relay_consult(
     # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
 
 
-@dp.message_created(OrderFlow.consulting)
-async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created(OrderFlow.consulting)
+async def on_consult(event: MessageCreated, context: BaseContext) -> None:
     s = event.message.sender
-    remember(s.user_id, event.message.recipient.chat_id)
+    await remember_async(s.user_id, event.message.recipient.chat_id)
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
@@ -839,8 +848,8 @@ async def on_consult(event: MessageCreated, context: MemoryContext) -> None:
 
 # Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
 # Регистрируется последним, шаги заказа/доставки не перехватываем.
-@dp.message_created()
-async def on_fallback(event: MessageCreated, context: MemoryContext) -> None:
+@router.message_created()
+async def on_fallback(event: MessageCreated, context: BaseContext) -> None:
     current = await context.get_state()
     if current is not None and str(current) in _BUSY_STATES:
         return
@@ -848,7 +857,7 @@ async def on_fallback(event: MessageCreated, context: MemoryContext) -> None:
     if text.startswith("/"):
         return
     s = event.message.sender
-    remember(s.user_id, event.message.recipient.chat_id)
+    await remember_async(s.user_id, event.message.recipient.chat_id)
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )

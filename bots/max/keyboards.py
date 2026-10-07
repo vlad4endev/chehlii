@@ -42,8 +42,8 @@ def contact_kb():
 
 def main_menu_kb(bot_username: str | None, bot_id: int | None):
     b = InlineKeyboardBuilder()
-    # Каталог — мини-приложение (OpenApp привязан к боту). Если username неизвестен —
-    # callback-заглушка с пояснением.
+    # Каталог — мини-приложение (OpenApp). Username: MAX_BOT_USERNAME или bot.me.
+    # Без username — callback с той же подсказкой, что и у Telegram без WEBAPP_URL.
     if bot_username:
         b.row(
             OpenAppButton(

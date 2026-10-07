@@ -1,7 +1,8 @@
 """Карта сценариев из админки → FSM бота (TG / MAX).
 
 Backend кладёт pending_fsm и outbox kind=scenario; бот применяет состояние
-через outer middleware (до выбора хендлера) и/или сразу из outbox (TG Redis).
+через outer middleware (до выбора хендлера) и сразу из outbox (Redis FSM
+у Telegram и MAX).
 """
 
 from __future__ import annotations

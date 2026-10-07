@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bots.core import consult, delivery, payments
 from bots.core.backend import backend
+from bots.core.phone import normalize_phone
 from bots.core.texts import texts
 from bots.tg.keyboards import (
     BTN_CATALOG,
@@ -114,13 +115,12 @@ async def on_start(msg: Message, state: FSMContext) -> None:
     await backend.mark_journey(client["id"], code)
 
 
-@router.message(F.contact)
-async def on_contact(msg: Message, state: FSMContext) -> None:
+async def _apply_phone(msg: Message, state: FSMContext, phone: str) -> None:
+    """Общий путь после контакта/текста телефона — как в MAX."""
     u = msg.from_user
     client = await backend.upsert_client(
-        CHANNEL, str(u.id), nickname=(u.username or u.full_name), phone=msg.contact.phone_number
+        CHANNEL, str(u.id), nickname=(u.username or u.full_name), phone=phone
     )
-    # Если контакт запрошен в момент заказа — продолжаем оформление сразу.
     data = await state.get_data()
     if data.get("pending_case_id") is not None:
         await _begin_order(
@@ -136,8 +136,24 @@ async def on_contact(msg: Message, state: FSMContext) -> None:
     if pending_delivery is not None:
         await _start_delivery(msg, state, int(pending_delivery), client.get("phone"))
         return
+    await state.clear()
     await msg.answer(texts.get("msg_003"), reply_markup=main_menu_kb())
     await backend.mark_journey(client["id"], "msg_003")
+
+
+@router.message(F.contact)
+async def on_contact(msg: Message, state: FSMContext) -> None:
+    phone = msg.contact.phone_number if msg.contact else None
+    if not phone:
+        await msg.answer(
+            "Не удалось прочитать контакт. Нажмите «📱 Поделиться контактом» "
+            "или пришлите номер +7XXXXXXXXXX.",
+            reply_markup=contact_kb(),
+        )
+        return
+    # Нормализуем к +7…, если пришёл 8… / без плюса.
+    phone = normalize_phone(phone) or phone
+    await _apply_phone(msg, state, phone)
 
 
 # ── Приём выбора из мини-приложения ────────────────────
@@ -186,7 +202,9 @@ async def on_web_app_data(msg: Message, state: FSMContext) -> None:
             pending_case_id=case_id, pending_case_type=case_type, pending_model=model
         )
         await msg.answer(
-            "Отличный выбор! 🎉\n\n" + texts.get("msg_002"),
+            "Отличный выбор! 🎉\n\n"
+            + texts.get("msg_002")
+            + "\n\nИли отправьте номер в формате +7XXXXXXXXXX.",
             reply_markup=contact_kb(),
         )
         await backend.mark_journey(client["id"], "msg_002")
@@ -195,11 +213,25 @@ async def on_web_app_data(msg: Message, state: FSMContext) -> None:
     await _begin_order(msg, state, client["id"], case_id, case_type, model)
 
 
+@router.message(OrderFlow.waiting_contact, F.text)
+async def on_waiting_contact_text(msg: Message, state: FSMContext) -> None:
+    # Паритет с MAX: можно прислать номер текстом, не только кнопкой контакта.
+    phone = normalize_phone(msg.text)
+    if not phone:
+        await msg.answer(
+            "Чтобы оформить заказ, нажмите «📱 Поделиться контактом» "
+            "или пришлите номер в формате +7XXXXXXXXXX.",
+            reply_markup=contact_kb(),
+        )
+        return
+    await _apply_phone(msg, state, phone)
+
+
 @router.message(OrderFlow.waiting_contact)
 async def on_waiting_contact_other(msg: Message) -> None:
-    # В ожидании контакта пришло не «поделиться контактом» — напоминаем про кнопку.
     await msg.answer(
-        "Чтобы оформить заказ, нажмите кнопку «📱 Поделиться контактом» ниже.",
+        "Чтобы оформить заказ, нажмите «📱 Поделиться контактом» "
+        "или пришлите номер в формате +7XXXXXXXXXX.",
         reply_markup=contact_kb(),
     )
 
@@ -217,6 +249,13 @@ async def on_confirm(cb: CallbackQuery, state: FSMContext) -> None:
                 await state.update_data(is_custom=is_custom, order_id=int(order_id))
         except Exception:  # noqa: BLE001
             logging.warning("tg: не удалось перечитать заказ #%s", order_id, exc_info=True)
+    if not order_id:
+        await state.clear()
+        await _replace_or_send(
+            cb.message, "Сессия истекла. Выберите чехол в каталоге ещё раз.", main_menu_kb()
+        )
+        await cb.answer("Сессия истекла", show_alert=True)
+        return
     if is_custom:
         await state.set_state(OrderFlow.waiting_materials)
         code = "msg_006б"
@@ -450,7 +489,8 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         except Exception:
             pass
         await cb.message.answer(
-            "Для доставки нужен телефон получателя.",
+            "Для доставки нужен телефон получателя. "
+            "Нажмите «📱 Поделиться контактом» или пришлите +7XXXXXXXXXX.",
             reply_markup=contact_kb(),
         )
         await cb.answer()

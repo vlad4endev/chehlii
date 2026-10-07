@@ -1,12 +1,12 @@
-"""Outer middleware MAX: pending_fsm до выбора хендлера (MemoryContext)."""
+"""Outer middleware MAX: pending_fsm до выбора хендлера (Redis/Memory context)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from maxapi.context import MemoryContext
+from maxapi.context.base import BaseContext
 from maxapi.filters.middleware import BaseMiddleware, HandlerCallable
-from maxapi.types import MessageCreated
+from maxapi.types import MessageCallback, MessageCreated
 
 from bots.core.backend import backend
 from bots.core.scenario import (
@@ -16,20 +16,20 @@ from bots.core.scenario import (
     STATE_WAITING_MATERIALS,
     STATE_WAITING_NAME,
 )
-from bots.max.chat_map import remember
+from bots.max.chat_map import remember_async
 from bots.max.states import OrderFlow
 
 CHANNEL = "max"
 
 _STATE_MAP = {
-    STATE_WAITING_CONTACT: OrderFlow.waiting_phone,
+    STATE_WAITING_CONTACT: OrderFlow.waiting_contact,
     STATE_WAITING_NAME: OrderFlow.waiting_name,
     STATE_WAITING_MATERIALS: OrderFlow.waiting_materials,
     STATE_CONSULTING: OrderFlow.consulting,
 }
 
 
-async def apply_pending_fsm(context: MemoryContext, pending: dict[str, Any]) -> None:
+async def apply_pending_fsm(context: BaseContext, pending: dict[str, Any]) -> None:
     name = pending.get("state")
     if not name:
         return
@@ -48,7 +48,8 @@ async def apply_pending_fsm(context: MemoryContext, pending: dict[str, Any]) -> 
         await context.update_data(**data)
 
 
-def _user_id_from_event(event_object: Any) -> str | None:
+async def _remember_from_event(event_object: Any) -> str | None:
+    """Запомнить chat_id и вернуть channel_user_id для pending_fsm."""
     if isinstance(event_object, MessageCreated):
         body = getattr(event_object, "message", None)
         sender = getattr(body, "sender", None) if body else None
@@ -56,11 +57,21 @@ def _user_id_from_event(event_object: Any) -> str | None:
         recipient = getattr(body, "recipient", None) if body else None
         chat_id = getattr(recipient, "chat_id", None) if recipient else None
         if uid is not None and chat_id is not None:
-            remember(uid, chat_id)
+            await remember_async(uid, chat_id)
         if uid is not None:
             return str(uid)
         if chat_id is not None:
             return str(chat_id)
+    if isinstance(event_object, MessageCallback):
+        u = getattr(getattr(event_object, "callback", None), "user", None)
+        uid = getattr(u, "user_id", None)
+        msg = getattr(event_object, "message", None)
+        recipient = getattr(msg, "recipient", None) if msg else None
+        chat_id = getattr(recipient, "chat_id", None) if recipient else None
+        if uid is not None and chat_id is not None:
+            await remember_async(uid, chat_id)
+        if uid is not None:
+            return str(uid)
     return None
 
 
@@ -72,8 +83,8 @@ class PendingFsmMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         context = data.get("context")
-        uid = _user_id_from_event(event_object)
-        if isinstance(context, MemoryContext) and uid:
+        uid = await _remember_from_event(event_object)
+        if isinstance(context, BaseContext) and uid:
             pending = await backend.consult_take_pending(
                 channel=CHANNEL, channel_user_id=uid
             )
