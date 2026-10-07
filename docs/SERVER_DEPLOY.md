@@ -29,9 +29,13 @@ cd ~/Documents/ЧехлыИИ
 rsync -az --delete --exclude '.git' --exclude 'backend/.venv' --exclude '**/__pycache__' \
   --exclude 'infra/.env.server' --exclude 'backend/.env' --exclude 'bots/.env' \
   --exclude 'node_modules' --exclude 'frontend/node_modules' --exclude 'bots/xray' \
+  --exclude 'infra/media' --exclude '.swarm' --exclude '**/ruvector.db' --exclude '**/.claude-flow' \
   -e "ssh -p 22" ./ root@185.207.65.130:/opt/casetop/
 # затем на сервере: $COMPOSE up -d --build
 ```
+
+**Важно:** всегда исключайте `infra/media` — там загруженные фото. Иначе `rsync --delete`
+удалит том на сервере, и загрузка обложек начнёт отдавать 500 (`/app/media` «битый»).
 
 ## Домен и HTTPS
 NS домена — **Reg.ru** (`ns1.reg.ru`, `ns2.reg.ru`). Нужные записи:

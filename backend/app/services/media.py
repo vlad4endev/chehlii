@@ -139,7 +139,15 @@ def persist_bytes(content: bytes, ext: str, subdir: str) -> SavedFile:
     """Атомарно записать файл, проверить размер, вернуть метаданные + SHA-256."""
     if not content:
         raise ValueError("пустой файл")
-    folder = Path(settings.media_root) / subdir
+    root = Path(settings.media_root)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise OSError(
+            f"MEDIA_ROOT недоступен ({root}): {e}. "
+            "На сервере проверьте том infra/media и что rsync не удалил его (--exclude infra/media)."
+        ) from e
+    folder = root / subdir
     folder.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}.{ext.lstrip('.')}"
     storage_key = f"{subdir.strip('/')}/{name}"
