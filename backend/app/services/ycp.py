@@ -5,8 +5,11 @@
 Обратный «Токен API YCP» кабинет может показать отдельно: он нужен только если Яндекс
 просит исходящие вызовы, на приём заказов не влияет.
 
-В поле «URL для API» кабинет ждёт базу `https://домен/ycp/` и сам дописывает `/api/v1/...`
-(склады = `/ycp/api/v1/warehouses`). Фид для Яндекс Товаров — `/ycp/feed.yml`.
+В поле «URL для API» кабинет дописывает `/api/v1/...` к вставленной базе.
+Со слэшем на конце `https://домен/ycp/` это `/ycp/api/v1/warehouses`.
+Без слэша или с адресом сайта (`https://домен/`) путь схлопывается в
+`/api/v1/warehouses` или `//api/v1/warehouses` — эти адреса тоже отдаём как YCP.
+Фид для Яндекс Товаров — `/ycp/feed.yml`.
 Спека: https://yandex.ru/support/merchants-ru-ycp/ru/openapi/index.md
 
 Что продаём: типы чехлов без кастома (`is_custom=False`). Оффер = строка `CaseTypeModel`
@@ -17,6 +20,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -104,21 +108,51 @@ def probe_warehouses_url(public_base: str) -> str:
     return f"{_base(public_base)}/ycp/api/v1/warehouses"
 
 
+def cabinet_phone(raw: str | None) -> str:
+    """Телефон склада в виде примера из спеки: «+7 (495) 123-45-67»."""
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if len(digits) == 11 and digits[0] in "78":
+        rest = digits[1:]
+        return f"+7 ({rest[:3]}) {rest[3:6]}-{rest[6:8]}-{rest[8:10]}"
+    return (raw or "").strip()
+
+
 def cabinet_path(path: str) -> str | None:
     """Путь, как его видит кабинет YCP → путь наших хендлеров.
 
-    `/ycp/api/v1/warehouses` → `/api/v1/ycp/warehouses`, `/ycp/feed.yml` остаётся фидом.
-    Хвостовой слэш снимаем, чтобы FastAPI не редиректил на внутренний путь.
+    `/ycp/api/v1/warehouses` и схлопнутый `/api/v1/warehouses` (в том числе с `//`)
+    ведут на одни хендлеры. `/api/v1/orders` не трогаем. Хвостовой слэш снимаем,
+    чтобы FastAPI не редиректил на внутренний путь.
     """
-    if path.startswith("/ycp/api/v1"):
-        rewritten = "/api/v1/ycp" + path.removeprefix("/ycp/api/v1")
-    elif path == "/ycp/feed.yml":
+    collapsed = re.sub(r"/{2,}", "/", path) or "/"
+    if collapsed in ("/ycp", "/ycp/"):
+        return "/api/v1/ycp/health"
+    if collapsed == "/ycp/feed.yml":
         return "/api/v1/ycp/feed.yml"
+    if collapsed.startswith("/ycp/api/v1"):
+        rewritten = "/api/v1/ycp" + collapsed.removeprefix("/ycp/api/v1")
+    elif _root_ycp(collapsed):
+        rewritten = "/api/v1/ycp" + collapsed.removeprefix("/api/v1")
     else:
         return None
     if len(rewritten) > 1:
         rewritten = rewritten.rstrip("/")
     return rewritten
+
+
+def _root_ycp(path: str) -> bool:
+    """YCP на корне сайта: склады, чекаут и заказ. `/orders` магазина — нет."""
+    if not path.startswith("/api/v1/"):
+        return False
+    rest = path.removeprefix("/api/v1")
+    return (
+        rest == "/warehouses"
+        or rest.startswith("/warehouses/")
+        or rest == "/checkout"
+        or rest.startswith("/checkout/")
+        or rest == "/order"
+        or rest.startswith("/order/")
+    )
 
 
 def absolute_url(url: str | None, public_base: str) -> str | None:

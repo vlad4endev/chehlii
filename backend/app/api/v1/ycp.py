@@ -1,8 +1,9 @@
 """YCP (Yandex Commerce Protocol): API магазина, которое вызывает Яндекс.
 
-В ЛК YCP поле «URL для API» = `{публичный адрес}/ycp/` (кабинет сам дописывает `/api/v1/...`),
-токен доступа — из «Настройки → Интеграции → YCP». Тот же API доступен по старому пути
-`/api/v1/ycp/...`. Фид для Яндекс Товаров — `{публичный адрес}/ycp/feed.yml`, без Bearer.
+В ЛК YCP поле «URL для API» — база, к которой кабинет дописывает `/api/v1/...`.
+Подходят и `{сайт}/ycp/`, и корень сайта: оба адреса переписываются на `/api/v1/ycp/...`.
+Токен доступа — из «Настройки → Интеграции → YCP».
+Фид для Яндекс Товаров — `{публичный адрес}/ycp/feed.yml`, без Bearer.
 Ошибки — всегда `{"error": "..."}` (формат спеки).
 Оплату и доставку до покупателя ведёт Яндекс; мы отдаём каталог/цены/остатки, создаём заказ
 на `/checkout` и проводим оплату на `/checkout/placed` (дальше заказ как обычный
@@ -247,13 +248,18 @@ async def yml_feed(session: Session) -> Response:
 # ---------- методы YCP ----------
 
 
+@router.get("/health")
+async def health() -> dict:
+    """Корень `{URL для API}`: кабинет иногда проверяет саму базу, не только склады."""
+    return {"status": "ok"}
+
+
 @router.get("/warehouses")
 async def warehouses(session: Session, limit: int = 1000, offset: int = 0) -> dict:
-    address = await integrations.get(session, "ycp.warehouse_address") or ""
-    phone = (
+    address = (await integrations.get(session, "ycp.warehouse_address") or "").strip()
+    phone = ycp.cabinet_phone(
         await integrations.get(session, "ycp.warehouse_phone")
         or await integrations.get(session, "cdek.sender_phone")
-        or ""
     )
     rows = [
         {
@@ -261,9 +267,10 @@ async def warehouses(session: Session, limit: int = 1000, offset: int = 0) -> di
             "title": "Склад casetop",
             "address": address,
             "phone": phone,
+            "description": "Склад casetop",
             "self_pickup_options": {"enabled": False},
-            # Доставку считаем и ведём сами (/checkout/delivery/options), не YCP-логистикой.
-            "ycp_delivery_options": {"enabled": False},
+            # Поле не передаём: по спеке это значит, что доставка YCP для склада включена.
+            # `enabled: false` кабинет читает как «доставлять неоткуда» и не сохраняет связь.
         }
     ]
     return {"warehouses": rows[offset : offset + limit], "total_count": len(rows)}

@@ -64,6 +64,22 @@ def test_cabinet_urls_match_what_yandex_appends():
     assert ycp.cabinet_path("/ycp/api/v1/warehouses/") == "/api/v1/ycp/warehouses"
     assert ycp.cabinet_path("/ycp/feed.yml") == "/api/v1/ycp/feed.yml"
     assert ycp.cabinet_path("/api/v1/ycp/warehouses") is None
+    assert ycp.cabinet_path("/api/v1/warehouses") == "/api/v1/ycp/warehouses"
+    assert ycp.cabinet_path("//api/v1/warehouses") == "/api/v1/ycp/warehouses"
+    assert ycp.cabinet_path("/api/v1/checkout/basket/check") == (
+        "/api/v1/ycp/checkout/basket/check"
+    )
+    assert ycp.cabinet_path("/api/v1/order") == "/api/v1/ycp/order"
+    assert ycp.cabinet_path("/api/v1/order/cancel") == "/api/v1/ycp/order/cancel"
+    assert ycp.cabinet_path("/api/v1/orders") is None
+    assert ycp.cabinet_path("/ycp") == "/api/v1/ycp/health"
+    assert ycp.cabinet_path("/ycp/") == "/api/v1/ycp/health"
+
+
+def test_cabinet_phone_matches_spec_example():
+    assert ycp.cabinet_phone("+79537179908") == "+7 (953) 717-99-08"
+    assert ycp.cabinet_phone("8 (953) 717-99-08") == "+7 (953) 717-99-08"
+    assert ycp.cabinet_phone("+7 (495) 123-45-67") == "+7 (495) 123-45-67"
 
 
 def test_absolute_url_prefixes_site_paths():
