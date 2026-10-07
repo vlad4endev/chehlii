@@ -280,10 +280,14 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "hint": (
             "Приём предоплаты и постоплаты. Бот показывает кнопку на каждый настроенный "
             "шлюз, а поле «Платёжный шлюз» задаёт, какой из них идёт первым. В ЛК "
-            "Robokassa укажите ResultURL, Success и Fail на адрес backend "
-            "(…/api/v1/payments/robokassa/success|fail) — не на t.me, иначе после оплаты "
-            "клиентов из MAX уведёт в Telegram. Кнопка «Проверить связь» опрашивает "
-            "Robokassa сохранёнными кредами и платежей не создаёт."
+            "Robokassa укажите три разных адреса backend, не ссылку на t.me: "
+            "ResultURL = …/api/v1/payments/robokassa/result, "
+            "SuccessURL = …/api/v1/payments/robokassa/success, "
+            "FailURL = …/api/v1/payments/robokassa/fail. "
+            "ResultURL — серверное подтверждение: без него чат не продолжит сценарий, "
+            "даже если клиент увидел «оплата прошла». Метод — GET или POST. "
+            "Кнопка «Проверить связь» опрашивает Robokassa сохранёнными кредами "
+            "и платежей не создаёт."
         ),
         "fields": [
             {

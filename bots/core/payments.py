@@ -10,10 +10,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from bots.core.backend import backend
+
+_PAY_START = re.compile(r"pay[_-](\d+)")
 
 # Названия шлюзов клиенту: в подписи кнопки (когда способов несколько) и в тексте
 # (когда способ один — кнопка тогда говорит про сумму, а не про шлюз).
@@ -76,6 +79,22 @@ def render(
     )
 
 
+def pay_start_id(payload: str | None) -> int | None:
+    """Аргумент /start pay_<id> после возврата со страницы Robokassa."""
+    if not payload:
+        return None
+    m = _PAY_START.search(payload)
+    return int(m.group(1)) if m else None
+
+
+def pay_kind_of(item: dict) -> str:
+    """Вид оплаты из outbox kind=pay. По умолчанию — остаток после предоплаты."""
+    for media in item.get("media") or []:
+        if isinstance(media, dict) and media.get("type") == "pay" and media.get("kind"):
+            return str(media["kind"])
+    return "postpayment"
+
+
 async def block(order_id: int, kind: str = "prepayment") -> PayBlock:
     """Карточка оплаты по заказу. Если шлюзы не настроены — текст-фолбэк без кнопок."""
     try:
@@ -111,4 +130,9 @@ if __name__ == "__main__":
     none = render(amount=1234.4, kind="postpayment")
     assert not none.buttons
     assert "Остаток к оплате — 1 234 ₽" in none.text, none.text
+
+    assert pay_start_id("pay_42") == 42
+    assert pay_start_id("/start pay_7") == 7
+    assert pay_start_id("order_3") is None
+    assert pay_kind_of({"media": [{"type": "pay", "kind": "postpayment"}]}) == "postpayment"
     print("ok")

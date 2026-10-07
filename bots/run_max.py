@@ -13,7 +13,7 @@ from maxapi.enums.sender_action import SenderAction
 from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
 
-from bots.core import delivery
+from bots.core import delivery, payments
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
@@ -28,6 +28,7 @@ from bots.max.keyboards import (
     delivery_start_kb,
     main_menu_kb,
     mockup_kb,
+    pay_kb,
 )
 from bots.max.pending_fsm import PendingFsmMiddleware
 
@@ -102,6 +103,12 @@ async def _deliver(bot: Bot, item: dict) -> None:
         return
     if kind == "scenario":
         await _deliver_scenario(bot, item)
+        return
+    if kind == "pay" and item.get("order_id"):
+        b = await payments.block(int(item["order_id"]), payments.pay_kind_of(item))
+        body = f"{text}\n\n{b.text}".strip() if text else b.text
+        atts = [pay_kb(b.buttons)] if b.buttons else None
+        await bot.send_message(user_id=uid, text=body or "Оплата", attachments=atts)
         return
 
     # Рассылка с медиа → одно сообщение с несколькими вложениями (фото/видео).

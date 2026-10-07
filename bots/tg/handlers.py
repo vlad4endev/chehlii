@@ -77,11 +77,32 @@ async def _replace_or_send(message: Message | None, text: str, markup=None) -> N
 
 
 # ── Вход ───────────────────────────────────────────────
+async def _resume_after_pay(msg: Message, payment_id: int) -> None:
+    """Возврат со страницы Robokassa: сверить счёт и не сбрасывать диалог в приветствие."""
+    try:
+        res = await backend.sync_payment(payment_id)
+    except Exception:
+        logging.warning("tg: не удалось сверить оплату %s", payment_id, exc_info=True)
+        res = None
+    if res and res.get("status") == "paid":
+        await msg.answer("Оплата получена ✅ Продолжаем в следующем сообщении.")
+        return
+    await msg.answer(
+        "Платёж ещё подтверждаем. Если деньги уже списались, подождите минуту "
+        "и откройте бота по кнопке ещё раз."
+    )
+
+
 @router.message(CommandStart())
 async def on_start(msg: Message, state: FSMContext) -> None:
     # Контакт на входе НЕ просим — чтобы не отпугивать. Пользователь свободно
     # смотрит каталог; телефон запросим только при оформлении заказа.
     await state.clear()
+    args = msg.text.split(maxsplit=1)[1].strip() if msg.text and " " in msg.text else ""
+    pay_id = payments.pay_start_id(args)
+    if pay_id is not None:
+        await _resume_after_pay(msg, pay_id)
+        return
     client = await _client(msg)
     code = "welcome_back" if client.get("phone") else "msg_001"
     greeting = (

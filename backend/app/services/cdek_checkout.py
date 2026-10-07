@@ -314,7 +314,10 @@ def _notify(
 
 
 async def start_after_postpayment(
-    session: AsyncSession, order: Order, client: Client | None
+    session: AsyncSession,
+    order: Order,
+    client: Client | None,
+    text: str | None = None,
 ) -> None:
     """После оплаты чехла — выбор службы в боте. Идемпотентно.
 
@@ -348,7 +351,7 @@ async def start_after_postpayment(
         session,
         client,
         order.id,
-        "Оплата прошла ✅ Оформите доставку.",
+        text or "Оплата прошла ✅ Оформите доставку.",
         kind="delivery",
     )
 

@@ -1,6 +1,10 @@
 """Тесты пробы связи с Robokassa. Сеть не трогаем — только разбор OpStateExt."""
 
+from urllib.parse import parse_qs, urlparse
+
+from app.enums import PaymentKind
 from app.services import robokassa as rk
+from app.services.payment_flow import continuation_for
 
 XML_NS = (
     '<OperationStateResponse xmlns="http://merchant.roboxchange.com/WebService/">'
@@ -73,6 +77,96 @@ async def test_unknown_shop(monkeypatch):
     ok, detail = await rk.check_connection(login="no-such", password2="p2", is_test=True)
     assert ok is False
     assert "магазин не найден" in detail
+
+
+def test_signature_accepts_six_decimal_sum_signed_as_two():
+    """Колбэк присылает 10.000000, а подпись считалась от 10.00, как в ссылке."""
+    sig = rk._md5("10.00:5:secret:Shp_order=9")
+    assert rk.signature_matches(
+        password="secret",
+        out_sum="10.000000",
+        inv_id="5",
+        signature=sig,
+        shp={"Shp_order": "9"},
+    )
+
+
+def test_signature_accepts_lowercase_shp():
+    sig = rk._md5("10.00:5:secret:shp_order=9")
+    assert rk.verify_result(
+        password2="secret",
+        out_sum="10.00",
+        inv_id="5",
+        signature=sig,
+        shp={"shp_order": "9"},
+    )
+
+
+def test_success_url_does_not_change_signature():
+    base = rk.payment_url(
+        login="shop",
+        password1="p1",
+        out_sum=10,
+        inv_id=5,
+        description="order",
+        shp={"Shp_order": "9"},
+    )
+    with_urls = rk.payment_url(
+        login="shop",
+        password1="p1",
+        out_sum=10,
+        inv_id=5,
+        description="order",
+        shp={"Shp_order": "9"},
+        success_url="https://shop.example/api/v1/payments/robokassa/success/5",
+        fail_url="https://shop.example/api/v1/payments/robokassa/fail/5",
+    )
+    base_qs = parse_qs(urlparse(base).query)
+    url_qs = parse_qs(urlparse(with_urls).query)
+    assert base_qs["SignatureValue"] == url_qs["SignatureValue"]
+    assert url_qs["SuccessUrl"] == ["https://shop.example/api/v1/payments/robokassa/success/5"]
+    assert url_qs["FailUrl"] == ["https://shop.example/api/v1/payments/robokassa/fail/5"]
+
+
+def test_paid_state_is_not_result_code():
+    xml = (
+        "<OperationStateResponse><Result><Code>0</Code></Result>"
+        "<State><Code>100</Code></State></OperationStateResponse>"
+    )
+    assert rk.op_state_result_code(xml) == 0
+    assert rk.op_state_paid_code(xml) == 100
+
+
+def test_continuation_standard_prepay_asks_for_rest():
+    assert continuation_for(PaymentKind.PREPAYMENT, custom=False, post_amount=500) == "pay_post"
+
+
+def test_continuation_custom_prepay_waits_for_mockup():
+    assert continuation_for(PaymentKind.PREPAYMENT, custom=True, post_amount=500) == "wait_mockup"
+
+
+def test_continuation_postpay_opens_delivery():
+    assert continuation_for(PaymentKind.POSTPAYMENT, custom=False, post_amount=0) == "delivery"
+    assert continuation_for(PaymentKind.DELIVERY, custom=False, post_amount=0) == "fulfill"
+    assert continuation_for(PaymentKind.PREPAYMENT, custom=False, post_amount=0) == "delivery"
+
+
+async def test_invoice_paid_reads_state_code(monkeypatch):
+    xml = (
+        "<OperationStateResponse><Result><Code>0</Code></Result>"
+        "<State><Code>100</Code></State></OperationStateResponse>"
+    )
+    _fake_get(xml, 200, monkeypatch, [])
+    assert await rk.invoice_is_paid(login="shop", password2="p2", inv_id=15) is True
+
+
+async def test_invoice_not_paid_when_only_started(monkeypatch):
+    xml = (
+        "<OperationStateResponse><Result><Code>0</Code></Result>"
+        "<State><Code>5</Code></State></OperationStateResponse>"
+    )
+    _fake_get(xml, 200, monkeypatch, [])
+    assert await rk.invoice_is_paid(login="shop", password2="p2", inv_id=15) is False
 
 
 async def test_empty_creds_skip_network(monkeypatch):

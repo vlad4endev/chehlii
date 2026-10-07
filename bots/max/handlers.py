@@ -291,9 +291,34 @@ async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, 
     await backend.mark_journey(client_id, "msg_005аб")
 
 
+async def _resume_after_pay(bot, chat_id: int, payment_id: int) -> None:
+    """Возврат со страницы Robokassa: сверить счёт и не сбрасывать диалог в приветствие."""
+    try:
+        res = await backend.sync_payment(payment_id)
+    except Exception:
+        logging.warning("max: не удалось сверить оплату %s", payment_id, exc_info=True)
+        res = None
+    if res and res.get("status") == "paid":
+        await bot.send_message(
+            chat_id=chat_id, text="Оплата получена ✅ Продолжаем в следующем сообщении."
+        )
+        return
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "Платёж ещё подтверждаем. Если деньги уже списались, подождите минуту "
+            "и откройте бота по кнопке ещё раз."
+        ),
+    )
+
+
 async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload: str | None,
                  context: MemoryContext) -> None:
     """Единый вход: /start, первый старт бота или возврат из мини-приложения."""
+    pay_id = payments.pay_start_id(payload)
+    if pay_id is not None:
+        await _resume_after_pay(bot, chat_id, pay_id)
+        return
     client = await backend.upsert_client(CHANNEL, str(user_id), nickname=nickname)
 
     # Возврат из мини-приложения с заказом. Контакт просим ТОЛЬКО здесь (на заказе):

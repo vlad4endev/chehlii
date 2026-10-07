@@ -12,7 +12,7 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
 
-from bots.core import delivery
+from bots.core import delivery, payments
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes, looks_like_image, looks_like_pdf
@@ -34,6 +34,7 @@ from bots.tg.keyboards import (
     delivery_start_kb,
     main_menu_kb,
     mockup_kb,
+    pay_kb,
 )
 from bots.tg.pending_fsm import PendingFsmMiddleware
 from bots.tg.states import OrderFlow
@@ -148,6 +149,15 @@ async def _deliver(bot: Bot, item: dict, storage: RedisStorage | None = None) ->
         return
     if kind == "scenario":
         await _deliver_scenario(bot, storage, item)
+        return
+    if kind == "pay" and item.get("order_id"):
+        b = await payments.block(int(item["order_id"]), payments.pay_kind_of(item))
+        body = f"{text}\n\n{b.text}".strip() if text else b.text
+        await bot.send_message(
+            chat_id=chat_id,
+            text=body or "Оплата",
+            reply_markup=pay_kb(b.buttons) if b.buttons else None,
+        )
         return
 
     # Рассылка с медиа: фото/видео — альбомом; кружки (video note) — отдельно.

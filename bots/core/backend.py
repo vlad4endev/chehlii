@@ -79,6 +79,12 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def sync_payment(self, payment_id: int) -> dict:
+        """Сверить счёт с Robokassa и продолжить сценарий, если оплата уже прошла."""
+        r = await self._client.post(f"/payments/{payment_id}/sync")
+        r.raise_for_status()
+        return r.json()
+
     async def client_orders(self, client_id: int) -> list[dict]:
         r = await self._client.get(f"/clients/{client_id}/orders")
         r.raise_for_status()
