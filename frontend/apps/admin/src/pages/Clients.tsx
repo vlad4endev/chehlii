@@ -12,7 +12,7 @@ import {
 } from '../clientsApi'
 import { StatLine, UserCell } from '../ui'
 
-const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX' }
+const CHANNEL_LABEL: Record<string, string> = { tg: 'Telegram', max: 'MAX', ycp: 'Яндекс' }
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 

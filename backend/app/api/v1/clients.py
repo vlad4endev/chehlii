@@ -86,6 +86,11 @@ async def upsert_client(
             slave_code=_gen_slave_code(),
         )
         session.add(client)
+    elif client.deleted_at is not None:
+        # Мягко удалённый клиент снова пишет в бота — вернуть из корзины,
+        # иначе upsert «успешен», а в разделе «Клиенты» запись не видна.
+        client.deleted_at = None
+        is_new = True
 
     if payload.nickname is not None:
         client.nickname = payload.nickname

@@ -3,7 +3,7 @@ import { apiGet, apiSend } from './api'
 export interface Client {
   id: number
   phone: string | null
-  channel: 'tg' | 'max'
+  channel: 'tg' | 'max' | 'ycp'
   channel_user_id: string
   nickname: string | null
   date_start: string | null
@@ -28,7 +28,7 @@ export interface DiscountsInput {
 
 export interface ContactChannel {
   client_id: number
-  channel: 'tg' | 'max'
+  channel: 'tg' | 'max' | 'ycp'
   channel_user_id: string
   nickname: string | null
   number_orders: number

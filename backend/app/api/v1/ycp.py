@@ -25,14 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.orders import _record_status
 from app.core.database import get_session
-from app.enums import CaseBranch, OrderStatus, PaymentKind, PaymentStatus
+from app.enums import CaseBranch, Channel, OrderStatus, PaymentKind, PaymentStatus
 from app.models.catalog import CaseType, CaseTypeModel
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
 from app.services import integrations, pricing, stock, ycp
 
-GATEWAY = "ycp"
+GATEWAY = Channel.YCP
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 
@@ -354,6 +354,13 @@ async def checkout(body: CheckoutIn, session: Session) -> dict:
         )
         session.add(client)
         await session.flush()
+    elif client.deleted_at is not None:
+        client.deleted_at = None
+        if phone:
+            client.phone = phone
+        name = str(body.customer.get("full_name") or "")[:255] or None
+        if name:
+            client.nickname = name
 
     addr = body.delivery.get("address") or {}
     parts = [addr.get("locality"), addr.get("address")]
