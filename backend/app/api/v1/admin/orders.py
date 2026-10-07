@@ -24,7 +24,7 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations, media, pricing, review_offer, stock, yandex_disk
+from app.services import media, media_assets, pricing, review_offer, stock, yandex_disk
 from app.services import order_state_machine as fsm
 from app.services.cdek_checkout import decode_destination
 
@@ -512,23 +512,25 @@ async def upload_mockup(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             "Поддерживаются фото (JPG/PNG/WEBP/HEIC) и PDF.",
         )
-    local_url = media.save_bytes(content, ext, f"orders/{order_id}")
-
-    token = await integrations.get(session, "yandex_disk.oauth_token")
-    root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
-    if not token:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Яндекс.Диск не настроен — задайте OAuth-токен в разделе «Настройки → Интеграции».",
-        )
+    root = await media_assets.disk_root(session)
+    remote = yandex_disk.design_path(root, order_id, filename)
     try:
-        disk_url = await yandex_disk.upload(
-            yandex_disk.design_path(root, order_id, filename), content, token=token
+        saved, _asset, disk_url = await media_assets.persist(
+            session,
+            content,
+            ext=ext,
+            subdir=f"orders/{order_id}",
+            kind="image" if ext != "pdf" else "file",
+            owner_type="order_mockup",
+            owner_id=order_id,
+            original_filename=filename,
+            disk_remote_path=remote,
+            require_disk=True,
         )
     except yandex_disk.YandexDiskError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Яндекс.Диск: {e}") from e
 
-    order.mockup_url = local_url
+    order.mockup_url = saved.url
     order.mockup_disk_url = disk_url
     # Загрузка макета — штатный триггер «Отправка макета». FSM пускает только из
     # «Дизайн в процессе» / «Пересогласование»; из более ранних статусов воронки
@@ -548,7 +550,7 @@ async def upload_mockup(
             order_id=order.id,
             kind="mockup",
             text=(msg.text if msg else _MOCKUP_DEFAULT_TEXT),
-            attachment_url=local_url,
+            attachment_url=saved.url,
         )
     )
     await session.commit()

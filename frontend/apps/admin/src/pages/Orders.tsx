@@ -603,8 +603,10 @@ function resolveFileRef(file: unknown): string | null {
   if (typeof file === 'string' && file.trim()) return file.trim()
   if (file && typeof file === 'object') {
     const rec = file as Record<string, unknown>
-    if (typeof rec.url === 'string') return rec.url
-    if (typeof rec.href === 'string') return rec.href
+    if (typeof rec.url === 'string' && rec.url.trim()) return rec.url.trim()
+    if (typeof rec.href === 'string' && rec.href.trim()) return rec.href.trim()
+    // Fallback: архив на Яндекс.Диске, если локальный /media пропал
+    if (typeof rec.disk_url === 'string' && rec.disk_url.trim()) return rec.disk_url.trim()
   }
   return null
 }

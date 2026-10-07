@@ -1,14 +1,8 @@
 """Загрузка медиа для каталога (только Админ).
 
-Файл сохраняется в settings.media_root и отдаётся статикой по пути /media.
-Возвращается прямой URL (`/media/catalog/<uuid>.<ext>`) — годный для <img src>
-в мини-аппе и админке (тот же домен). Используется для обложки типа и фото
-под конкретную модель iPhone.
-
-Локальный диск VPS — не резервируемое хранилище (при переезде/пересборке
-сервера папка media физически исчезает, а пути в БД остаются). Поэтому
-дополнительно архивируем копию на Яндекс.Диск, как и файлы заказов —
-не критично для загрузки, ошибки не валят её.
+Файл атомарно сохраняется в MEDIA_ROOT, регистрируется в media_assets (SHA-256)
+и архивируется на Яндекс.Диск. Возвращается прямой URL (`/media/catalog/...`)
+для <img src> в мини-аппе и админке.
 """
 
 from __future__ import annotations
@@ -21,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.admin.deps import AdminOnly, CurrentAdmin
 from app.core.database import get_session
-from app.services import integrations, media, yandex_disk
+from app.services import media, media_assets, yandex_disk
 
 router = APIRouter()
 
@@ -63,17 +57,25 @@ async def upload_media(
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"Файл больше {mb} МБ.")
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустой файл.")
-    url = media.save_bytes(data, ext, "catalog")
 
-    # Архивная копия на Яндекс.Диск — по возможности, без блокировки загрузки.
-    token = await integrations.get(session, "yandex_disk.oauth_token")
-    if token:
-        root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
-        try:
-            await yandex_disk.upload(
-                yandex_disk.catalog_path(root, file.filename or f"catalog.{ext}"), data, token=token
-            )
-        except yandex_disk.YandexDiskError:
-            pass
+    root = await media_assets.disk_root(session)
+    remote = yandex_disk.catalog_path(root, file.filename or f"catalog.{ext}")
+    saved, asset, disk_url = await media_assets.persist(
+        session,
+        data,
+        ext=ext,
+        subdir="catalog",
+        kind=kind,
+        owner_type="catalog",
+        original_filename=file.filename,
+        disk_remote_path=remote,
+        require_disk=False,
+    )
+    await session.commit()
 
-    return {"url": url, "type": kind}
+    out: dict[str, str] = {"url": saved.url, "type": kind, "sha256": saved.sha256}
+    if disk_url:
+        out["disk_url"] = disk_url
+    elif asset.archive_error:
+        out["archive_warning"] = asset.archive_error
+    return out

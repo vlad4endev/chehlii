@@ -6,6 +6,7 @@ from app.models.catalog import CaseType, CaseTypeModel
 from app.models.client import Client
 from app.models.consult import ConsultMessage, ConsultThread
 from app.models.engagement import Favorite, PromoActivation, Review
+from app.models.media import MediaAsset
 from app.models.messaging import BotMessage, Broadcast, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
@@ -22,6 +23,7 @@ __all__ = [
     "Favorite",
     "PromoActivation",
     "Review",
+    "MediaAsset",
     "Broadcast",
     "BotMessage",
     "OutboundMessage",

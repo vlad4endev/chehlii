@@ -15,7 +15,7 @@ from app.core.database import get_session
 from app.enums import Channel, ConsultSender, ConsultStatus
 from app.models.client import Client
 from app.models.consult import ConsultMessage, ConsultThread
-from app.services import consult, media
+from app.services import consult, media, media_assets, yandex_disk
 
 router = APIRouter()
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -267,7 +267,9 @@ async def reply(thread_id: int, body: ReplyIn, admin: AdminOnly, session: Sessio
 
 
 @router.post("/media")
-async def upload_reply_media(file: UploadFile, _: AdminOnly) -> dict[str, str]:
+async def upload_reply_media(
+    file: UploadFile, _: AdminOnly, session: Session
+) -> dict[str, str]:
     data = await file.read()
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пустой файл.")
@@ -283,7 +285,29 @@ async def upload_reply_media(file: UploadFile, _: AdminOnly) -> dict[str, str]:
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             f"Файл больше {limit // (1024 * 1024)} МБ.",
         )
-    return {"url": media.save_bytes(data, ext, "consult"), "type": kind, "name": file.filename or ""}
+    root = await media_assets.disk_root(session)
+    remote = yandex_disk.consult_path(root, file.filename or f"consult.{ext}")
+    saved, _asset, disk_url = await media_assets.persist(
+        session,
+        data,
+        ext=ext,
+        subdir="consult",
+        kind=kind,
+        owner_type="consult",
+        original_filename=file.filename,
+        disk_remote_path=remote,
+        require_disk=False,
+    )
+    await session.commit()
+    out: dict[str, str] = {
+        "url": saved.url,
+        "type": kind,
+        "name": file.filename or "",
+        "sha256": saved.sha256,
+    }
+    if disk_url:
+        out["disk_url"] = disk_url
+    return out
 
 
 @router.get("/unread-count")

@@ -222,7 +222,24 @@ async def upload(remote_path: str, content: bytes, *, token: str) -> str:
         return public_url or file_url or remote_path
 
 
-_SAFE_EXT = {"png", "jpg", "jpeg", "webp", "gif", "pdf", "heic"}
+_SAFE_EXT = {
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "gif",
+    "pdf",
+    "heic",
+    "heif",
+    "mp4",
+    "mov",
+    "webm",
+    "ogg",
+    "mp3",
+    "m4a",
+    "wav",
+    "aac",
+}
 
 
 def safe_filename(name: str, fallback: str = "file") -> str:
@@ -287,6 +304,10 @@ def client_path(root: str, order_id: int, filename: str) -> str:
 
 def catalog_path(root: str, filename: str) -> str:
     return f"{root.rstrip('/')}/catalog/{safe_filename(filename, 'catalog')}"
+
+
+def consult_path(root: str, filename: str) -> str:
+    return f"{root.rstrip('/')}/consult/{safe_filename(filename, 'consult')}"
 
 
 def _space_hint(data: dict) -> str:

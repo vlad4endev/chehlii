@@ -56,6 +56,13 @@
 - `order_id`, `kind` (prepayment/postpayment/delivery), `gateway`, `amount`, `status`
 - `external_id`, `payment_url`, `idempotency_key` (уникален — защита от двойной обработки webhook), `raw_webhook`, `paid_at`
 
+### media_assets — реестр загруженных файлов
+Байты на VPS (`MEDIA_ROOT` → `/media/...`) + архив на Яндекс.Диске. В БД — метаданные и целостность.
+- `storage_key`, `local_url` (уникален), `disk_url`, `sha256`, `mime`, `size_bytes`, `kind`
+- Владелец: `owner_type` (`catalog` / `order_material` / `order_mockup` / `consult` / …), `owner_id`
+- Архив: `archived_at`, `archive_error`; мягкое удаление: `deleted_at`
+- Колонки URL в заказах/каталоге остаются для быстрого доступа; источник истины по файлу — эта таблица. При пропаже локального файла восстановление идёт с `disk_url`.
+
 ## Заделы под будущие этапы (по требованию ТЗ)
 - `orders.ai_analysis` — ИИ-анализ заказа (этап 3)
 - `bot_messages.scenario_type` — триггерные сценарии (этап 2)

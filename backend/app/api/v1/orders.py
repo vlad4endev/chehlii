@@ -18,7 +18,7 @@ from app.enums import CaseBranch, OrderStatus
 from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
-from app.services import integrations, media, pricing, yandex_disk
+from app.services import media, media_assets, pricing, yandex_disk
 
 router = APIRouter()
 
@@ -143,10 +143,9 @@ async def add_client_file(
 ) -> dict:
     """Файл клиента (материалы для дизайнера). Вызывает бот, скачав файл из мессенджера.
 
-    Сохраняем в локальное медиа (`/media/orders/{id}/…`) — прямая ссылка, чтобы
-    фото было видно миниатюрой в карточке заказа. Если настроен Яндекс.Диск —
-    дополнительно архивируем туда (не критично, ошибки не валят загрузку).
-    Ссылка добавляется в materials_files.
+    Атомарно сохраняем в `/media/orders/{id}/…`, регистрируем в media_assets (SHA-256)
+    и архивируем на Яндекс.Диск. В materials_files кладём объект с url/disk_url/sha256
+    (строки-URL из старых заказов по-прежнему читаются админкой).
     """
     order = await session.get(Order, order_id)
     if order is None:
@@ -161,23 +160,33 @@ async def add_client_file(
         )
     if len(content) > media.MAX_BYTES:
         raise HTTPException(status_code=413, detail="Файл больше 12 МБ.")
-    url = media.save_bytes(content, ext, f"orders/{order_id}")
+    if not content:
+        raise HTTPException(status_code=400, detail="Пустой файл.")
 
-    # Архивная копия на Яндекс.Диск — по возможности, без блокировки загрузки.
-    token = await integrations.get(session, "yandex_disk.oauth_token")
-    if token:
-        root = await integrations.get(session, "yandex_disk.root", "/chechlii/orders")
-        try:
-            await yandex_disk.upload(
-                yandex_disk.client_path(root, order_id, filename), content, token=token
-            )
-        except yandex_disk.YandexDiskError:
-            pass
-
-    files = [*(order.materials_files or []), url]
+    root = await media_assets.disk_root(session)
+    remote = yandex_disk.client_path(root, order_id, filename)
+    saved, asset, disk_url = await media_assets.persist(
+        session,
+        content,
+        ext=ext,
+        subdir=f"orders/{order_id}",
+        kind="image" if ext != "pdf" else "file",
+        owner_type="order_material",
+        owner_id=order_id,
+        original_filename=filename,
+        disk_remote_path=remote,
+        require_disk=False,
+    )
+    ref = media_assets.file_ref(
+        saved.url,
+        disk_url=disk_url,
+        sha256=saved.sha256,
+        asset_id=asset.id,
+    )
+    files = [*(order.materials_files or []), ref]
     order.materials_files = files
     await session.commit()
-    return {"url": url, "materials_files": files}
+    return {"url": saved.url, "materials_files": files, "sha256": saved.sha256}
 
 
 @router.post("/{order_id}/mockup-response", response_model=OrderOut)
