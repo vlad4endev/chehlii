@@ -605,7 +605,11 @@ def test_normalize_phone_to_plus7_format():
     # Схема request/create ждёт «+79529999999»; клиент вводит по-разному.
     for raw in ("8 (999) 000-00-00", "79990000000", "+7 999 000 00 00", "9990000000"):
         assert yd.normalize_phone(raw) == "+79990000000"
-    assert yd.normalize_phone(None) == ""
+    with pytest.raises(yd.YandexDeliveryError, match="телефон"):
+        yd.normalize_phone(None)
+    with pytest.raises(yd.YandexDeliveryError, match="телефон"):
+        # Битый номер из MAX vCard VERSION:3.0 — для получателя нужен mobile=True.
+        yd.normalize_phone("+73089001234", mobile=True)
     assert _build(recipient_phone="8 999 000 00 00")["recipient_info"]["phone"] == "+79990000000"
 
 

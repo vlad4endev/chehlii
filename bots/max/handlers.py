@@ -365,15 +365,34 @@ async def on_start_cmd(event: MessageCreated, context: BaseContext) -> None:
 
 
 def _extract_contact_phone(event: MessageCreated) -> str | None:
-    """Best-effort: телефон из вложения-контакта (vCard), если MAX его прислал."""
+    """Телефон из вложения-контакта MAX (vCard).
+
+    Важно: нельзя склеивать весь vCard в одну строку цифр — VERSION:3.0 даёт
+    префикс «30» и normalize превращает 8900… в мусор вроде +73089…, а Яндекс
+    отвечает «Recipient's phone is invalid».
+    """
     for att in event.message.body.attachments or []:
         payload = getattr(att, "payload", None)
-        vcf = getattr(payload, "vcf_info", None)
-        if vcf:
-            phone = normalize_phone(re.sub(r"[^\d+]", "", vcf.replace("TEL", " ")))
+        if payload is None:
+            continue
+        structured = getattr(payload, "vcf", None)
+        tel = getattr(structured, "phone", None) if structured is not None else None
+        if tel:
+            phone = normalize_phone(tel)
+            if phone:
+                return phone
+        raw = getattr(payload, "vcf_info", None)
+        if not raw:
+            continue
+        for line in str(raw).replace("\r\n", "\n").split("\n"):
+            if not line.upper().startswith("TEL"):
+                continue
+            _, _, value = line.partition(":")
+            phone = normalize_phone(value.strip())
             if phone:
                 return phone
     return None
+
 
 
 @router.message_created(OrderFlow.waiting_contact)
@@ -654,20 +673,23 @@ async def on_delivery_cb(event: MessageCallback, context: BaseContext) -> None:
     chat_id = event.message.recipient.chat_id
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
-    if not client.get("phone"):
+    phone = normalize_phone(client.get("phone"))
+    if not phone:
         await context.set_state(OrderFlow.waiting_contact)
         await context.update_data(pending_delivery_order_id=order_id)
         await event.answer()
         await _replace(
             event,
-            "Для доставки нужен телефон получателя. Пришлите номер в формате +7XXXXXXXXXX.",
+            "Для доставки нужен мобильный телефон получателя (+79XXXXXXXXX). "
+            "Пришлите номер или нажмите «Поделиться контактом».",
             [contact_kb()],
         )
         return
+
     if action == "go":
         await event.answer()
         await _start_delivery(
-            event.bot, chat_id, order_id, context, event=event, phone=client.get("phone")
+            event.bot, chat_id, order_id, context, event=event, phone=phone
         )
         return
     if action == "svc" and len(parts) >= 4:
@@ -677,7 +699,7 @@ async def on_delivery_cb(event: MessageCallback, context: BaseContext) -> None:
             return
         await event.answer()
         await _ask_mode(
-            event.bot, chat_id, order_id, svc, context, event=event, phone=client.get("phone")
+            event.bot, chat_id, order_id, svc, context, event=event, phone=phone
         )
         return
     if action in ("pvz", "door"):
@@ -689,7 +711,7 @@ async def on_delivery_cb(event: MessageCallback, context: BaseContext) -> None:
         if service == "ozon":
             await event.answer()
             await _ask_ozon_city(
-                event.bot, chat_id, order_id, context, client.get("phone"), event=event
+                event.bot, chat_id, order_id, context, phone, event=event
             )
             return
         await context.set_state(OrderFlow.delivery_city)

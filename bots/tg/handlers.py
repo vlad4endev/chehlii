@@ -143,16 +143,14 @@ async def _apply_phone(msg: Message, state: FSMContext, phone: str) -> None:
 
 @router.message(F.contact)
 async def on_contact(msg: Message, state: FSMContext) -> None:
-    phone = msg.contact.phone_number if msg.contact else None
+    phone = normalize_phone(msg.contact.phone_number if msg.contact else None)
     if not phone:
         await msg.answer(
-            "Не удалось прочитать контакт. Нажмите «📱 Поделиться контактом» "
-            "или пришлите номер +7XXXXXXXXXX.",
+            "Не разобрал мобильный номер. Нажмите «📱 Поделиться контактом» "
+            "или пришлите +79XXXXXXXXX.",
             reply_markup=contact_kb(),
         )
         return
-    # Нормализуем к +7…, если пришёл 8… / без плюса.
-    phone = normalize_phone(phone) or phone
     await _apply_phone(msg, state, phone)
 
 
@@ -481,7 +479,8 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         return
     u = cb.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
-    if not client.get("phone"):
+    phone = normalize_phone(client.get("phone"))
+    if not phone:
         await state.set_state(OrderFlow.waiting_contact)
         await state.update_data(pending_delivery_order_id=order_id)
         try:
@@ -489,15 +488,15 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         except Exception:
             pass
         await cb.message.answer(
-            "Для доставки нужен телефон получателя. "
-            "Нажмите «📱 Поделиться контактом» или пришлите +7XXXXXXXXXX.",
+            "Для доставки нужен мобильный телефон получателя (+79XXXXXXXXX). "
+            "Нажмите «📱 Поделиться контактом» или пришлите номер.",
             reply_markup=contact_kb(),
         )
         await cb.answer()
         return
 
     if action == "go":
-        await _start_delivery(cb.message, state, order_id, client.get("phone"))
+        await _start_delivery(cb.message, state, order_id, phone)
         await cb.answer()
         return
     if action == "svc" and len(parts) >= 4:
@@ -505,7 +504,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         if svc not in delivery.SERVICE_LABELS:
             await cb.answer()
             return
-        await _ask_mode(cb.message, state, order_id, svc, client.get("phone"))
+        await _ask_mode(cb.message, state, order_id, svc, phone)
         await cb.answer()
         return
     if action in ("pvz", "door"):
@@ -515,7 +514,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
             await cb.answer("Ozon доставляет только в пункт выдачи", show_alert=True)
             return
         if service == "ozon":
-            await _ask_ozon_city(cb.message, state, order_id, client.get("phone"))
+            await _ask_ozon_city(cb.message, state, order_id, phone)
             await cb.answer()
             return
         await state.set_state(OrderFlow.delivery_city)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,6 +37,8 @@ BOX_CM = (20, 15, 5)
 # совпадать с отгрузками в ЛК; если расписание другое — вынести окно в настройки.
 PICKUP_WINDOW_HOURS = 8
 _TS = "%Y-%m-%dT%H:%M:%SZ"
+_RU_PHONE = re.compile(r"^\+7\d{10}$")
+_RU_MOBILE = re.compile(r"^\+79\d{9}$")
 
 
 class YandexDeliveryError(RuntimeError):
@@ -56,14 +59,26 @@ def _looks_like_delivery_oauth(apikey: str) -> bool:
     return key.startswith("y0_") or key.startswith("y1_")
 
 
-def normalize_phone(raw: str | None) -> str:
-    """Схема заявки ждёт «+79529999999»; клиент мог ввести «8 (952) 999-99-99»."""
+def normalize_phone(raw: str | None, *, mobile: bool = False) -> str:
+    """Схема заявки ждёт «+79529999999»; клиент мог ввести «8 (952) 999-99-99».
+
+    Для получателя (`mobile=True`) нужен мобильный +79… — иначе Platform API
+    отвечает 400 «Recipient's phone is invalid» (типичный баг MAX vCard).
+    """
     digits = "".join(c for c in (raw or "") if c.isdigit())
     if len(digits) == 11 and digits[0] in "78":
         digits = "7" + digits[1:]
     elif len(digits) == 10:
         digits = "7" + digits
-    return f"+{digits}" if digits else ""
+    phone = f"+{digits}" if digits else ""
+    pattern = _RU_MOBILE if mobile else _RU_PHONE
+    if not pattern.fullmatch(phone):
+        raise YandexDeliveryError(
+            "телефон получателя должен быть мобильным в формате +79XXXXXXXXX"
+            if mobile
+            else "телефон должен быть в формате +7XXXXXXXXXX"
+        )
+    return phone
 
 
 # Коды из справочника ошибок Platform API → что делать оператору.
@@ -109,13 +124,20 @@ def _api_error(path: str, r: httpx.Response) -> YandexDeliveryError:
     if code in _ERROR_HINTS:
         return YandexDeliveryError(f"{path}: {_ERROR_HINTS[code]} [{code}]")
     # Platform API иногда отдаёт validation_error без отдельного кода полей.
-    if "doesn't accept payment on delivery" in message.lower() or (
-        "не принима" in message.lower() and "оплат" in message.lower()
+    low = message.lower()
+    if "doesn't accept payment on delivery" in low or (
+        "не принима" in low and "оплат" in low
     ):
         return YandexDeliveryError(
             f"{path}: этот ПВЗ не принимает оплату при получении. Выберите другой "
             "пункт или способ оплаты «Уже оплачено» (already_paid) в настройках "
             f"Яндекс Доставки [{code or 'validation_error'}]"
+        )
+    if "phone is invalid" in low or ("некорректн" in low and "телефон" in low):
+        return YandexDeliveryError(
+            f"{path}: некорректный телефон получателя. Нужен мобильный "
+            f"+79XXXXXXXXX — попросите клиента прислать номер ещё раз "
+            f"[{code or 'validation_error'}]"
         )
     return YandexDeliveryError(f"{path}: {r.status_code} {r.text[:300]}")
 
@@ -468,7 +490,7 @@ def build_request(
         "recipient_info": {
             "first_name": first or "Получатель",
             "last_name": last or "—",
-            "phone": normalize_phone(recipient_phone),
+            "phone": normalize_phone(recipient_phone, mobile=True),
         },
         "last_mile_policy": "self_pickup" if pickup_point_id else cfg["last_mile_policy"],
     }

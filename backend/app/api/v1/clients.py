@@ -89,7 +89,8 @@ async def upsert_client(
 
     if payload.nickname is not None:
         client.nickname = payload.nickname
-    if payload.phone and not client.phone:
+    # Контакт из бота можно прислать повторно (исправление битого номера из MAX vCard).
+    if payload.phone:
         client.phone = payload.phone
     # upsert вызывается из ботов только на входящее действие клиента (start,
     # контакт, кнопка, ответ) — используем как отметку последней активности.
