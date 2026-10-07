@@ -194,7 +194,7 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
             {
                 "key": "yandex.payment_method",
-                "label": "Оплата (already_paid / card_on_receipt / postpay)",
+                "label": "Оплата (для ПВЗ всегда already_paid)",
                 "secret": False,
                 "placeholder": "already_paid",
             },

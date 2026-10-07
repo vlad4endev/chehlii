@@ -64,6 +64,34 @@ def test_pickup_point_becomes_platform_station_and_self_pickup():
     assert body["last_mile_policy"] == "self_pickup"
 
 
+def test_pickup_forces_already_paid_when_cod_configured():
+    # Многие ПВЗ не принимают оплату при получении — API отвечает 400.
+    cfg = {**CFG, "payment_method": "card_on_receipt"}
+    body = yd.build_request(
+        cfg,
+        order_id=1,
+        item_price_rub=100,
+        recipient_name="Иван Петров",
+        recipient_phone="+79990000000",
+        pickup_point_id="pvz-1",
+    )
+    assert body["billing_info"]["payment_method"] == "already_paid"
+
+
+def test_courier_keeps_card_on_receipt():
+    cfg = {**CFG, "payment_method": "card_on_receipt"}
+    body = yd.build_request(
+        cfg,
+        order_id=1,
+        item_price_rub=100,
+        recipient_name="Иван Петров",
+        recipient_phone="+79990000000",
+        pickup_point_id=None,
+        address="Москва, Тверская 1",
+    )
+    assert body["billing_info"]["payment_method"] == "card_on_receipt"
+
+
 def test_courier_address_without_coordinates_uses_details():
     # Геокодер не обязателен: Platform API принимает адрес в details.
     body = _build(pickup_point_id=None, address="Москва, Тверская 1")
@@ -598,6 +626,28 @@ async def test_known_api_error_code_gets_actionable_hint(monkeypatch):
         await yd.offers_create(CFG, {})
     assert "график забора" in str(e.value)
     assert "pickups_not_configured" in str(e.value)
+
+
+async def test_pickup_cod_validation_error_is_readable(monkeypatch):
+    _fake_client(
+        {
+            "/offers/create": _FakeResponse(
+                400,
+                {
+                    "code": "validation_error",
+                    "message": (
+                        "Pickup point doesn't accept payment on delivery. "
+                        "Choose another pickup point or payment method."
+                    ),
+                },
+            )
+        },
+        monkeypatch,
+    )
+    with pytest.raises(yd.YandexDeliveryError) as e:
+        await yd.offers_create(CFG, {})
+    assert "не принимает оплату при получении" in str(e.value)
+    assert "already_paid" in str(e.value)
 
 
 async def test_dropoff_points_ask_api_for_dropoff_not_pickup_type(monkeypatch):

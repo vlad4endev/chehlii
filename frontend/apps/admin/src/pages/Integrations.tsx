@@ -87,9 +87,9 @@ const META: Record<string, ServiceMeta> = {
         { value: 'self_pickup', label: 'Самовывоз / ПВЗ' },
       ],
       'yandex.payment_method': [
-        { value: 'already_paid', label: 'Уже оплачено' },
-        { value: 'card_on_receipt', label: 'Карта при получении' },
-        { value: 'postpay', label: 'Постоплата' },
+        { value: 'already_paid', label: 'Уже оплачено (нужно для ПВЗ)' },
+        { value: 'card_on_receipt', label: 'Карта при получении (только курьер)' },
+        { value: 'postpay', label: 'Постоплата (только курьер)' },
       ],
     },
   },

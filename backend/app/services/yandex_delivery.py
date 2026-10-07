@@ -78,14 +78,45 @@ _ERROR_HINTS = {
     ),
 }
 
+# Допустимые значения billing_info.payment_method (Platform API).
+PAYMENT_ALREADY_PAID = "already_paid"
+PAYMENT_ON_RECEIPT = frozenset({"card_on_receipt", "postpay"})
+_PAYMENT_METHODS = frozenset({PAYMENT_ALREADY_PAID}) | PAYMENT_ON_RECEIPT
+
+
+def resolve_payment_method(cfg: dict, *, pickup_point_id: str | None) -> str:
+    """Способ оплаты для заявки.
+
+    Клиент платит в боте до `offers/confirm` (вариант A) — для ПВЗ всегда
+    `already_paid`: многие пункты выдачи не принимают оплату при получении, и API
+    отвечает 400 «Pickup point doesn't accept payment on delivery».
+    """
+    method = (cfg.get("payment_method") or PAYMENT_ALREADY_PAID).strip()
+    if method not in _PAYMENT_METHODS:
+        method = PAYMENT_ALREADY_PAID
+    if pickup_point_id and method in PAYMENT_ON_RECEIPT:
+        return PAYMENT_ALREADY_PAID
+    return method
+
 
 def _api_error(path: str, r: httpx.Response) -> YandexDeliveryError:
     try:
-        code = str((r.json() or {}).get("code") or "")
+        payload = r.json() or {}
     except ValueError:
-        code = ""
+        payload = {}
+    code = str(payload.get("code") or "")
+    message = str(payload.get("message") or "")
     if code in _ERROR_HINTS:
         return YandexDeliveryError(f"{path}: {_ERROR_HINTS[code]} [{code}]")
+    # Platform API иногда отдаёт validation_error без отдельного кода полей.
+    if "doesn't accept payment on delivery" in message.lower() or (
+        "не принима" in message.lower() and "оплат" in message.lower()
+    ):
+        return YandexDeliveryError(
+            f"{path}: этот ПВЗ не принимает оплату при получении. Выберите другой "
+            "пункт или способ оплаты «Уже оплачено» (already_paid) в настройках "
+            f"Яндекс Доставки [{code or 'validation_error'}]"
+        )
     return YandexDeliveryError(f"{path}: {r.status_code} {r.text[:300]}")
 
 
@@ -431,7 +462,9 @@ def build_request(
                 "physical_dims": {"weight_gross": cfg["weight"], "dx": dx, "dy": dy, "dz": dz},
             }
         ],
-        "billing_info": {"payment_method": cfg["payment_method"]},
+        "billing_info": {
+            "payment_method": resolve_payment_method(cfg, pickup_point_id=pickup_point_id)
+        },
         "recipient_info": {
             "first_name": first or "Получатель",
             "last_name": last or "—",
