@@ -45,7 +45,13 @@ export interface OrderDetail extends OrderRow {
   delivery_cost: number | null
   allowed_next: StatusOption[]
   history: StatusEvent[]
+  /** Заполняется после смены статуса: ушёл ли сценарий клиенту. */
+  client_notified?: boolean
+  notify_code?: string | null
 }
+
+/** Статусы макета — сообщение клиенту только при загрузке файла. */
+export const MOCKUP_STATUSES = new Set(['mockup_sent', 'mockup_approval', 'mockup_revision'])
 
 // Все статусы (для фильтра). Значения совпадают с backend.
 export const STATUSES: StatusOption[] = [

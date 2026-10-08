@@ -24,9 +24,14 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import media, media_assets, pricing, review_offer, stock, yandex_disk
+from app.services import media, media_assets, pricing, stock, yandex_disk
 from app.services import order_state_machine as fsm
 from app.services.cdek_checkout import decode_destination
+from app.services.order_status_notify import (
+    MOCKUP_STATUSES,
+    NotifyResult,
+    notify_after_manual_status,
+)
 
 router = APIRouter()
 
@@ -108,6 +113,9 @@ class OrderDetail(OrderRow):
     delivery_cost: float | None
     allowed_next: list[StatusOption]
     history: list[StatusEvent]
+    # Заполняется при PATCH status: ушёл ли сценарий клиенту.
+    client_notified: bool = False
+    notify_code: str | None = None
 
 
 def order_value(o: Order) -> float:
@@ -197,7 +205,8 @@ def _forward_statuses(current: OrderStatus) -> list[OrderStatus]:
 
 
 def _allowed_next(order: Order, role: AdminRole) -> list[StatusOption]:
-    nxt = _forward_statuses(order.status)
+    """Статусы для обычного select. Макетные — только через «Загрузить и отправить»."""
+    nxt = [s for s in _forward_statuses(order.status) if s not in MOCKUP_STATUSES]
     if role != AdminRole.ADMIN:
         nxt = [s for s in nxt if s in DESIGNER_STATUSES]
     return [StatusOption(value=s, label=STATUS_LABELS.get(s, s)) for s in nxt]
@@ -413,16 +422,23 @@ class StatusChangeIn(BaseModel):
 
 
 async def _record(
-    session: AsyncSession, order: Order, new: OrderStatus, by: AdminUser, *, forced: bool = False
-) -> None:
+    session: AsyncSession,
+    order: Order,
+    new: OrderStatus,
+    by: AdminUser,
+    *,
+    forced: bool = False,
+    notify: bool = True,
+) -> NotifyResult:
+    """Сменить статус, историю и (по умолчанию) сценарий клиенту.
+
+    `notify=False` — для загрузки макета: сообщение уходит отдельно kind=mockup.
+    """
     prev = order.status
     order.status = new
-    if new == OrderStatus.REVIEW_OFFERED and prev != new:
-        # Статус «Предложение об отзыве» — сам триггер сообщения клиенту.
-        await review_offer.enqueue(session, order, await session.get(Client, order.client_id))
-    if new == OrderStatus.PREPAYMENT_PAID:
+    if new == OrderStatus.PREPAYMENT_PAID and prev != new:
         await stock.deduct_for_order(session, order)
-    elif new == OrderStatus.CANCELLED:
+    elif new == OrderStatus.CANCELLED and prev != new:
         await stock.restore_for_order(session, order)
     trigger = f"AdminUI{' (ручная установка)' if forced else ''}: {by.full_name or by.email}"[:128]
     session.add(
@@ -434,6 +450,9 @@ async def _record(
             created_at=datetime.now(UTC),
         )
     )
+    if not notify or prev == new:
+        return NotifyResult()
+    return await notify_after_manual_status(session, order, prev, new)
 
 
 @router.patch("/{order_id}/status", response_model=OrderDetail)
@@ -449,6 +468,18 @@ async def change_status(
     # Обычно — только вперёд по воронке. Админ может форсировать любой статус
     # (ручная установка, напр. откат ошибочного статуса). Дизайнеру force недоступен.
     forced = payload.force and user.role == AdminRole.ADMIN
+    # Макетные статусы в обычном select скрыты; вручную (force) админ может
+    # поставить, но клиенту сообщение не уйдёт — только через загрузку файла.
+    if (
+        not forced
+        and payload.status in MOCKUP_STATUSES
+        and payload.status != order.status
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Статус макета ставится при загрузке файла («Загрузить и отправить»), "
+            "а не вручную.",
+        )
     if (
         not forced
         and payload.status != order.status
@@ -459,9 +490,12 @@ async def change_status(
             f"Назад по статусам нельзя: {STATUS_LABELS.get(order.status)} → "
             f"{STATUS_LABELS.get(payload.status)}",
         )
-    await _record(session, order, payload.status, user, forced=forced)
+    result = await _record(session, order, payload.status, user, forced=forced)
     await session.commit()
-    return await get_order(order_id, user, session)
+    detail = await get_order(order_id, user, session)
+    detail.client_notified = result.notified
+    detail.notify_code = result.code
+    return detail
 
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -539,7 +573,7 @@ async def upload_mockup(
         fsm.can_transition(order.status, OrderStatus.MOCKUP_SENT)
         or OrderStatus.MOCKUP_SENT in _forward_statuses(order.status)
     ):
-        await _record(session, order, OrderStatus.MOCKUP_SENT, user)
+        await _record(session, order, OrderStatus.MOCKUP_SENT, user, notify=False)
 
     msg = await session.scalar(select(BotMessage).where(BotMessage.code == "msg_009аб"))
     session.add(

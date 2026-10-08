@@ -23,7 +23,6 @@ from app.api.v1.internal import require_internal
 from app.core.database import get_session
 from app.enums import OrderStatus
 from app.models.client import Client
-from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.services import (
     cdek,
@@ -31,8 +30,12 @@ from app.services import (
     integrations,
     ozon_delivery,
     pricing,
-    review_offer,
     yandex_delivery,
+)
+from app.services.order_status_notify import (
+    enqueue_delivered,
+    enqueue_shipped,
+    offer_review_after_delivered,
 )
 
 router = APIRouter()
@@ -70,31 +73,12 @@ async def _advance(session: AsyncSession, order: Order, new: OrderStatus, trigge
         )
     )
     client = await session.get(Client, order.client_id)
-    if client is not None:
-        txt = "Заказ доставлен ✅" if new == OrderStatus.DELIVERED else "Заказ отправлен 🚚"
-        session.add(
-            OutboundMessage(
-                client_id=client.id,
-                channel=client.channel,
-                channel_user_id=client.channel_user_id,
-                order_id=order.id,
-                kind="text",
-                text=f"{txt} #{order.id}",
-            )
-        )
     if new == OrderStatus.DELIVERED:
+        await enqueue_delivered(session, order, client)
         # После доставки сразу предлагаем отзыв: статус и сообщение (msg_016).
-        order.status = OrderStatus.REVIEW_OFFERED
-        session.add(
-            OrderStatusHistory(
-                order_id=order.id,
-                status=OrderStatus.REVIEW_OFFERED,
-                changed_by="system",
-                trigger=trigger,
-                created_at=datetime.now(UTC),
-            )
-        )
-        await review_offer.enqueue(session, order, client)
+        await offer_review_after_delivered(session, order, client, trigger=trigger)
+    else:
+        await enqueue_shipped(session, order, client)
     await session.commit()
     return True
 

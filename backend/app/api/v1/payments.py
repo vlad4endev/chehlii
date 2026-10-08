@@ -23,14 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.internal import require_internal
 from app.core.config import settings
 from app.core.database import get_session
-from app.enums import CaseBranch, OrderStatus, PaymentKind, PaymentStatus
+from app.enums import OrderStatus, PaymentKind, PaymentStatus
 from app.models.client import Client
-from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
-from app.services import cdek_checkout, consult, integrations, pricing, robokassa, stock, yandex_pay
+from app.services import integrations, robokassa, stock, yandex_pay
 from app.services.order_state_machine import can_transition
-from app.services.payment_flow import continuation_for
+from app.services.order_status_notify import continue_after_paid, payment_amount
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +71,6 @@ _PAST_POSTPAY = {
 
 _KIND_RU = {"prepayment": "предоплата", "postpayment": "постоплата", "delivery": "доставка"}
 
-# Тексты сценария, если в админке строка ещё не заведена.
-_SCENARIO_FALLBACK = {
-    "msg_008а": "Предоплата прошла. Осталось оплатить остаток — кнопка ниже.",
-    "msg_008б": "Предоплата прошла. Ожидайте макет.",
-    "msg_011аб": "Оплата прошла. Выберите службу доставки.",
-}
-
-
 class LinkIn(BaseModel):
     order_id: int
     kind: PaymentKind = PaymentKind.PREPAYMENT
@@ -104,21 +95,8 @@ class LinkOut(BaseModel):
     inv_id: int = 0
 
 
-def _discounted(order: Order) -> float:
-    b = pricing.compute(order.cost or 0, order.margin or 0, float(order.total_discount or 0))
-    return float(b.price_with_discount)
-
-
 def _amount(order: Order, kind: PaymentKind, percent: float) -> float:
-    disc = _discounted(order)
-    prepay = round(disc * percent / 100, 2)
-    if kind == PaymentKind.PREPAYMENT:
-        return prepay
-    if kind == PaymentKind.POSTPAYMENT:
-        return round(disc - prepay, 2)
-    if kind == PaymentKind.DELIVERY:
-        return float(order.delivery_cost or 0)
-    return 0.0
+    return payment_amount(order, kind, percent)
 
 
 async def robokassa_cfg(session: AsyncSession) -> dict:
@@ -417,25 +395,6 @@ async def yandex_pay_webhook(request: Request, session: Session):
     return {"status": "success"}
 
 
-def _queue(
-    client: Client,
-    order_id: int,
-    text: str,
-    *,
-    kind: str = "text",
-    media: list | None = None,
-) -> OutboundMessage:
-    return OutboundMessage(
-        client_id=client.id,
-        channel=client.channel,
-        channel_user_id=client.channel_user_id,
-        order_id=order_id,
-        kind=kind,
-        text=text,
-        media=media,
-    )
-
-
 def _history(order_id: int, status: OrderStatus, trigger: str) -> OrderStatusHistory:
     return OrderStatusHistory(
         order_id=order_id,
@@ -444,57 +403,6 @@ def _history(order_id: int, status: OrderStatus, trigger: str) -> OrderStatusHis
         trigger=trigger,
         created_at=datetime.now(UTC),
     )
-
-
-async def _scenario_text(session: AsyncSession, code: str, fallback: str) -> str:
-    text = await consult.bot_message_text(session, code)
-    if not text or text == code:
-        return fallback
-    return text
-
-
-async def _continue_after_paid(
-    session: AsyncSession, payment: Payment, order: Order, client: Client | None
-) -> None:
-    """Следующий шаг сценария в чате: остаток, макет или доставка."""
-    custom = order.branch == CaseBranch.CUSTOM
-    percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
-    step = continuation_for(
-        payment.kind, custom=custom, post_amount=_amount(order, PaymentKind.POSTPAYMENT, percent)
-    )
-    if step == "wait_mockup":
-        if client is not None:
-            text = await _scenario_text(session, "msg_008б", _SCENARIO_FALLBACK["msg_008б"])
-            session.add(_queue(client, order.id, text))
-        return
-    if step == "pay_post":
-        if client is not None:
-            text = await _scenario_text(session, "msg_008а", _SCENARIO_FALLBACK["msg_008а"])
-            session.add(
-                _queue(
-                    client,
-                    order.id,
-                    text,
-                    kind="pay",
-                    media=[{"type": "pay", "kind": "postpayment"}],
-                )
-            )
-        return
-    if step == "delivery":
-        if payment.kind == PaymentKind.PREPAYMENT and order.status == OrderStatus.PREPAYMENT_PAID:
-            # Предоплата покрыла всю сумму — выбора остатка нет, сразу доставка.
-            order.status = OrderStatus.POSTPAYMENT_PAID
-            session.add(
-                _history(order.id, OrderStatus.POSTPAYMENT_PAID, "Предоплата покрыла заказ")
-            )
-        text = await _scenario_text(session, "msg_011аб", _SCENARIO_FALLBACK["msg_011аб"])
-        await cdek_checkout.start_after_postpayment(session, order, client, text=text)
-        return
-    if step == "fulfill":
-        await cdek_checkout.fulfill(session, order, client)
-        return
-    if client is not None:
-        session.add(_queue(client, order.id, f"Оплата получена ✅ Заказ #{order.id} в работе."))
 
 
 async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
@@ -540,7 +448,7 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
         client = await session.get(Client, order.client_id)
         # Заказ уже дальше по воронке — повторный вебхук не шлёт шаг заново.
         if not rewind:
-            await _continue_after_paid(session, payment, order, client)
+            await continue_after_paid(session, order, client, kind=payment.kind)
     await session.commit()
 
 

@@ -39,3 +39,21 @@ postpayment_paid → delivery_service_selection → delivery_address_selection
 - «Отправка макета» **не** ставится дизайнером вручную — это триггер при загрузке файла в AdminUI (Я.Диск → статус → отправка в бот).
 - Терминальные статусы: `review_received`, `cancelled` — выходов нет.
 - Любой недопустимый переход отклоняется (`InvalidTransition`), покрыто тестами `tests/test_order_state_machine.py`.
+
+## Уведомления клиенту при ручной смене статуса
+
+Реализация: `backend/app/services/order_status_notify.py`. При `PATCH /admin/orders/{id}/status` (и force) клиенту уходит сценарий из `bot_messages`:
+
+| Статус | Сообщение |
+|---|---|
+| `prepayment_issued` | `msg_007а` / `msg_007б` + кнопка оплаты |
+| `prepayment_paid` | `msg_008а` / `msg_008б` (как после webhook) |
+| `postpayment_issued` | `msg_010б_x` + кнопка постоплаты |
+| `postpayment_paid` | `msg_011аб` → выбор доставки |
+| `shipped` | `msg_014аб` |
+| `delivered` | `msg_015аб` → авто `review_offered` + `msg_016` |
+| `review_offered` | `msg_016` |
+| `review_received` | `msg_017` |
+| `cancelled` | `msg_cancel` |
+
+**Исключение:** `mockup_sent` / `mockup_approval` / `mockup_revision` при ручной смене **не** шлют сообщение. Согласование макета (`msg_009аб` + кнопки) — только при «Загрузить и отправить».

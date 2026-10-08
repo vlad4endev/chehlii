@@ -4,6 +4,7 @@ import { ApiError, apiGetBlob, mediaUrl } from '../api'
 import { useAuth } from '../auth'
 import {
   CHANNELS,
+  MOCKUP_STATUSES,
   type OrderDetail,
   type OrderRow,
   STATUSES,
@@ -15,6 +16,18 @@ import {
   fetchOrders,
   uploadMockup,
 } from '../ordersApi'
+
+function statusNotifyFeedback(d: OrderDetail): string {
+  if (d.client_notified) {
+    return d.notify_code
+      ? `Клиенту отправлено: ${d.notify_code}`
+      : 'Клиенту отправлено уведомление.'
+  }
+  if (MOCKUP_STATUSES.has(d.status)) {
+    return 'Статус обновлён без сообщения. Макет клиенту — только через «Загрузить и отправить».'
+  }
+  return 'Статус обновлён. Для этого шага уведомление клиенту не предусмотрено.'
+}
 import { StatusPill } from './Dashboard'
 
 const fmtDate = (iso: string) => {
@@ -261,9 +274,19 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [mockupBusy, setMockupBusy] = useState(false)
   const [mockupErr, setMockupErr] = useState<string | null>(null)
   const [mockupOk, setMockupOk] = useState<string | null>(null)
+  const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const forceStatuses = useMemo(
+    () =>
+      STATUSES.map((s) =>
+        MOCKUP_STATUSES.has(s.value)
+          ? { ...s, label: `${s.label} (без уведомления — загрузите макет)` }
+          : s,
+      ),
+    [],
+  )
 
   async function load() {
     try {
@@ -272,6 +295,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
       setNextStatus('')
       setMockupErr(null)
       setMockupOk(null)
+      setStatusMsg(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить заказ')
     }
@@ -285,10 +309,12 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   async function applyStatus() {
     if (!nextStatus) return
     setBusy(true)
+    setStatusMsg(null)
     try {
       const d = await changeStatus(id, nextStatus)
       setOrder(d)
       setNextStatus('')
+      setStatusMsg(statusNotifyFeedback(d))
       onChanged()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось сменить статус')
@@ -304,10 +330,12 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
     if (!confirm(`Установить статус «${label}» вручную, в обход порядка? Действие для исправления ошибок.`))
       return
     setBusy(true)
+    setStatusMsg(null)
     try {
       const d = await changeStatus(id, forceStatus, true)
       setOrder(d)
       setForceStatus('')
+      setStatusMsg(statusNotifyFeedback(d))
       onChanged()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось установить статус')
@@ -480,6 +508,10 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
 
             <div className="block">
               <div className="field__label">Сменить статус</div>
+              <div className="card__hint">
+                Клиенту уходит сценарий по статусу (оплата, доставка, отзыв…). Макет — только
+                через «Загрузить и отправить», не через смену статуса.
+              </div>
               {order.allowed_next.length === 0 ? (
                 <div className="muted">Нет доступных переходов для вашей роли.</div>
               ) : (
@@ -497,6 +529,11 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                   </button>
                 </div>
               )}
+              {statusMsg && (
+                <div className={`form-msg${order.client_notified ? ' form-msg--ok' : ''}`}>
+                  {statusMsg}
+                </div>
+              )}
 
               {isAdmin && (
                 <details className="manual-status">
@@ -508,7 +545,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                       onChange={(e) => setForceStatus(e.target.value)}
                     >
                       <option value="">— любой статус —</option>
-                      {STATUSES.map((s) => (
+                      {forceStatuses.map((s) => (
                         <option key={s.value} value={s.value}>
                           {s.label}
                         </option>
@@ -524,7 +561,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                   </div>
                   <div className="card__hint">
                     Только для админа: ставит любой статус в обход порядка (включая назад). Для
-                    исправления ошибок.
+                    исправления ошибок. Макетные статусы не шлют сообщение клиенту.
                   </div>
                 </details>
               )}
