@@ -310,6 +310,10 @@ def consult_path(root: str, filename: str) -> str:
     return f"{root.rstrip('/')}/consult/{safe_filename(filename, 'consult')}"
 
 
+def review_path(root: str, filename: str) -> str:
+    return f"{root.rstrip('/')}/reviews/{safe_filename(filename, 'review')}"
+
+
 def _space_hint(data: dict) -> str:
     used, total = data.get("used_space"), data.get("total_space")
     if not isinstance(used, int | float) or not isinstance(total, int | float) or total <= 0:

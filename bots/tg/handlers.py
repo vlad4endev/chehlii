@@ -13,7 +13,7 @@ from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bots.core import consult, delivery, payments
+from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.phone import normalize_phone
 from bots.core.texts import texts
@@ -752,7 +752,30 @@ async def _consult_files(msg: Message) -> list[tuple[str, bytes]]:
 _MENU_TEXTS = {BTN_HELP, BTN_CATALOG, BTN_DISCOUNT, BTN_PAYMENTS, BTN_DELIVERIES}
 
 
+async def _relay_review(msg: Message, client: dict, state: FSMContext | None = None) -> bool:
+    """True, если сообщение обработано как отзыв (или отказ из‑за пустоты)."""
+    if not await review.has_pending(client["id"]):
+        return False
+    try:
+        ok = await review.ingest(
+            client["id"], msg.caption or msg.text, await _consult_files(msg)
+        )
+    except Exception as e:  # noqa: BLE001
+        logging.warning("review send failed: %s", e)
+        await msg.answer("Не получилось сохранить отзыв, попробуйте ещё раз.")
+        return True
+    if not ok:
+        await msg.answer("Напишите текст отзыва или пришлите фото чехла.")
+        return True
+    if state is not None:
+        await state.clear()
+    await backend.mark_journey(client["id"], "msg_017")
+    return True
+
+
 async def _relay_consult(msg: Message, client: dict, state: FSMContext | None = None) -> None:
+    if await _relay_review(msg, client, state):
+        return
     try:
         ok = await consult.ingest(
             client["id"], msg.caption or msg.text, await _consult_files(msg)
@@ -770,19 +793,21 @@ async def _relay_consult(msg: Message, client: dict, state: FSMContext | None = 
 
 
 @router.message(OrderFlow.consulting)
-async def on_consult(msg: Message) -> None:
+async def on_consult(msg: Message, state: FSMContext) -> None:
     if msg.text in _MENU_TEXTS:
         return
-    await _relay_consult(msg, await _client(msg))
+    await _relay_consult(msg, await _client(msg), state)
 
 
-# Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
+# Фолбэк: отзыв (если заказ ждёт) или свободный текст/фото → админу.
 # Без номера — только меню, чтобы не открывать чат анонимам.
 @router.message(StateFilter(None))
 async def on_fallback(msg: Message, state: FSMContext) -> None:
     if msg.text in _MENU_TEXTS:
         return
     client = await _client(msg)
+    if await _relay_review(msg, client, state):
+        return
     if not await consult.allowed_to_write(client):
         await msg.answer(
             "Выберите раздел в меню или нажмите «Поможем выбрать».",

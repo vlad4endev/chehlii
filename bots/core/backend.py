@@ -199,6 +199,36 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def review_is_pending(self, client_id: int) -> bool:
+        try:
+            r = await self._client.get(f"/reviews/pending/{client_id}")
+            r.raise_for_status()
+            return bool(r.json().get("pending"))
+        except httpx.HTTPError:
+            return False
+
+    async def review_upload(self, filename: str, content: bytes) -> dict:
+        r = await self._client.post(
+            "/reviews/files", files={"file": (filename, content)}, timeout=40.0
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def review_submit(
+        self,
+        client_id: int,
+        *,
+        text: str | None = None,
+        photo_url: str | None = None,
+        order_id: int | None = None,
+    ) -> dict:
+        payload: dict = {"client_id": client_id, "text": text, "photo_url": photo_url}
+        if order_id is not None:
+            payload["order_id"] = order_id
+        r = await self._client.post("/reviews", json=payload)
+        r.raise_for_status()
+        return r.json()
+
     async def consult_is_open(self, client_id: int) -> bool:
         try:
             r = await self._client.get(f"/consult/open/{client_id}")

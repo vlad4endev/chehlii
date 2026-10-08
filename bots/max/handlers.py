@@ -24,7 +24,7 @@ from maxapi.types import (
     MessageCreated,
 )
 
-from bots.core import consult, delivery, payments
+from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.phone import normalize_phone
@@ -834,9 +834,33 @@ async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
 _BUSY_STATES = frozenset(OrderFlow.states())
 
 
+async def _relay_review(
+    event: MessageCreated, client: dict, context: BaseContext | None = None
+) -> bool:
+    """True, если сообщение обработано как отзыв (или отказ из‑за пустоты)."""
+    if not await review.has_pending(client["id"]):
+        return False
+    text = event.message.body.text or ""
+    try:
+        ok = await review.ingest(client["id"], text, await _consult_files_max(event))
+    except Exception as e:  # noqa: BLE001
+        logging.warning("review send failed: %s", e)
+        await event.message.answer("Не получилось сохранить отзыв, попробуйте ещё раз.")
+        return True
+    if not ok:
+        await event.message.answer("Напишите текст отзыва или пришлите фото чехла.")
+        return True
+    if context is not None:
+        await context.clear()
+    await backend.mark_journey(client["id"], "msg_017")
+    return True
+
+
 async def _relay_consult(
     event: MessageCreated, client: dict, context: BaseContext | None = None
 ) -> None:
+    if await _relay_review(event, client, context):
+        return
     text = event.message.body.text or ""
     try:
         ok = await consult.ingest(client["id"], text, await _consult_files_max(event))
@@ -859,10 +883,10 @@ async def on_consult(event: MessageCreated, context: BaseContext) -> None:
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
-    await _relay_consult(event, client)
+    await _relay_consult(event, client, context)
 
 
-# Фолбэк: с номером (или уже открытым диалогом) свободный текст/фото → админу.
+# Фолбэк: отзыв (если заказ ждёт) или свободный текст/фото → админу.
 # Регистрируется последним, шаги заказа/доставки не перехватываем.
 @router.message_created()
 async def on_fallback(event: MessageCreated, context: BaseContext) -> None:
@@ -877,6 +901,8 @@ async def on_fallback(event: MessageCreated, context: BaseContext) -> None:
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
+    if await _relay_review(event, client, context):
+        return
     if not await consult.allowed_to_write(client):
         await _send_menu(
             event.bot,
