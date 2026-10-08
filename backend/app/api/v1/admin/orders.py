@@ -24,9 +24,20 @@ from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.messaging import BotMessage, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import media, media_assets, pricing, stock, yandex_disk
+from app.services import (
+    cdek,
+    cdek_checkout,
+    media,
+    media_assets,
+    ozon_delivery,
+    pricing,
+    shipping_info,
+    shipping_sync,
+    stock,
+    yandex_delivery,
+    yandex_disk,
+)
 from app.services import order_state_machine as fsm
-from app.services.cdek_checkout import decode_destination
 from app.services.order_status_notify import (
     MOCKUP_STATUSES,
     NotifyResult,
@@ -104,8 +115,17 @@ class OrderDetail(OrderRow):
     mockup_url: str | None
     mockup_disk_url: str | None
     delivery_service: str | None
+    delivery_service_label: str | None = None
+    delivery_mode: str | None = None  # pvz | door
+    delivery_point_id: str | None = None
     delivery_address: str | None
     tracking_code: str | None
+    tracking_url: str | None = None
+    # Статус у службы после POST …/delivery/sync (иначе null).
+    carrier_status: str | None = None
+    carrier_status_name: str | None = None
+    # Можно создать заявку в службе (адрес есть, трека ещё нет).
+    can_create_shipment: bool = False
     # Финансы — None для Дизайнера
     cost: float | None
     margin: float | None
@@ -363,26 +383,31 @@ async def mockup_file(
     raise HTTPException(status.HTTP_404_NOT_FOUND, "Макет не найден")
 
 
-def _delivery_text(stored: str | None) -> str | None:
-    """В заказе адрес хранится как «pvz:<id>|адрес» — в админке показываем по-человечески."""
-    if not stored:
-        return None
-    dest = decode_destination(stored)
-    if dest["pickup_point_id"]:
-        return f"ПВЗ: {dest['label']} [ID {dest['pickup_point_id']}]"
-    return f"Курьер: {dest['label']}"
+def _can_create_shipment(order: Order) -> bool:
+    """Адрес выбран, служба известна, заявки ещё нет — оператор может создать отправку."""
+    if order.tracking_code or not order.delivery_service:
+        return False
+    dest = shipping_info.destination_parts(order.delivery_address)
+    return bool(dest.get("delivery_address") or dest.get("delivery_point_id"))
 
 
-@router.get("/{order_id}", response_model=OrderDetail)
-async def get_order(
-    order_id: int,
-    user: CurrentAdmin,
-    session: Annotated[AsyncSession, Depends(get_session)],
+def _to_detail(
+    order: Order,
+    client: Client,
+    case: CaseType | None,
+    user: AdminUser,
+    *,
+    tracking_url_override: str | None = None,
+    carrier_status: str | None = None,
+    carrier_status_name: str | None = None,
 ) -> OrderDetail:
-    order, client, case = await _load(session, order_id)
     admin = is_admin(user)
     base = _row(order, client, case, admin=admin)
+    dest = shipping_info.destination_parts(order.delivery_address)
     history = sorted(order.status_history, key=lambda h: h.created_at)
+    track_url = tracking_url_override or shipping_info.tracking_url(
+        order.delivery_service, order.tracking_code
+    )
     return OrderDetail(
         **base.model_dump(),
         materials_text=order.materials_text,
@@ -391,8 +416,15 @@ async def get_order(
         mockup_url=order.mockup_url,
         mockup_disk_url=order.mockup_disk_url,
         delivery_service=order.delivery_service,
-        delivery_address=_delivery_text(order.delivery_address),
+        delivery_service_label=shipping_info.service_label(order.delivery_service),
+        delivery_mode=dest["delivery_mode"],
+        delivery_point_id=dest["delivery_point_id"],
+        delivery_address=dest["delivery_address"],
         tracking_code=order.tracking_code,
+        tracking_url=track_url,
+        carrier_status=carrier_status,
+        carrier_status_name=carrier_status_name,
+        can_create_shipment=_can_create_shipment(order),
         cost=float(order.cost) if admin and order.cost is not None else None,
         margin=float(order.margin) if admin and order.margin is not None else None,
         total_discount=float(order.total_discount)
@@ -412,6 +444,104 @@ async def get_order(
             )
             for h in history
         ],
+    )
+
+
+@router.get("/{order_id}", response_model=OrderDetail)
+async def get_order(
+    order_id: int,
+    user: CurrentAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderDetail:
+    order, client, case = await _load(session, order_id)
+    return _to_detail(order, client, case, user)
+
+
+@router.post("/{order_id}/delivery/fulfill", response_model=OrderDetail)
+async def create_shipment(
+    order_id: int,
+    user: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderDetail:
+    """Создать заявку в службе доставки по сохранённому адресу и получить трек.
+
+    Нужно, если авто-создание после оплаты не сработало (нет телефона, API
+    службы недоступен и т.п.). Трек пишется в tracking_code.
+    """
+    order, client, case = await _load(session, order_id)
+    if order.tracking_code:
+        return _to_detail(order, client, case, user)
+    if not order.delivery_service:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Служба доставки ещё не выбрана клиентом.",
+        )
+    if not order.delivery_address:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Адрес доставки ещё не выбран клиентом.",
+        )
+    created = await cdek_checkout.fulfill(session, order, client)
+    if not created and not order.tracking_code:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Не удалось создать заявку: проверьте адрес, телефон клиента "
+            "и настройки службы в «Интеграции».",
+        )
+    await session.commit()
+    order, client, case = await _load(session, order_id)
+    return _to_detail(order, client, case, user)
+
+
+@router.post("/{order_id}/delivery/sync", response_model=OrderDetail)
+async def sync_shipment(
+    order_id: int,
+    user: CurrentAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderDetail:
+    """Запросить у службы актуальный трек и статус; при необходимости сдвинуть заказ."""
+    order, client, case = await _load(session, order_id)
+    if not order.tracking_code or not order.delivery_service:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Заявка в службе ещё не создана — сначала оформите отправку.",
+        )
+    try:
+        result = await shipping_sync.sync_tracking(session, order)
+    except (cdek.CdekError, yandex_delivery.YandexDeliveryError, ozon_delivery.OzonDeliveryError) as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    order, client, case = await _load(session, order_id)
+    return _to_detail(
+        order,
+        client,
+        case,
+        user,
+        tracking_url_override=result.tracking_url,
+        carrier_status=result.carrier_status,
+        carrier_status_name=result.carrier_status_name,
+    )
+
+
+@router.get("/{order_id}/delivery/label")
+async def shipment_label(
+    order_id: int,
+    _: CurrentAdmin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """PDF ярлыка для склада / курьера."""
+    order, _, _ = await _load(session, order_id)
+    try:
+        pdf = await shipping_sync.fetch_label_pdf(session, order)
+    except (cdek.CdekError, yandex_delivery.YandexDeliveryError, ozon_delivery.OzonDeliveryError) as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="label-{order_id}.pdf"'},
     )
 
 

@@ -37,8 +37,15 @@ export interface OrderDetail extends OrderRow {
   mockup_url: string | null
   mockup_disk_url: string | null
   delivery_service: string | null
+  delivery_service_label?: string | null
+  delivery_mode?: 'pvz' | 'door' | string | null
+  delivery_point_id?: string | null
   delivery_address: string | null
   tracking_code: string | null
+  tracking_url?: string | null
+  carrier_status?: string | null
+  carrier_status_name?: string | null
+  can_create_shipment?: boolean
   cost: number | null
   margin: number | null
   total_discount: number | null
@@ -104,6 +111,24 @@ export const changeStatus = (id: number, status: string, force = false) =>
 export const deleteOrder = (id: number) => apiSend<void>('DELETE', `/admin/orders/${id}`)
 export const uploadMockup = (id: number, file: File) =>
   apiUpload<OrderDetail>(`/admin/orders/${id}/mockup`, file)
+
+/** Создать заявку в службе доставки и получить трек-номер. */
+export const fulfillShipment = (id: number) =>
+  apiSend<OrderDetail>('POST', `/admin/orders/${id}/delivery/fulfill`)
+
+/** Запросить у службы актуальный трек и статус. */
+export const syncShipment = (id: number) =>
+  apiSend<OrderDetail>('POST', `/admin/orders/${id}/delivery/sync`)
+
+export async function downloadShipmentLabel(id: number): Promise<void> {
+  const blob = await apiGetBlob(`/admin/orders/${id}/delivery/label`)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `label-${id}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export const fetchFilePreview = (url: string) =>
   apiGetBlob(`/admin/media/preview?url=${encodeURIComponent(url)}`)

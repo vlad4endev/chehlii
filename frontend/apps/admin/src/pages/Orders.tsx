@@ -11,9 +11,12 @@ import {
   changeStatus,
   deleteOrder,
   downloadOrdersXlsx,
+  downloadShipmentLabel,
   fetchFilePreview,
   fetchOrder,
   fetchOrders,
+  fulfillShipment,
+  syncShipment,
   uploadMockup,
 } from '../ordersApi'
 
@@ -278,6 +281,9 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const [mockupErr, setMockupErr] = useState<string | null>(null)
   const [mockupOk, setMockupOk] = useState<string | null>(null)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
+  const [shipBusy, setShipBusy] = useState(false)
+  const [shipMsg, setShipMsg] = useState<string | null>(null)
+  const [shipErr, setShipErr] = useState<string | null>(null)
   const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -299,6 +305,8 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
       setMockupErr(null)
       setMockupOk(null)
       setStatusMsg(null)
+      setShipMsg(null)
+      setShipErr(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось загрузить заказ')
     }
@@ -371,6 +379,70 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
       setBusy(false)
     }
   }
+
+  async function createShipment() {
+    setShipBusy(true)
+    setShipErr(null)
+    setShipMsg(null)
+    try {
+      const d = await fulfillShipment(id)
+      setOrder(d)
+      setShipMsg(
+        d.tracking_code
+          ? `Заявка создана. Трек: ${d.tracking_code}`
+          : 'Заявка обработана, трек пока пуст — нажмите «Обновить трек».',
+      )
+      onChanged()
+    } catch (e) {
+      setShipErr(e instanceof ApiError ? e.message : 'Не удалось создать отправку')
+    } finally {
+      setShipBusy(false)
+    }
+  }
+
+  async function refreshTracking() {
+    setShipBusy(true)
+    setShipErr(null)
+    setShipMsg(null)
+    try {
+      const d = await syncShipment(id)
+      setOrder(d)
+      const parts = [
+        d.tracking_code ? `Трек: ${d.tracking_code}` : null,
+        d.carrier_status_name || d.carrier_status
+          ? `Статус службы: ${d.carrier_status_name || d.carrier_status}`
+          : null,
+      ].filter(Boolean)
+      setShipMsg(parts.length ? parts.join('. ') : 'Данные службы обновлены.')
+      onChanged()
+    } catch (e) {
+      setShipErr(e instanceof ApiError ? e.message : 'Не удалось обновить трек')
+    } finally {
+      setShipBusy(false)
+    }
+  }
+
+  async function openLabel() {
+    setShipBusy(true)
+    setShipErr(null)
+    try {
+      await downloadShipmentLabel(id)
+    } catch (e) {
+      setShipErr(e instanceof ApiError ? e.message : 'Не удалось скачать ярлык')
+    } finally {
+      setShipBusy(false)
+    }
+  }
+
+  const showShipping =
+    Boolean(order?.delivery_service) ||
+    Boolean(order?.delivery_address) ||
+    Boolean(order?.tracking_code) ||
+    order?.status === 'delivery_service_selection' ||
+    order?.status === 'delivery_address_selection' ||
+    order?.status === 'delivery_payment' ||
+    order?.status === 'shipped' ||
+    order?.status === 'delivered'
 
   return (
     <div
@@ -477,13 +549,106 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               </div>
             </div>
 
+            {showShipping && (
+              <div className="block">
+                <div className="field__label">Данные об отправке</div>
+                <div className="card__hint">
+                  Трек-номер приходит от службы доставки после создания заявки. Если автосоздание
+                  после оплаты не сработало — оформите отправку вручную, затем обновите трек.
+                </div>
+                <div className="deflist">
+                  <Row
+                    label="Служба"
+                    value={
+                      order.delivery_service_label ||
+                      order.delivery_service ||
+                      'Ещё не выбрана'
+                    }
+                  />
+                  <Row
+                    label="Куда"
+                    value={
+                      order.delivery_address ||
+                      (order.delivery_mode === 'pvz'
+                        ? 'ПВЗ (ожидаем выбор)'
+                        : order.status.startsWith('delivery')
+                          ? 'Ожидаем адрес от клиента'
+                          : '—')
+                    }
+                  />
+                  {order.delivery_point_id && (
+                    <Row label="Код ПВЗ" value={order.delivery_point_id} />
+                  )}
+                  <div className="deflist__row">
+                    <span className="deflist__label">Трек</span>
+                    <span className="deflist__value">
+                      {!order.tracking_code ? (
+                        'Ещё нет — оформите отправку или обновите трек'
+                      ) : order.tracking_url ? (
+                        <a
+                          className="linkbtn"
+                          href={order.tracking_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {order.tracking_code} ↗
+                        </a>
+                      ) : (
+                        order.tracking_code
+                      )}
+                    </span>
+                  </div>
+                  {(order.carrier_status || order.carrier_status_name) && (
+                    <Row
+                      label="У службы"
+                      value={order.carrier_status_name || order.carrier_status || '—'}
+                    />
+                  )}
+                  {isAdmin && order.delivery_cost != null && (
+                    <Row label="Стоимость доставки" value={money(order.delivery_cost)} />
+                  )}
+                </div>
+                <div className="inline-form" style={{ marginTop: 10 }}>
+                  {isAdmin && order.can_create_shipment && (
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      disabled={busy || shipBusy}
+                      onClick={() => void createShipment()}
+                    >
+                      {shipBusy ? 'Оформление…' : 'Оформить отправку'}
+                    </button>
+                  )}
+                  {order.tracking_code && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy || shipBusy}
+                        onClick={() => void refreshTracking()}
+                      >
+                        {shipBusy ? 'Обновление…' : 'Обновить трек'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy || shipBusy}
+                        onClick={() => void openLabel()}
+                      >
+                        Ярлык PDF
+                      </button>
+                    </>
+                  )}
+                </div>
+                {shipErr && <div className="form-msg form-msg--err">{shipErr}</div>}
+                {shipMsg && <div className="form-msg form-msg--ok">{shipMsg}</div>}
+              </div>
+            )}
+
             <div className="deflist">
               <Row label="Клиент" value={order.client_name || '—'} />
               <Row label="Телефон" value={order.client_phone || '—'} />
               <Row label="Канал" value={CHANNEL_LABEL[order.channel] ?? order.channel} />
-              {order.delivery_service && <Row label="Доставка" value={order.delivery_service} />}
-              {order.delivery_address && <Row label="Адрес" value={order.delivery_address} />}
-              {order.tracking_code && <Row label="Трек" value={order.tracking_code} />}
               {isAdmin && (
                 <>
                   <div className="deflist__sep">Финансы</div>
