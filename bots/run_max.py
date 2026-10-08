@@ -189,7 +189,34 @@ async def _deliver(bot: Bot, dp: Dispatcher, item: dict) -> None:
             atts2 = [delivery_service_kb(oid, services)]
         else:
             atts2 = [delivery_mode_kb(oid, services[0])]
+        # Прогрев FSM: иначе callback dlv:pvz/door не знает службу.
+        chat_id = await known_chat_async(uid)
+        if chat_id is not None:
+            ctx = dp.fsm.get_context(chat_id=chat_id, user_id=uid)
+            await ctx.set_state(OrderFlow.delivery_mode)
+            data = {"order_id": oid, "delivery_mode": None, "delivery_points": []}
+            if len(services) == 1:
+                data["delivery_service"] = services[0]
+            await ctx.update_data(**data)
     await bot.send_message(user_id=uid, text=text or "Новое сообщение", attachments=atts2)
+
+
+# Ошибки, после которых повтор бесполезен — иначе яд блокирует outbox.
+_OUTBOX_DROP = (
+    "chat not found",
+    "user is deactivated",
+    "bot was blocked",
+    "peer_id_invalid",
+    "chat_id is empty",
+)
+
+
+def _outbox_drop(item: dict, err: BaseException) -> bool:
+    uid = str(item.get("channel_user_id") or "")
+    if uid in ("", "0"):
+        return True
+    low = str(err).lower()
+    return any(p in low for p in _OUTBOX_DROP)
 
 
 async def _outbox_loop(bot: Bot, dp: Dispatcher) -> None:
@@ -201,7 +228,14 @@ async def _outbox_loop(bot: Bot, dp: Dispatcher) -> None:
                     await _deliver(bot, dp, item)
                     await backend.mark_outbox_sent(item["id"])
                 except Exception as e:  # noqa: BLE001
-                    logging.warning("outbox max: доставка не удалась: %s", e)
+                    if _outbox_drop(item, e):
+                        logging.warning("outbox max: отброшено (постоянная ошибка): %s", e)
+                        try:
+                            await backend.mark_outbox_sent(item["id"])
+                        except Exception:  # noqa: BLE001
+                            pass
+                    else:
+                        logging.warning("outbox max: доставка не удалась: %s", e)
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(1.5)

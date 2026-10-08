@@ -81,6 +81,28 @@ def test_manual_shipped_enqueues_msg_014():
     assert msg.kind == "text"
 
 
+def test_manual_delivery_service_selection_enqueues_delivery_block():
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=_client())
+    order = _order(status=OrderStatus.DELIVERY_SERVICE_SELECTION)
+    with patch(
+        "app.services.order_status_notify.scenario_text",
+        AsyncMock(return_value="Выберите службу доставки."),
+    ):
+        result = _run(
+            notify_after_manual_status(
+                session,
+                order,
+                OrderStatus.POSTPAYMENT_PAID,
+                OrderStatus.DELIVERY_SERVICE_SELECTION,
+            )
+        )
+    assert result == NotifyResult(True, "msg_011аб")
+    msg = session.add.call_args[0][0]
+    assert msg.kind == "delivery"
+    assert msg.text == "Выберите службу доставки."
+
+
 def test_manual_cancelled_enqueues_msg_cancel():
     session = AsyncMock()
     session.get = AsyncMock(return_value=_client())

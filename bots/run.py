@@ -232,7 +232,33 @@ async def _deliver(bot: Bot, item: dict, storage: RedisStorage | None = None) ->
             kb = delivery_service_kb(oid, services)
         else:
             kb = delivery_mode_kb(oid, services[0])
+        # Без FSM кнопки «ПВЗ/курьер» не знают службу — прогреваем состояние.
+        if storage is not None:
+            key = StorageKey(bot_id=bot.id, chat_id=chat_id, user_id=chat_id)
+            await storage.set_state(key, OrderFlow.delivery_mode)
+            data: dict = {"order_id": oid, "delivery_mode": None, "delivery_points": []}
+            if len(services) == 1:
+                data["delivery_service"] = services[0]
+            await storage.set_data(key, data)
     await bot.send_message(chat_id=chat_id, text=text or "Новое сообщение", reply_markup=kb)
+
+
+# Ошибки, после которых повтор бесполезен — иначе яд блокирует outbox.
+_OUTBOX_DROP = (
+    "chat not found",
+    "user is deactivated",
+    "bot was blocked by the user",
+    "peer_id_invalid",
+    "chat_id is empty",
+)
+
+
+def _outbox_drop(item: dict, err: BaseException) -> bool:
+    uid = str(item.get("channel_user_id") or "")
+    if uid in ("", "0"):
+        return True
+    low = str(err).lower()
+    return any(p in low for p in _OUTBOX_DROP)
 
 
 async def _outbox_loop(bot: Bot, storage: RedisStorage) -> None:
@@ -245,7 +271,14 @@ async def _outbox_loop(bot: Bot, storage: RedisStorage) -> None:
                     await _deliver(bot, item, storage)
                     await backend.mark_outbox_sent(item["id"])
                 except Exception as e:  # noqa: BLE001
-                    logging.warning("outbox tg: доставка не удалась: %s", e)
+                    if _outbox_drop(item, e):
+                        logging.warning("outbox tg: отброшено (постоянная ошибка): %s", e)
+                        try:
+                            await backend.mark_outbox_sent(item["id"])
+                        except Exception:  # noqa: BLE001
+                            pass
+                    else:
+                        logging.warning("outbox tg: доставка не удалась: %s", e)
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(1.5)

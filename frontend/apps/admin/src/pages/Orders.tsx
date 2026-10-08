@@ -265,11 +265,14 @@ export function Orders() {
   )
 }
 
+function statusOptionLabel(value: string, label: string): string {
+  return MOCKUP_STATUSES.has(value) ? `${label} (макет — только загрузкой файла)` : label
+}
+
 function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => void; onChanged: () => void }) {
   const [order, setOrder] = useState<OrderDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nextStatus, setNextStatus] = useState('')
-  const [forceStatus, setForceStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [mockupBusy, setMockupBusy] = useState(false)
   const [mockupErr, setMockupErr] = useState<string | null>(null)
@@ -278,15 +281,15 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const forceStatuses = useMemo(
-    () =>
-      STATUSES.map((s) =>
-        MOCKUP_STATUSES.has(s.value)
-          ? { ...s, label: `${s.label} (без уведомления — загрузите макет)` }
-          : s,
-      ),
-    [],
+  const forwardValues = useMemo(
+    () => new Set(order?.allowed_next.map((s) => s.value) ?? []),
+    [order],
   )
+  const bypassStatuses = useMemo(
+    () => STATUSES.filter((s) => !forwardValues.has(s.value) && s.value !== order?.status),
+    [forwardValues, order?.status],
+  )
+  const needsForce = Boolean(nextStatus && !forwardValues.has(nextStatus))
 
   async function load() {
     try {
@@ -308,37 +311,24 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
 
   async function applyStatus() {
     if (!nextStatus) return
+    const label = STATUSES.find((s) => s.value === nextStatus)?.label ?? nextStatus
+    const force = isAdmin && needsForce
+    if (force) {
+      const ok = confirm(
+        `Установить статус «${label}» в обход порядка воронки? Клиенту уйдёт сценарий, если он предусмотрен.`,
+      )
+      if (!ok) return
+    }
     setBusy(true)
     setStatusMsg(null)
     try {
-      const d = await changeStatus(id, nextStatus)
+      const d = await changeStatus(id, nextStatus, force)
       setOrder(d)
       setNextStatus('')
       setStatusMsg(statusNotifyFeedback(d))
       onChanged()
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Не удалось сменить статус')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // Ручная установка (только Админ): ставит любой статус в обход правила «только вперёд».
-  async function applyForce() {
-    if (!forceStatus) return
-    const label = STATUSES.find((s) => s.value === forceStatus)?.label ?? forceStatus
-    if (!confirm(`Установить статус «${label}» вручную, в обход порядка? Действие для исправления ошибок.`))
-      return
-    setBusy(true)
-    setStatusMsg(null)
-    try {
-      const d = await changeStatus(id, forceStatus, true)
-      setOrder(d)
-      setForceStatus('')
-      setStatusMsg(statusNotifyFeedback(d))
-      onChanged()
-    } catch (e) {
-      alert(e instanceof ApiError ? e.message : 'Не удалось установить статус')
     } finally {
       setBusy(false)
     }
@@ -510,22 +500,46 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               <div className="field__label">Сменить статус</div>
               <div className="card__hint">
                 Клиенту уходит сценарий по статусу (оплата, доставка, отзыв…). Макет — только
-                через «Загрузить и отправить», не через смену статуса.
+                через «Загрузить и отправить».
+                {isAdmin
+                  ? ' Админ может выбрать любой статус: вне воронки — с подтверждением в обход порядка.'
+                  : ''}
               </div>
-              {order.allowed_next.length === 0 ? (
+              {order.allowed_next.length === 0 && !(isAdmin && bypassStatuses.length > 0) ? (
                 <div className="muted">Нет доступных переходов для вашей роли.</div>
               ) : (
                 <div className="inline-form">
-                  <select className="input" value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+                  <select
+                    className="input"
+                    value={nextStatus}
+                    onChange={(e) => setNextStatus(e.target.value)}
+                  >
                     <option value="">— выберите —</option>
-                    {order.allowed_next.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
+                    {order.allowed_next.length > 0 && (
+                      <optgroup label="Далее по воронке">
+                        {order.allowed_next.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {statusOptionLabel(s.value, s.label)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {isAdmin && bypassStatuses.length > 0 && (
+                      <optgroup label="В обход порядка (админ)">
+                        {bypassStatuses.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {statusOptionLabel(s.value, s.label)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
-                  <button className="btn btn--primary" onClick={applyStatus} disabled={busy || !nextStatus}>
-                    Применить
+                  <button
+                    className={needsForce ? 'btn btn--danger' : 'btn btn--primary'}
+                    onClick={applyStatus}
+                    disabled={busy || !nextStatus}
+                  >
+                    {needsForce ? 'Установить в обход' : 'Применить'}
                   </button>
                 </div>
               )}
@@ -533,37 +547,6 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                 <div className={`form-msg${order.client_notified ? ' form-msg--ok' : ''}`}>
                   {statusMsg}
                 </div>
-              )}
-
-              {isAdmin && (
-                <details className="manual-status">
-                  <summary>Ручная установка статуса</summary>
-                  <div className="inline-form">
-                    <select
-                      className="input"
-                      value={forceStatus}
-                      onChange={(e) => setForceStatus(e.target.value)}
-                    >
-                      <option value="">— любой статус —</option>
-                      {forceStatuses.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="btn btn--danger btn--sm"
-                      onClick={applyForce}
-                      disabled={busy || !forceStatus}
-                    >
-                      Установить
-                    </button>
-                  </div>
-                  <div className="card__hint">
-                    Только для админа: ставит любой статус в обход порядка (включая назад). Для
-                    исправления ошибок. Макетные статусы не шлют сообщение клиенту.
-                  </div>
-                </details>
               )}
             </div>
 

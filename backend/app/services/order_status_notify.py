@@ -240,6 +240,14 @@ async def notify_after_manual_status(
     if new == OrderStatus.POSTPAYMENT_PAID:
         return await continue_after_paid(session, order, client, kind=PaymentKind.POSTPAYMENT)
 
+    if new == OrderStatus.DELIVERY_SERVICE_SELECTION:
+        # Блок выбора службы — тот же, что после постоплаты.
+        if client is None:
+            return NotifyResult()
+        text = await scenario_text(session, "msg_011аб")
+        session.add(_queue(client, order.id, text, kind="delivery"))
+        return NotifyResult(True, "msg_011аб")
+
     if new == OrderStatus.SHIPPED:
         return await enqueue_shipped(session, order, client)
 

@@ -50,6 +50,7 @@ postpayment_paid → delivery_service_selection → delivery_address_selection
 | `prepayment_paid` | `msg_008а` / `msg_008б` (как после webhook) |
 | `postpayment_issued` | `msg_010б_x` + кнопка постоплаты |
 | `postpayment_paid` | `msg_011аб` → выбор доставки |
+| `delivery_service_selection` | `msg_011аб` + блок выбора службы |
 | `shipped` | `msg_014аб` |
 | `delivered` | `msg_015аб` → авто `review_offered` + `msg_016` |
 | `review_offered` | `msg_016` |
