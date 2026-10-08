@@ -83,21 +83,15 @@ def _pay_atts(block: payments.PayBlock):
 
 
 async def _replace(event: MessageCallback, text: str, attachments=None) -> None:
-    """Клик по кнопкам — правим это же сообщение, а не копим новые в чате.
+    """Клик по кнопкам — всегда новое сообщение.
 
-    attachments=[] снимает старые кнопки. None тоже очищает: иначе MAX оставит
-    прежнюю клавиатуру.
+    Не редактируем исходное: в MAX edit затирает текст и inline-блоки сценария
+    (меню, оплата, подтверждение). Историю шагов оставляем как есть.
+    attachments=None → без вложений; [] тоже без вложений.
     """
-    atts = [] if attachments is None else attachments
-    try:
-        await event.message.edit(text=text, attachments=atts, notify=False)
-        return
-    except Exception:
-        logging.debug("max: не удалось заменить сообщение, шлём новое", exc_info=True)
+    atts = None if attachments is None else (attachments or None)
     chat_id = event.message.recipient.chat_id
-    await event.bot.send_message(
-        chat_id=chat_id, text=text, attachments=atts or None
-    )
+    await event.bot.send_message(chat_id=chat_id, text=text, attachments=atts)
 
 
 async def _replace_menu(event: MessageCallback, text: str) -> None:
@@ -484,8 +478,8 @@ async def on_catalog_stub(event: MessageCallback, context: BaseContext) -> None:
     )
 
 
-# В MAX нет постоянной reply-клавиатуры, поэтому меню держим на том же
-# сообщении: пункт меню заменяет текст и кнопки, а не шлёт ещё одну карточку.
+# В MAX нет постоянной reply-клавиатуры — меню дублируем на новом сообщении,
+# не затирая предыдущие блоки сценария.
 @router.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: BaseContext) -> None:
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
