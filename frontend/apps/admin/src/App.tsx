@@ -17,11 +17,13 @@ import { Reviews } from './pages/Reviews'
 import { Settings } from './pages/Settings'
 import { Trash } from './pages/Trash'
 import { Users } from './pages/Users'
+import { Warehouse } from './pages/Warehouse'
 import { SECTIONS } from './sections'
 
 // Все разделы AdminUI реализованы (Фазы A–H).
 const PAGES: Record<string, ReactNode> = {
   '/catalog': <Catalog />,
+  '/warehouse': <Warehouse />,
   '/orders': <Orders />,
   '/consult': <Consult />,
   '/clients': <Clients />,

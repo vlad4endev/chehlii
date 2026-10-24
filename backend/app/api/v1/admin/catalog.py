@@ -18,6 +18,7 @@ from app.constants import IPHONE_MODELS
 from app.core.database import get_session
 from app.models.catalog import CaseType, CaseTypeModel
 from app.models.order import Order
+from app.services import warehouse as wh
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ class CaseTypeIn(BaseModel):
     cost: float = 0
     margin: float = 0
     is_active: bool = True
+    plate_type: str | None = "black"  # silver|black — пластина на складе
     models: list[ModelAvailability] = Field(default_factory=list)
 
 
@@ -50,8 +52,15 @@ class CaseTypeAdminOut(BaseModel):
     margin: float
     client_price: float
     is_active: bool
+    plate_type: str | None
     orders_count: int
     models: list[ModelAvailability]
+
+
+def _sorted_models(models: list[CaseTypeModel]) -> list[CaseTypeModel]:
+    """Порядок как в IPHONE_MODELS; неизвестные модели — в конце."""
+    rank = {name: i for i, name in enumerate(IPHONE_MODELS)}
+    return sorted(models, key=lambda m: (rank.get(m.model_name, 10_000), m.model_name))
 
 
 def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
@@ -65,6 +74,7 @@ def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
         margin=float(ct.margin),
         client_price=ct.client_price,
         is_active=ct.is_active,
+        plate_type=ct.plate_type or "black",
         orders_count=orders_count,
         models=[
             ModelAvailability(
@@ -73,7 +83,7 @@ def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
                 photo_url=m.photo_url,
                 stock=m.stock,
             )
-            for m in ct.models
+            for m in _sorted_models(ct.models)
         ],
     )
 
@@ -136,6 +146,7 @@ async def create_case_type(
         cost=payload.cost,
         margin=payload.margin,
         is_active=payload.is_active,
+        plate_type=payload.plate_type or "black",
     )
     ct.models = [
         CaseTypeModel(
@@ -147,6 +158,9 @@ async def create_case_type(
         for m in payload.models
     ]
     session.add(ct)
+    await session.flush()
+    for m in {row.model_name for row in ct.models}:
+        await wh.sync_legacy_stock(session, m)
     await session.commit()
     await session.refresh(ct, ["models"])
     return _to_out(ct, 0)
@@ -167,6 +181,7 @@ async def update_case_type(
     ct.cost = payload.cost
     ct.margin = payload.margin
     ct.is_active = payload.is_active
+    ct.plate_type = payload.plate_type or "black"
     # Полная замена набора моделей. Сначала удаляем старые и сбрасываем в БД,
     # иначе вставка новых строк с теми же ключами нарушит уникальный индекс.
     ct.models.clear()
@@ -180,6 +195,10 @@ async def update_case_type(
         )
         for m in payload.models
     ]
+    await session.flush()
+    # После смены plate_type пересчитать кэш available из компонентов склада.
+    for m in {row.model_name for row in ct.models}:
+        await wh.sync_legacy_stock(session, m)
     await session.commit()
     await session.refresh(ct, ["models"])
     counts = await _orders_counts(session)

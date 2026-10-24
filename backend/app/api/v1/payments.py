@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.internal import require_internal
 from app.core.config import settings
 from app.core.database import get_session
-from app.enums import OrderStatus, PaymentKind, PaymentStatus
+from app.enums import CaseBranch, OrderStatus, PaymentKind, PaymentStatus
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
@@ -198,6 +198,9 @@ async def create_link(body: LinkIn, session: Session) -> LinkOut:
     if order is None:
         raise HTTPException(404, "Заказ не найден")
     percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
+    # Стандарт: одна оплата 100% (без предоплаты). Кастом — процент из настроек.
+    if order.branch != CaseBranch.CUSTOM and body.kind == PaymentKind.PREPAYMENT:
+        percent = 100.0
     amount = _amount(order, body.kind, percent)
     if amount <= 0:
         raise HTTPException(400, "Сумма оплаты равна нулю")

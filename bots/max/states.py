@@ -11,11 +11,14 @@ from maxapi.context.state_machine import State, StatesGroup
 class OrderFlow(StatesGroup):
     waiting_contact = State()  # выбран чехол, нет телефона — ждём контакт/текст
     confirming = State()  # Показано подтверждение (тип+модель+цена)
-    waiting_name = State()  # Стандарт: ждём имя/букву
-    waiting_materials = State()  # Кастом: ждём фото/материалы
+    waiting_name = State()  # устарело: стандарт больше не спрашивает имя
+    waiting_materials = State()  # Кастом: ждём фото/файлы
+    waiting_materials_desc = State()  # Кастом: ждём текстовое описание
     confirming_materials = State()  # Кастом: сводка материалов, ждём подтверждения
+    picking_order = State()  # несколько активных заказов — уточнить, к какому ввод
     delivery_mode = State()
     delivery_city = State()
     delivery_address = State()
     delivery_pvz = State()
-    consulting = State()  # «Поможем выбрать»
+    consulting = State()  # «Позвать человека» — свободная переписка (если нет активного заказа)
+    entering_promo = State()  # ввод промокода друга

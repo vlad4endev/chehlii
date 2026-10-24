@@ -44,6 +44,17 @@ export function Reviews() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
 
+  // Пока фильтр «На модерации» — чаще подтягиваем новые отзывы.
+  useEffect(() => {
+    if (filter !== 'pending') return
+    const t = window.setInterval(() => {
+      fetchReviews('pending')
+        .then(setItems)
+        .catch(() => {})
+    }, 5000)
+    return () => window.clearInterval(t)
+  }, [filter])
+
   async function setStatus(r: ReviewAdmin, status: ReviewStatus) {
     setBusyId(r.id)
     try {

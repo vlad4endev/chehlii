@@ -15,6 +15,7 @@ export interface OrderRow {
   model_name: string | null
   case_photo_url: string | null
   is_custom: boolean | null
+  is_test?: boolean
   branch: string | null
   status: string
   status_label: string
@@ -108,6 +109,8 @@ export function fetchOrders(f: OrderFilters): Promise<OrderRow[]> {
 export const fetchOrder = (id: number) => apiGet<OrderDetail>(`/admin/orders/${id}`)
 export const changeStatus = (id: number, status: string, force = false) =>
   apiSend<OrderDetail>('PATCH', `/admin/orders/${id}/status`, { status, force })
+export const setOrderTestFlag = (id: number, is_test: boolean) =>
+  apiSend<OrderDetail>('PATCH', `/admin/orders/${id}/test`, { is_test })
 export const deleteOrder = (id: number) => apiSend<void>('DELETE', `/admin/orders/${id}`)
 export const uploadMockup = (id: number, file: File) =>
   apiUpload<OrderDetail>(`/admin/orders/${id}/mockup`, file)

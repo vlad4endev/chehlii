@@ -20,7 +20,8 @@ BTN_CATALOG = "🛍 Каталог чехлов"
 BTN_DISCOUNT = "🎁 Моя скидочная программа"
 BTN_PAYMENTS = "💳 Мои оплаты"
 BTN_DELIVERIES = "📦 Мои доставки"
-BTN_HELP = "✨ Поможем выбрать"
+BTN_HELP = "🙋 Позвать человека"
+CB_HUMAN = "menu:human"  # alias; CB_HELP остаётся для совместимости
 
 # Payload'ы callback-кнопок (по ним же ловим нажатия).
 CB_CATALOG = "menu:catalog"
@@ -32,6 +33,14 @@ CB_CONFIRM = "order:confirm"
 CB_CANCEL = "order:cancel"
 CB_MAT_CONFIRM = "materials:confirm"
 CB_MAT_REDO = "materials:redo"
+CB_MAT_FILES_DONE = "materials:files_done"
+CB_MAT_SKIP_DESC = "materials:skip_desc"
+CB_MAT_EDIT_FILES = "materials:edit_files"
+CB_MAT_EDIT_DESC = "materials:edit_desc"
+
+
+def _help_row():
+    return CallbackButton(text=BTN_HELP, payload=CB_HELP)
 
 
 def contact_kb():
@@ -59,7 +68,7 @@ def main_menu_kb(bot_username: str | None, bot_id: int | None):
         CallbackButton(text=BTN_PAYMENTS, payload=CB_PAYMENTS),
         CallbackButton(text=BTN_DELIVERIES, payload=CB_DELIVERIES),
     )
-    b.row(CallbackButton(text=BTN_HELP, payload=CB_HELP))
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -69,15 +78,42 @@ def confirm_kb():
         CallbackButton(text="✅ Подтвердить", payload=CB_CONFIRM),
         CallbackButton(text="↩️ Назад", payload=CB_CANCEL),
     )
+    b.row(_help_row())
+    return b.as_markup()
+
+
+def materials_files_done_kb():
+    b = InlineKeyboardBuilder()
+    b.row(CallbackButton(text="✅ Готово, дальше", payload=CB_MAT_FILES_DONE))
+    b.row(_help_row())
+    return b.as_markup()
+
+
+def materials_skip_desc_kb():
+    b = InlineKeyboardBuilder()
+    b.row(CallbackButton(text="Без описания", payload=CB_MAT_SKIP_DESC))
+    b.row(_help_row())
     return b.as_markup()
 
 
 def materials_confirm_kb():
     b = InlineKeyboardBuilder()
+    b.row(CallbackButton(text="✅ Подтвердить", payload=CB_MAT_CONFIRM))
     b.row(
-        CallbackButton(text="✅ Подтвердить", payload=CB_MAT_CONFIRM),
-        CallbackButton(text="🔄 Прислать заново", payload=CB_MAT_REDO),
+        CallbackButton(text="🖼 Изменить фото", payload=CB_MAT_EDIT_FILES),
+        CallbackButton(text="✏️ Изменить описание", payload=CB_MAT_EDIT_DESC),
     )
+    b.row(
+        CallbackButton(text="🔄 Прислать заново", payload=CB_MAT_REDO),
+        _help_row(),
+    )
+    return b.as_markup()
+
+
+def pick_order_kb(order_ids: list[int]):
+    b = InlineKeyboardBuilder()
+    for oid in order_ids[:8]:
+        b.row(CallbackButton(text=f"Заказ #{oid}", payload=f"order:pick:{oid}"))
     return b.as_markup()
 
 
@@ -87,6 +123,7 @@ def pay_kb(buttons: Sequence[PayButton]):
     b = InlineKeyboardBuilder()
     for btn in buttons:
         b.row(LinkButton(text=btn.label, url=btn.url))
+    b.row(_help_row())
     return b.as_markup()
 
 

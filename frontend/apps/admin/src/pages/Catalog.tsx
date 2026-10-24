@@ -166,6 +166,9 @@ function CaseTypeEditor({
   const [photoUrl, setPhotoUrl] = useState(item?.photo_url ?? '')
   const [cost, setCost] = useState(item?.cost ?? 0)
   const [margin, setMargin] = useState(item?.margin ?? 0)
+  const [plateType, setPlateType] = useState<'silver' | 'black'>(
+    item?.plate_type === 'silver' ? 'silver' : 'black',
+  )
   const [isActive, setIsActive] = useState(item?.is_active ?? true)
   const [available, setAvailable] = useState<Set<string>>(
     () =>
@@ -216,6 +219,7 @@ function CaseTypeEditor({
       cost: Number(cost) || 0,
       margin: Number(margin) || 0,
       is_active: isActive,
+      plate_type: plateType,
       models: models.map((m) => ({
         model_name: m,
         is_available: available.has(m),
@@ -262,11 +266,22 @@ function CaseTypeEditor({
                 <option value="custom">Кастом</option>
               </select>
             </label>
-            <label className="field field--check">
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-              <span>Активен (показывать в каталоге)</span>
+            <label className="field">
+              <span className="field__label">Пластина (склад)</span>
+              <select
+                className="input"
+                value={plateType}
+                onChange={(e) => setPlateType(e.target.value as 'silver' | 'black')}
+              >
+                <option value="black">Чёрная</option>
+                <option value="silver">Серебро</option>
+              </select>
             </label>
           </div>
+          <label className="field field--check">
+            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+            <span>Активен (показывать в каталоге)</span>
+          </label>
 
           <label className="field">
             <span className="field__label">Описание</span>
@@ -310,7 +325,9 @@ function CaseTypeEditor({
 
           <div className="field">
             <span className="field__label">Модели iPhone, склад и фото</span>
-            <div className="field__hint">Отметьте доступные модели, укажите остаток балванок (шт) и загрузите фото чехла на конкретной модели.</div>
+            <div className="field__hint">
+              Остаток — кэш available = min(балванка, пластина). Источник истины — раздел «Склад».
+            </div>
             <div className="modelrows">
               {models.map((m) => {
                 const on = available.has(m)

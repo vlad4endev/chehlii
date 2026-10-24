@@ -49,6 +49,29 @@ class Backend:
         r.raise_for_status()
         return r.json()
 
+    async def cache_bot_file_id(self, code: str, file_id: str) -> None:
+        """Best-effort: сохранить Telegram file_id кружка после первой отправки."""
+        try:
+            await self._client.patch(
+                f"/bot-messages/{code}/file-id",
+                json={"media_file_id_tg": file_id},
+            )
+        except httpx.HTTPError:
+            pass
+
+    async def activate_promo(self, client_id: int, code: str) -> dict:
+        r = await self._client.post(
+            "/promo/activate", json={"client_id": client_id, "code": code}
+        )
+        if r.status_code >= 400:
+            detail = ""
+            try:
+                detail = (r.json() or {}).get("detail") or ""
+            except Exception:  # noqa: BLE001
+                detail = r.text
+            raise ValueError(detail or "Не удалось активировать промокод")
+        return r.json()
+
     async def get_order(self, order_id: int) -> dict:
         r = await self._client.get(f"/orders/{order_id}")
         r.raise_for_status()

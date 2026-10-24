@@ -88,6 +88,7 @@ class OrderRow(BaseModel):
     model_name: str | None
     case_photo_url: str | None  # фото чехла: под модель → обложка типа
     is_custom: bool | None
+    is_test: bool = False
     branch: CaseBranch | None
     status: OrderStatus
     status_label: str
@@ -173,6 +174,7 @@ def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) ->
         model_name=order.model_name,
         case_photo_url=_case_photo(case, order.model_name),
         is_custom=case.is_custom if case else order.branch == CaseBranch.CUSTOM,
+        is_test=bool(order.is_test),
         branch=order.branch,
         status=order.status,
         status_label=STATUS_LABELS.get(order.status, order.status),
@@ -282,7 +284,7 @@ async def export_xlsx(
         select(Order, Client, CaseType)
         .join(Client, Order.client_id == Client.id)
         .outerjoin(CaseType, Order.case_type_id == CaseType.id)
-        .where(Order.deleted_at.is_(None))
+        .where(Order.deleted_at.is_(None), Order.is_test.is_(False))
         .order_by(Order.id)
     )
     wb = Workbook()
@@ -549,6 +551,24 @@ class StatusChangeIn(BaseModel):
     status: OrderStatus
     # Только Админ: поставить любой статус в обход правила «только вперёд» (правка ошибки).
     force: bool = False
+
+
+class TestFlagIn(BaseModel):
+    is_test: bool
+
+
+@router.patch("/{order_id}/test", response_model=OrderDetail)
+async def set_test_flag(
+    order_id: int,
+    payload: TestFlagIn,
+    user: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrderDetail:
+    """Пометить заказ как тестовый — он не попадёт в обзор, популярные модели и Excel."""
+    order, client, case = await _load(session, order_id)
+    order.is_test = payload.is_test
+    await session.commit()
+    return _to_detail(order, client, case, user)
 
 
 async def _record(

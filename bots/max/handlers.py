@@ -17,16 +17,21 @@ import re
 import httpx
 from maxapi import F, Router
 from maxapi.context.base import BaseContext
+from maxapi.filters.state import StateFilter
 from maxapi.types import (
     BotStarted,
+    Command,
     CommandStart,
     MessageCallback,
     MessageCreated,
 )
+from maxapi.enums.upload_type import UploadType
+from maxapi.types.input_media import InputMediaBuffer
 
 from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.config import settings
+from bots.core.fetch_media import fetch_bytes
 from bots.core.phone import normalize_phone
 from bots.core.texts import texts
 from bots.max.chat_map import remember_async
@@ -37,8 +42,13 @@ from bots.max.keyboards import (
     CB_DELIVERIES,
     CB_DISCOUNT,
     CB_HELP,
+    CB_HUMAN,
     CB_MAT_CONFIRM,
+    CB_MAT_EDIT_DESC,
+    CB_MAT_EDIT_FILES,
+    CB_MAT_FILES_DONE,
     CB_MAT_REDO,
+    CB_MAT_SKIP_DESC,
     CB_PAYMENTS,
     confirm_kb,
     contact_kb,
@@ -49,6 +59,8 @@ from bots.max.keyboards import (
     delivery_start_kb,
     main_menu_kb,
     materials_confirm_kb,
+    materials_files_done_kb,
+    materials_skip_desc_kb,
     pay_kb,
 )
 from bots.max.states import OrderFlow
@@ -58,9 +70,24 @@ CHANNEL = "max"
 
 _PAYLOAD_ORDER_RE = re.compile(r"order[_-](\d+)")
 
+# Состояния, где свободный текст — не ввод сценария (переслать менеджеру).
+_OFFSCRIPT_STATES = {
+    OrderFlow.confirming,
+    OrderFlow.confirming_materials,
+    OrderFlow.delivery_mode,
+    OrderFlow.delivery_pvz,
+    OrderFlow.waiting_contact,
+}
+
 
 def _fmt_price(value: float) -> str:
     return f"{int(round(value)):,}".replace(",", " ")
+
+
+def _order_prefix(order_id: int | str | None) -> str:
+    if not order_id:
+        return ""
+    return f"Заказ #{order_id}: "
 
 
 def _bot_identity(bot) -> tuple[str | None, int | None]:
@@ -114,9 +141,18 @@ async def _persist_files(order_id: int, urls: list[str]) -> list[str]:
     return links
 
 
-async def _send_pay(bot, chat_id: int, order_id: int, code: str, event: MessageCallback | None = None) -> None:
+async def _send_pay(
+    bot,
+    chat_id: int,
+    order_id: int,
+    code: str,
+    event: MessageCallback | None = None,
+    *,
+    order_label: bool = False,
+) -> None:
     b = await payments.block(order_id)
-    text = f"{texts.get(code)}\n\n{b.text}"
+    prefix = _order_prefix(order_id) if order_label else ""
+    text = f"{prefix}{texts.get(code)}\n\n{b.text}"
     atts = _pay_atts(b)
     if event is not None:
         await _replace(event, text, atts)
@@ -260,7 +296,8 @@ async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: in
 
 
 async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, context: BaseContext) -> None:
-    """Показать подтверждение заказа (тип+модель+цена)."""
+    """Показать подтверждение заказа. Предыдущий незавершённый сценарий
+    сохраняем в paused_orders — клиент может вести несколько заказов параллельно."""
     try:
         order = await backend.get_order(order_id)
     except Exception:
@@ -268,17 +305,44 @@ async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, 
     if not order:
         await _send_menu(bot, chat_id, "Не нашли заказ. Откройте каталог и выберите снова.")
         return
+    data = await context.get_data()
+    paused = list(data.get("paused_orders") or [])
+    prev_id = data.get("order_id")
+    prev_state = await context.get_state()
+    if (
+        prev_id
+        and prev_state
+        and prev_state != str(OrderFlow.consulting)
+        and int(prev_id) != int(order["id"])
+    ):
+        paused.append(
+            {
+                "order_id": prev_id,
+                "is_custom": data.get("is_custom"),
+                "fsm": prev_state,
+                "materials_text": data.get("materials_text"),
+                "materials_files": data.get("materials_files"),
+            }
+        )
     await context.set_state(OrderFlow.confirming)
     await context.update_data(
-        order_id=order["id"], is_custom=order["is_custom"], pending_order_id=None
+        order_id=order["id"],
+        is_custom=order["is_custom"],
+        pending_order_id=None,
+        paused_orders=paused,
+        materials_text="",
+        materials_files=[],
     )
     await bot.send_message(
         chat_id=chat_id,
-        text=texts.get(
-            "msg_005аб",
-            type=order["case_name"],
-            model=order["model_name"],
-            price=_fmt_price(order["client_price"]),
+        text=(
+            f"{_order_prefix(order['id'])}"
+            + texts.get(
+                "msg_005аб",
+                type=order["case_name"],
+                model=order["model_name"],
+                price=_fmt_price(order["client_price"]),
+            )
         ),
         attachments=[confirm_kb()],
     )
@@ -333,8 +397,37 @@ async def _enter(bot, chat_id: int, user_id: int, nickname: str | None, payload:
         if client.get("phone")
         else texts.get("msg_001")
     )
-    await _send_menu(bot, chat_id, greeting)
+    await _send_start_media(bot, chat_id, code, greeting)
     await backend.mark_journey(client["id"], code)
+
+
+async def _send_start_media(bot, chat_id: int, code: str, greeting: str) -> None:
+    """В MAX кружков нет — шлём обычное видео; при ошибке только текст (не ломаем /start)."""
+    meta = texts.meta(code)
+    fmt = (meta.get("media_format") or "text").strip()
+    url = meta.get("media_url")
+    if fmt in ("video_note", "video_note_text") and url:
+        try:
+            data = await fetch_bytes(url)
+            if data:
+                username, bot_id = _bot_identity(bot)
+                follow = (
+                    greeting
+                    if fmt == "video_note_text"
+                    else (texts.get("msg_001_hint") or greeting)
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=follow,
+                    attachments=[
+                        InputMediaBuffer(buffer=data, filename="start.mp4", type=UploadType.VIDEO),
+                        main_menu_kb(username, bot_id),
+                    ],
+                )
+                return
+        except Exception:  # noqa: BLE001
+            logging.warning("max: не удалось отправить видео %s", code, exc_info=True)
+    await _send_menu(bot, chat_id, greeting)
 
 
 # ── Вход ───────────────────────────────────────────────
@@ -431,7 +524,7 @@ async def on_confirm(event: MessageCallback, context: BaseContext) -> None:
     data = await context.get_data()
     order_id = data.get("order_id")
     # is_custom берём из заказа, а не только из FSM: после рестарта
-    # контекст мог быть пуст → иначе кастом уходит в «имя/букву» без материалов.
+    # контекст мог быть пуст → иначе кастом уходит без материалов.
     is_custom = bool(data.get("is_custom", False))
     if order_id:
         try:
@@ -447,15 +540,25 @@ async def on_confirm(event: MessageCallback, context: BaseContext) -> None:
         await _replace_menu(event, "Выберите чехол в каталоге ещё раз.")
         return
     await event.answer(notification="Принято ✅")
-    if is_custom:
-        await context.set_state(OrderFlow.waiting_materials)
-        code = "msg_006б"
-    else:
-        await context.set_state(OrderFlow.waiting_name)
-        code = "msg_006а"
-    await _replace(event, texts.get(code))
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
+    if is_custom:
+        await context.set_state(OrderFlow.waiting_materials)
+        await context.update_data(materials_text="", materials_files=[])
+        code = "msg_006б"
+        await _replace(
+            event,
+            f"{_order_prefix(order_id)}{texts.get(code)}",
+            [materials_files_done_kb()],
+        )
+        await backend.mark_journey(client["id"], code)
+        return
+    # Стандарт: без имени/буквы, сразу полная оплата (100%).
+    await context.clear()
+    code = "msg_007а"
+    await _send_pay(
+        event.bot, event.message.recipient.chat_id, int(order_id), code, event=event, order_label=True
+    )
     await backend.mark_journey(client["id"], code)
 
 
@@ -480,25 +583,80 @@ async def on_catalog_stub(event: MessageCallback, context: BaseContext) -> None:
 
 # В MAX нет постоянной reply-клавиатуры — меню дублируем на новом сообщении,
 # не затирая предыдущие блоки сценария.
+def _discount_text(c: dict) -> str:
+    return (
+        f"Ваша итоговая скидка: {int(c.get('total_discount', 0))}%\n"
+        f"• лояльность: {int(c.get('loyal_discount', 0))}%\n"
+        f"• за друзей: {int(c.get('discount_for_slave', 0))}% "
+        f"(приглашено: {int(c.get('number_slave', 0))})\n"
+        f"• по коду друга: {int(c.get('discount_master_code', 0))}%\n\n"
+        f"Ваш промокод для друга: {c.get('slave_code') or '—'}\n"
+        f"Друзья получают: {int(c.get('discount_slave_code', 0))}%\n\n"
+        + (
+            f"Вы уже активировали код: {c['master_code']}"
+            if c.get("master_code")
+            else "Чтобы получить скидку друга — пришлите его промокод следующим сообщением."
+        )
+    )
+
+
 @router.message_callback(F.callback.payload == CB_DISCOUNT)
 async def on_discount(event: MessageCallback, context: BaseContext) -> None:
     c = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
     await event.answer()
-    await _replace_menu(
-        event,
-        f"Ваша скидка: {int(c.get('total_discount', 0))}%\n"
-        f"Ваш промокод для друга: {c.get('slave_code') or '—'}\n\n"
-        "Приглашайте друзей — за каждого начисляется скидка (задаёт администратор).",
+    await _replace_menu(event, _discount_text(c))
+    if not c.get("master_code"):
+        await context.set_state(OrderFlow.entering_promo)
+
+
+@router.message_created(OrderFlow.entering_promo)
+async def on_promo_code(event: MessageCreated, context: BaseContext) -> None:
+    text = (event.message.body.text or "").strip()
+    chat_id = event.message.recipient.chat_id
+    if not text:
+        await _send_menu(event.bot, chat_id, "Пришлите промокод друга текстом.")
+        return
+    c = await backend.upsert_client(
+        CHANNEL, str(event.message.sender.user_id),
+        nickname=event.message.sender.username or event.message.sender.full_name,
+    )
+    try:
+        res = await backend.activate_promo(c["id"], text)
+    except ValueError as e:
+        await _send_menu(event.bot, chat_id, str(e) or "Не удалось активировать код.")
+        return
+    except Exception:  # noqa: BLE001
+        logging.warning("max: promo activate failed", exc_info=True)
+        await _send_menu(event.bot, chat_id, "Не удалось активировать код. Попробуйте позже.")
+        return
+    await context.clear()
+    await _send_menu(
+        event.bot,
+        chat_id,
+        f"Промокод активирован! Скидка по коду друга: {int(res.get('discount_master_code', 0))}%. "
+        f"Итого: {int(res.get('total_discount', 0))}%.",
     )
 
 
 @router.message_callback(F.callback.payload == CB_PAYMENTS)
 async def on_payments(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
-    await _replace_menu(
-        event,
-        "Раздел «Мои оплаты» появится после подключения платёжного шлюза.",
-    )
+    client = await backend.upsert_client(CHANNEL, str(event.callback.user.user_id))
+    try:
+        orders = await backend.client_orders(client["id"])
+    except Exception:  # noqa: BLE001
+        orders = []
+    if not orders:
+        await _replace_menu(event, "Пока нет заказов.")
+        return
+    lines = ["Ваши заказы и оплаты:\n"]
+    for o in orders[:20]:
+        price = o.get("final_price") or o.get("client_price") or "—"
+        pay = o.get("payment_status") or "—"
+        lines.append(
+            f"#{o['id']} · {o.get('status_label') or o.get('status')} · {price} · оплата: {pay}"
+        )
+    await _replace_menu(event, "\n".join(lines))
 
 
 @router.message_callback(F.callback.payload == CB_DELIVERIES)
@@ -523,27 +681,96 @@ async def on_deliveries(event: MessageCallback, context: BaseContext) -> None:
         await _replace_menu(event, text)
 
 
-@router.message_callback(F.callback.payload == CB_HELP)
+async def _call_human(
+    bot,
+    chat_id: int,
+    user_id: int,
+    nickname: str | None,
+    context: BaseContext,
+    *,
+    event: MessageCallback | None = None,
+) -> None:
+    """Позвать менеджера, не сбрасывая шаг оформления заказа."""
+    client = await backend.upsert_client(CHANNEL, str(user_id), nickname=nickname)
+    current = await context.get_state()
+    if current is None:
+        await context.set_state(OrderFlow.consulting)
+    try:
+        await consult.ingest(client["id"], "[Клиент нажал «Позвать человека»]", [])
+    except Exception as e:  # noqa: BLE001
+        logging.warning("call human failed: %s", e)
+    await backend.mark_journey(client["id"], "msg_help")
+    if event is not None:
+        await _replace_menu(event, texts.get("msg_help"))
+        return
+    await _send_menu(bot, chat_id, texts.get("msg_help"))
+
+
+@router.message_callback(F.callback.payload.in_({CB_HELP, CB_HUMAN}))
 async def on_help(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
-    await context.set_state(OrderFlow.consulting)
     u = event.callback.user
-    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
-    await backend.mark_journey(client["id"], "msg_help")
-    await _replace_menu(event, texts.get("msg_help"))
+    await _call_human(
+        event.bot,
+        event.message.recipient.chat_id,
+        u.user_id,
+        u.username,
+        context,
+        event=event,
+    )
+
+
+@router.message_created(Command("human"))
+async def on_human_cmd(event: MessageCreated, context: BaseContext) -> None:
+    s = event.message.sender
+    await remember_async(s.user_id, event.message.recipient.chat_id)
+    await _call_human(
+        event.bot,
+        event.message.recipient.chat_id,
+        s.user_id,
+        s.username or s.full_name,
+        context,
+    )
 
 
 # ── Ввод имени / материалов ────────────────────────────
 @router.message_created(OrderFlow.waiting_name)
 async def on_name(event: MessageCreated, context: BaseContext) -> None:
+    """Устарело: стандарт больше не спрашивает имя — на всякий случай ведём к оплате."""
     data = await context.get_data()
     order_id = data["order_id"]
     await backend.update_order(order_id, custom_text=event.message.body.text or "")
     await context.clear()
-    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007а")
+    await _send_pay(
+        event.bot, event.message.recipient.chat_id, order_id, "msg_007а", order_label=True
+    )
     s = event.message.sender
     client = await backend.upsert_client(CHANNEL, str(s.user_id), nickname=(s.username or s.full_name))
     await backend.mark_journey(client["id"], "msg_007а")
+
+
+def _collect_material_urls(event: MessageCreated) -> list[str]:
+    files: list[str] = []
+    for att in event.message.body.attachments or []:
+        payload = getattr(att, "payload", None)
+        url = getattr(payload, "url", None)
+        if url:
+            files.append(url)
+    return files
+
+
+async def _show_materials_summary(event: MessageCreated, context: BaseContext) -> None:
+    data = await context.get_data()
+    order_id = data.get("order_id")
+    desc = (data.get("materials_text") or "").strip() or "—"
+    n = len(data.get("materials_files") or [])
+    await context.set_state(OrderFlow.confirming_materials)
+    body = texts.get("msg_006б_summary", desc=desc, files=n)
+    await event.message.answer(
+        f"{_order_prefix(order_id)}{body}\n\n"
+        "Всё верно? После подтверждения внесёте предоплату — дизайнер пришлёт макет.",
+        attachments=[materials_confirm_kb()],
+    )
 
 
 @router.message_created(OrderFlow.confirming)
@@ -569,27 +796,106 @@ async def on_early_content(event: MessageCreated, context: BaseContext) -> None:
 
 @router.message_created(OrderFlow.waiting_materials)
 async def on_materials(event: MessageCreated, context: BaseContext) -> None:
-    text = event.message.body.text or ""
-    files: list[str] = []
-    for att in event.message.body.attachments or []:
-        payload = getattr(att, "payload", None)
-        url = getattr(payload, "url", None)
-        if url:
-            files.append(url)
-    if not text and not files:
-        await event.message.answer("Пришлите фото/файлы и/или опишите пожелание.")
+    """Шаг 1: только файлы. Подпись к фото → сразу в описание, шаг 2 пропускаем."""
+    data = await context.get_data()
+    existing: list[str] = list(data.get("materials_files") or [])
+    new_files = _collect_material_urls(event)
+    text = (event.message.body.text or "").strip()
+    # Чистый текст без файлов на шаге фото — вне сценария → менеджеру.
+    if not new_files and text:
+        await _relay_offscript(event, context)
         return
-    # Не финализируем сразу — показываем сводку и ждём подтверждения (клиент
-    # может передумать/переслать заново).
-    await context.update_data(materials_text=text, materials_files=files)
-    await context.set_state(OrderFlow.confirming_materials)
+    if not new_files:
+        await event.message.answer(
+            "Пришлите фото или файлы, затем нажмите «Готово, дальше».",
+            attachments=[materials_files_done_kb()],
+        )
+        return
+    existing.extend(new_files)
+    updates: dict = {"materials_files": existing}
+    # Текст вместе с файлами считаем подписью → описание.
+    if text:
+        updates["materials_text"] = text
+    await context.update_data(**updates)
+    if text:
+        await _show_materials_summary(event, context)
+        return
     await event.message.answer(
-        "Проверьте кастом-чехол:\n\n"
-        f"📝 Описание: {text or '—'}\n"
-        f"📎 Вложений: {len(files)}\n\n"
-        "Всё верно? Нажмите «Подтвердить» — внесёте предоплату, "
-        "после этого дизайнер пришлёт макет на согласование.",
-        attachments=[materials_confirm_kb()],
+        f"Добавлено вложений: {len(existing)}. Можно прислать ещё или нажать «Готово, дальше».",
+        attachments=[materials_files_done_kb()],
+    )
+
+
+@router.message_callback(F.callback.payload == CB_MAT_FILES_DONE)
+async def on_materials_files_done(event: MessageCallback, context: BaseContext) -> None:
+    data = await context.get_data()
+    files = data.get("materials_files") or []
+    if not files:
+        await event.answer(notification="Сначала пришлите хотя бы одно фото или файл")
+        return
+    if (data.get("materials_text") or "").strip():
+        # Сводку шлём новым сообщением (как TG edit → answer).
+        await event.answer()
+        chat_id = event.message.recipient.chat_id
+        # Переиспользуем MessageCreated-путь через прямую отправку.
+        desc = (data.get("materials_text") or "").strip() or "—"
+        n = len(files)
+        await context.set_state(OrderFlow.confirming_materials)
+        body = texts.get("msg_006б_summary", desc=desc, files=n)
+        await _replace(
+            event,
+            f"{_order_prefix(data.get('order_id'))}{body}\n\n"
+            "Всё верно? После подтверждения внесёте предоплату — дизайнер пришлёт макет.",
+            [materials_confirm_kb()],
+        )
+        return
+    await context.set_state(OrderFlow.waiting_materials_desc)
+    await event.answer()
+    await _replace(
+        event,
+        f"{_order_prefix(data.get('order_id'))}{texts.get('msg_006б_desc')}",
+        [materials_skip_desc_kb()],
+    )
+
+
+@router.message_created(OrderFlow.waiting_materials_desc)
+async def on_materials_desc(event: MessageCreated, context: BaseContext) -> None:
+    new_files = _collect_material_urls(event)
+    data = await context.get_data()
+    if new_files:
+        files = list(data.get("materials_files") or [])
+        files.extend(new_files)
+        await context.update_data(materials_files=files)
+        await event.message.answer(
+            f"Фото добавлено (всего {len(files)}). Теперь опишите пожелание или нажмите «Без описания».",
+            attachments=[materials_skip_desc_kb()],
+        )
+        return
+    text = (event.message.body.text or "").strip()
+    if not text:
+        await event.message.answer(
+            texts.get("msg_006б_desc"),
+            attachments=[materials_skip_desc_kb()],
+        )
+        return
+    await context.update_data(materials_text=text)
+    await _show_materials_summary(event, context)
+
+
+@router.message_callback(F.callback.payload == CB_MAT_SKIP_DESC)
+async def on_materials_skip_desc(event: MessageCallback, context: BaseContext) -> None:
+    await context.update_data(materials_text="")
+    await event.answer()
+    data = await context.get_data()
+    desc = "—"
+    n = len(data.get("materials_files") or [])
+    await context.set_state(OrderFlow.confirming_materials)
+    body = texts.get("msg_006б_summary", desc=desc, files=n)
+    await _replace(
+        event,
+        f"{_order_prefix(data.get('order_id'))}{body}\n\n"
+        "Всё верно? После подтверждения внесёте предоплату — дизайнер пришлёт макет.",
+        [materials_confirm_kb()],
     )
 
 
@@ -609,20 +915,55 @@ async def on_materials_confirm(event: MessageCallback, context: BaseContext) -> 
         materials_files=links,
     )
     await context.clear()
-    await _send_pay(event.bot, event.message.recipient.chat_id, order_id, "msg_007б", event=event)
+    await _send_pay(
+        event.bot,
+        event.message.recipient.chat_id,
+        order_id,
+        "msg_007б",
+        event=event,
+        order_label=True,
+    )
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
     await backend.mark_journey(client["id"], "msg_007б")
 
 
+@router.message_callback(F.callback.payload == CB_MAT_EDIT_FILES)
+async def on_materials_edit_files(event: MessageCallback, context: BaseContext) -> None:
+    await event.answer()
+    await context.update_data(materials_files=[])
+    await context.set_state(OrderFlow.waiting_materials)
+    data = await context.get_data()
+    await _replace(
+        event,
+        f"{_order_prefix(data.get('order_id'))}{texts.get('msg_006б')}",
+        [materials_files_done_kb()],
+    )
+
+
+@router.message_callback(F.callback.payload == CB_MAT_EDIT_DESC)
+async def on_materials_edit_desc(event: MessageCallback, context: BaseContext) -> None:
+    await event.answer()
+    await context.set_state(OrderFlow.waiting_materials_desc)
+    data = await context.get_data()
+    await _replace(
+        event,
+        f"{_order_prefix(data.get('order_id'))}{texts.get('msg_006б_desc')}",
+        [materials_skip_desc_kb()],
+    )
+
+
 @router.message_callback(F.callback.payload == CB_MAT_REDO)
 async def on_materials_redo(event: MessageCallback, context: BaseContext) -> None:
     await event.answer()
+    await context.update_data(materials_text="", materials_files=[])
     await context.set_state(OrderFlow.waiting_materials)
-    await _replace(event, texts.get("msg_006б"))
-    u = event.callback.user
-    client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
-    await backend.mark_journey(client["id"], "msg_006б")
+    data = await context.get_data()
+    await _replace(
+        event,
+        f"{_order_prefix(data.get('order_id'))}{texts.get('msg_006б')}",
+        [materials_files_done_kb()],
+    )
 
 
 # ── Ответ клиента на макет («Подтвердить» / «Переделать») ──
@@ -831,9 +1172,6 @@ async def _consult_files_max(event: MessageCreated) -> list[tuple[str, bytes]]:
     return files
 
 
-_BUSY_STATES = frozenset(OrderFlow.states())
-
-
 async def _relay_review(
     event: MessageCreated, client: dict, context: BaseContext | None = None
 ) -> bool:
@@ -857,23 +1195,71 @@ async def _relay_review(
 
 
 async def _relay_consult(
-    event: MessageCreated, client: dict, context: BaseContext | None = None
-) -> None:
+    event: MessageCreated,
+    client: dict,
+    context: BaseContext | None = None,
+    *,
+    force_consulting: bool = True,
+    ack: bool = False,
+) -> bool:
+    """Сохранить в переписку. True если удалось. Не ломает текущий шаг, если force_consulting=False."""
     if await _relay_review(event, client, context):
-        return
+        return True
     text = event.message.body.text or ""
     try:
         ok = await consult.ingest(client["id"], text, await _consult_files_max(event))
     except Exception as e:  # noqa: BLE001
-        logging.warning("consult send failed: %s", e)
+        logging.warning(
+            "consult send failed client=%s: %s", client.get("id"), e, exc_info=True
+        )
         await event.message.answer("Не получилось передать сообщение, попробуйте ещё раз.")
-        return
+        return False
     if not ok:
         await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
+        return False
+    if context is not None and force_consulting:
+        current = await context.get_state()
+        if current is None:
+            await context.set_state(OrderFlow.consulting)
+    if ack:
+        await event.message.answer(texts.get("msg_offscript") or texts.get("msg_help_ack"))
+    return True
+
+
+async def _relay_offscript(event: MessageCreated, context: BaseContext) -> None:
+    """Неожиданное сообщение на шаге сценария → менеджеру, кнопки шага остаются."""
+    s = event.message.sender
+    await remember_async(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    data = await context.get_data()
+    order_id = data.get("order_id")
+    step = await context.get_state()
+    raw = (event.message.body.text or "").strip()
+    logging.info(
+        "offscript client=%s step=%s order=%s text=%r",
+        client.get("id"),
+        step,
+        order_id,
+        raw[:80],
+    )
+    if await _relay_review(event, client, context):
         return
-    if context is not None:
-        await context.set_state(OrderFlow.consulting)
-    # Без автоответа: «печатает…» появится, когда админ начнёт набирать ответ.
+    tagged = f"[Заказ #{order_id}] {raw}".strip() if order_id else raw
+    # Подменяем текст для ingest: передаём через временный атрибут не получится —
+    # пишем напрямую с тегом заказа.
+    try:
+        files = await _consult_files_max(event)
+        ok = await consult.ingest(client["id"], tagged or None, files)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("offscript consult failed: %s", e, exc_info=True)
+        await event.message.answer("Не получилось передать сообщение, попробуйте ещё раз.")
+        return
+    if ok:
+        await event.message.answer(texts.get("msg_offscript") or texts.get("msg_help_ack"))
+    else:
+        await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
 
 
 @router.message_created(OrderFlow.consulting)
@@ -883,16 +1269,29 @@ async def on_consult(event: MessageCreated, context: BaseContext) -> None:
     client = await backend.upsert_client(
         CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
     )
-    await _relay_consult(event, client, context)
+    await _relay_consult(event, client, context, ack=False)
+
+
+# Неожиданный ввод на шагах, где ждут кнопку (не текст).
+@router.message_created(StateFilter(*_OFFSCRIPT_STATES))
+async def on_offscript_busy(event: MessageCreated, context: BaseContext) -> None:
+    # confirming + кастом: on_early_content обычно перехватывает раньше;
+    # здесь — запасной путь, если специфичный хендлер не сработал.
+    data = await context.get_data()
+    current = await context.get_state()
+    if current == str(OrderFlow.confirming) and bool(data.get("is_custom")):
+        if _collect_material_urls(event):
+            await context.set_state(OrderFlow.waiting_materials)
+            await on_materials(event, context)
+            return
+    await _relay_offscript(event, context)
 
 
 # Фолбэк: отзыв (если заказ ждёт) или свободный текст/фото → админу.
-# Регистрируется последним, шаги заказа/доставки не перехватываем.
+# Регистрируется последним. Busy-состояния обрабатывает on_offscript_busy /
+# точечные хендлеры — здесь не дропаем сообщения.
 @router.message_created()
 async def on_fallback(event: MessageCreated, context: BaseContext) -> None:
-    current = await context.get_state()
-    if current is not None and str(current) in _BUSY_STATES:
-        return
     text = event.message.body.text or ""
     if text.startswith("/"):
         return
@@ -903,11 +1302,17 @@ async def on_fallback(event: MessageCreated, context: BaseContext) -> None:
     )
     if await _relay_review(event, client, context):
         return
+    # Состояния с собственными хендлерами (материалы, доставка city/address, promo…)
+    # сюда не должны попадать. Если всё же попали — offscript без сброса FSM.
+    current = await context.get_state()
+    if current is not None:
+        await _relay_offscript(event, context)
+        return
     if not await consult.allowed_to_write(client):
         await _send_menu(
             event.bot,
             event.message.recipient.chat_id,
-            "Выберите раздел в меню или нажмите «Поможем выбрать».",
+            "Выберите раздел в меню или нажмите «Позвать человека».",
         )
         return
     await _relay_consult(event, client, context)

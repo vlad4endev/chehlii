@@ -62,6 +62,11 @@ class Order(Base, TimestampMixin):
         Boolean, default=False, server_default="false", nullable=False
     )
 
+    # Тестовые заказы не попадают в обзор, популярные модели и Excel.
+    is_test: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
     status_history: Mapped[list[OrderStatusHistory]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )

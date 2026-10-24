@@ -1,50 +1,23 @@
-"""Списание балванки со склада при переходе заказа в prepayment_paid.
+"""Списание со склада при переходе заказа в prepayment_paid.
 
 Единый идемпотентный хелпер: `Order.stock_deducted` защищает от повторного
-вычета (webhook-ретрай, ручной откат→возврат статуса), SQL-условие
-`stock > 0` — от ухода в минус.
+вычета (webhook-ретрай, ручной откат→возврат статуса). Делегирует в warehouse:
+1 балванка + 1 пластина case_type.plate_type; кэш case_type_models.stock синхронизируется.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.catalog import CaseTypeModel
 from app.models.order import Order
+from app.services import warehouse
 
 
 async def deduct_for_order(session: AsyncSession, order: Order) -> None:
-    """Списать 1 балванку для (order.case_type_id, order.model_name) один раз."""
-    if order.stock_deducted:
-        return
-    if order.case_type_id is None or not order.model_name:
-        return
-    # ponytail: no row lock, upgrade to SELECT FOR UPDATE if concurrent robokassa callbacks pile up.
-    await session.execute(
-        update(CaseTypeModel)
-        .where(
-            CaseTypeModel.case_type_id == order.case_type_id,
-            CaseTypeModel.model_name == order.model_name,
-            CaseTypeModel.stock > 0,
-        )
-        .values(stock=CaseTypeModel.stock - 1)
-    )
-    order.stock_deducted = True
+    """Списать 1 base + 1 plate для (order.case_type_id, order.model_name) один раз."""
+    await warehouse.deduct_for_order(session, order)
 
 
 async def restore_for_order(session: AsyncSession, order: Order) -> None:
-    """Вернуть 1 балванку при отмене — только если раньше её у этого заказа списали."""
-    if not order.stock_deducted:
-        return
-    if order.case_type_id is None or not order.model_name:
-        return
-    await session.execute(
-        update(CaseTypeModel)
-        .where(
-            CaseTypeModel.case_type_id == order.case_type_id,
-            CaseTypeModel.model_name == order.model_name,
-        )
-        .values(stock=CaseTypeModel.stock + 1)
-    )
-    order.stock_deducted = False
+    """Вернуть 1 base + 1 plate при отмене — только если раньше списали."""
+    await warehouse.restore_for_order(session, order)

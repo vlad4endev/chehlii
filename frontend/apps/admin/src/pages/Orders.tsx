@@ -16,6 +16,7 @@ import {
   fetchOrder,
   fetchOrders,
   fulfillShipment,
+  setOrderTestFlag,
   syncShipment,
   uploadMockup,
 } from '../ordersApi'
@@ -476,6 +477,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                 <span className={`chip${order.is_custom ? ' chip--accent' : ''}`}>
                   {order.is_custom ? 'Кастом' : 'Стандарт'}
                 </span>
+                {order.is_test && <span className="chip">Тестовый</span>}
                 <h3 className="orderhero__name">{order.case_name || 'Чехол'}</h3>
                 {order.model_name && <div className="orderhero__model">{order.model_name}</div>}
                 {order.custom_text && (
@@ -651,6 +653,39 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               <Row label="Канал" value={CHANNEL_LABEL[order.channel] ?? order.channel} />
               {isAdmin && (
                 <>
+                  <div className="deflist__sep">Тест</div>
+                  <div className="deflist__row">
+                    <span className="deflist__label">Тестовый заказ</span>
+                    <span className="deflist__value">
+                      <label className="checkline">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(order.is_test)}
+                          disabled={busy}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                            void (async () => {
+                              setBusy(true)
+                              try {
+                                const d = await setOrderTestFlag(id, next)
+                                setOrder(d)
+                                onChanged()
+                              } catch (err) {
+                                setError(
+                                  err instanceof ApiError
+                                    ? err.message
+                                    : 'Не удалось сохранить флаг',
+                                )
+                              } finally {
+                                setBusy(false)
+                              }
+                            })()
+                          }}
+                        />
+                        Не учитывать в обзоре, статистике и Excel
+                      </label>
+                    </span>
+                  </div>
                   <div className="deflist__sep">Финансы</div>
                   <Row label="Себестоимость" value={order.cost != null ? money(order.cost) : '—'} />
                   <Row label="Маржа" value={order.margin != null ? money(order.margin) : '—'} />

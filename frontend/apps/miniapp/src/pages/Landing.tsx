@@ -16,6 +16,30 @@ const MAX_URL = (import.meta.env.VITE_MAX_URL as string | undefined) ?? `https:/
 interface Hero {
   image_url: string | null
   title: string | null
+  glb_url?: string | null
+}
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'model-viewer': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          src?: string
+          poster?: string
+          alt?: string
+          'camera-controls'?: boolean
+          'auto-rotate'?: boolean
+          'disable-zoom'?: boolean
+          'touch-action'?: string
+          'interaction-prompt'?: string
+          loading?: string
+          reveal?: string
+          style?: React.CSSProperties
+        },
+        HTMLElement
+      >
+    }
+  }
 }
 
 // Хук: подписка на IntersectionObserver — узнаём когда элемент попал в кадр.
@@ -40,6 +64,7 @@ export function Landing({ items }: { items: CaseType[] }) {
   const [hero, setHero] = useState<Hero | null>(null)
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [scrolled, setScrolled] = useState(false)
+  const [mvReady, setMvReady] = useState(false)
   const heroCaseRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -54,10 +79,27 @@ export function Landing({ items }: { items: CaseType[] }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Мышь → параллакс героя (лёгкий наклон, без библиотек).
+  // Lazy-load model-viewer только если задан GLB.
+  useEffect(() => {
+    if (!hero?.glb_url || mvReady) return
+    const existing = document.querySelector('script[data-model-viewer]')
+    if (existing) {
+      setMvReady(true)
+      return
+    }
+    const s = document.createElement('script')
+    s.type = 'module'
+    s.dataset.modelViewer = '1'
+    s.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js'
+    s.onload = () => setMvReady(true)
+    s.onerror = () => setMvReady(false)
+    document.head.appendChild(s)
+  }, [hero?.glb_url, mvReady])
+
+  // Мышь → параллакс героя (лёгкий наклон, без библиотек). Не трогаем 3D.
   useEffect(() => {
     const el = heroCaseRef.current
-    if (!el) return
+    if (!el || hero?.glb_url) return
     function move(e: MouseEvent) {
       if (!el) return
       const r = el.getBoundingClientRect()
@@ -70,7 +112,7 @@ export function Landing({ items }: { items: CaseType[] }) {
     }
     window.addEventListener('mousemove', move)
     return () => window.removeEventListener('mousemove', move)
-  }, [])
+  }, [hero?.glb_url])
 
   const withPhoto = items.filter((i) => i.photo_url || i.models.some((m) => m.photo_url))
   const gallery = (withPhoto.length ? withPhoto : items).slice(0, 8)
@@ -133,11 +175,36 @@ export function Landing({ items }: { items: CaseType[] }) {
           <div className="lp-hero__visual">
             <div className="lp-hero__stage" ref={heroCaseRef}>
               <div className="lp-hero__glow" />
-              <img
-                className="lp-hero__img lp-hero__img--product"
-                src={heroCasePhoto}
-                alt={hero?.title || 'Чехол casetop'}
-              />
+              {hero?.glb_url && mvReady ? (
+                <model-viewer
+                  className="lp-hero__img lp-hero__img--product"
+                  src={mediaUrl(hero.glb_url) || hero.glb_url}
+                  poster={
+                    hero.image_url
+                      ? mediaUrl(hero.image_url) || hero.image_url
+                      : heroCasePhoto
+                  }
+                  alt={hero?.title || 'Чехол casetop 3D'}
+                  camera-controls
+                  auto-rotate
+                  disable-zoom
+                  touch-action="pan-y"
+                  interaction-prompt="none"
+                  loading="lazy"
+                  reveal="auto"
+                  style={{ width: '100%', height: '100%', minHeight: 280, background: 'transparent' }}
+                />
+              ) : (
+                <img
+                  className="lp-hero__img lp-hero__img--product"
+                  src={
+                    hero?.image_url
+                      ? mediaUrl(hero.image_url) || hero.image_url
+                      : heroCasePhoto
+                  }
+                  alt={hero?.title || 'Чехол casetop'}
+                />
+              )}
               {hero?.title && <div className="lp-hero__caption">{hero.title}</div>}
               <div className="lp-hero__badge">
                 <span className="lp-hero__badge-num">01</span>

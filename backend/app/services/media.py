@@ -43,8 +43,13 @@ AUDIO_EXT = {
     "audio/webm": "webm",
     "audio/x-wav": "wav",
 }
+MODEL_EXT = {
+    "model/gltf-binary": "glb",
+    "application/octet-stream": "glb",  # браузеры часто так шлют .glb
+}
 MAX_BYTES = 12 * 1024 * 1024  # 12 МБ (фото/док)
 MAX_VIDEO_BYTES = 45 * 1024 * 1024  # 45 МБ (видео)
+MAX_MODEL_BYTES = 15 * 1024 * 1024  # 15 МБ (GLB)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,12 +65,17 @@ class SavedFile:
 
 
 def media_kind(content_type: str | None, filename: str | None) -> tuple[str, str] | None:
-    """Вернуть (расширение, тип) для изображения/видео, иначе None. тип = image|video."""
+    """Вернуть (расширение, тип). тип = image|video|audio|file|model."""
     ct = (content_type or "").lower()
+    name = (filename or "").lower()
+    if name.endswith(".glb"):
+        return "glb", "model"
     if ct in IMAGE_EXT:
         return IMAGE_EXT[ct], "image"
     if ct in VIDEO_EXT:
         return VIDEO_EXT[ct], "video"
+    if ct == "model/gltf-binary":
+        return "glb", "model"
     if filename and "." in filename:
         tail = filename.rsplit(".", 1)[1].lower()
         img = {

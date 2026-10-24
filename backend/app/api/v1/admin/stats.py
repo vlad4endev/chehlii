@@ -34,8 +34,10 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 
 S = OrderStatus
 
-# Заказ вне активной воронки (завершён или отменён).
-_TERMINAL = {S.DELIVERED, S.CANCELLED, S.REVIEW_RECEIVED}
+# Заказ вне активной воронки (завершён, на отзыве или отменён).
+# review_offered входит в «Завершено», поэтому не должен считаться «В работе».
+_TERMINAL = {S.DELIVERED, S.CANCELLED, S.REVIEW_OFFERED, S.REVIEW_RECEIVED}
+_DONE = {S.DELIVERED, S.REVIEW_OFFERED, S.REVIEW_RECEIVED}
 
 # Этапы воронки: статус → (ключ этапа, порядок). Порядок задаёт вывод.
 _STAGES: list[tuple[str, str, set[OrderStatus]]] = [
@@ -129,16 +131,20 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = now - timedelta(days=7)
 
-    orders = (await session.scalars(select(Order).where(Order.deleted_at.is_(None)))).all()
+    orders = (
+        await session.scalars(
+            select(Order).where(Order.deleted_at.is_(None), Order.is_test.is_(False))
+        )
+    ).all()
     total = len(orders)
     active_orders = [o for o in orders if o.status not in _TERMINAL]
     active = len(active_orders)
-    done = sum(1 for o in orders if o.status in {S.DELIVERED, S.REVIEW_OFFERED, S.REVIEW_RECEIVED})
+    done = sum(1 for o in orders if o.status in _DONE)
     cancelled = sum(1 for o in orders if o.status == S.CANCELLED)
     today_count = sum(1 for o in orders if o.created_at and o.created_at >= today_start)
     week_count = sum(1 for o in orders if o.created_at and o.created_at >= week_start)
 
-    # Деньги (только Админ).
+    # Деньги (только Админ). Тестовые уже отфильтрованы выше.
     revenue_paid = pipeline_value = avg_check = None
     if admin:
         revenue_paid = sum(order_value(o) for o in orders if o.payment_status == PaymentStatus.PAID)
@@ -230,6 +236,7 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
             select(Order.model_name, func.count(Order.id))
             .where(
                 Order.deleted_at.is_(None),
+                Order.is_test.is_(False),
                 Order.model_name.is_not(None),
                 Order.status != S.CANCELLED,
             )
@@ -244,7 +251,7 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         await session.execute(
             select(Order, Client)
             .join(Client, Client.id == Order.client_id)
-            .where(Order.deleted_at.is_(None))
+            .where(Order.deleted_at.is_(None), Order.is_test.is_(False))
             .order_by(Order.id.desc())
             .limit(6)
         )

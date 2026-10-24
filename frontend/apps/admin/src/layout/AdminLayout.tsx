@@ -84,7 +84,7 @@ export function AdminLayout() {
         })
         .catch(() => {})
     load()
-    const t = window.setInterval(load, 15000)
+    const t = window.setInterval(load, 5000)
     return () => {
       alive = false
       window.clearInterval(t)
@@ -219,7 +219,10 @@ export function AdminLayout() {
               }}
             >
               <span className="toast__icon" aria-hidden>
-                <Icon name={t.kind === 'consult' ? 'chat' : 'orders'} size={18} />
+                <Icon
+                  name={t.kind === 'consult' ? 'chat' : t.kind === 'review' ? 'reviews' : 'orders'}
+                  size={18}
+                />
               </span>
               <span className="toast__body">
                 <span className="toast__title">{t.title}</span>

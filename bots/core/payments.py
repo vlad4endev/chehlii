@@ -60,7 +60,10 @@ def render(
 ) -> PayBlock:
     label = _LABEL_RU.get(kind, "К оплате")
     if kind == "prepayment" and percent:
-        label = f"{label} {int(percent)}%"
+        if float(percent) >= 100:
+            label = "К оплате"
+        else:
+            label = f"{label} {int(percent)}%"
 
     if len(options) > 1:
         how = "Выберите способ оплаты."

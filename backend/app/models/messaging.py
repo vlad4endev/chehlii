@@ -43,6 +43,11 @@ class BotMessage(Base, TimestampMixin):
     mode: Mapped[BotMessageMode] = mapped_column(String(8), default=BotMessageMode.AUTO)
     channel_tg: Mapped[bool] = mapped_column(Boolean, default=True)
     channel_max: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Медиа при /start: text | video_note | video_note_text
+    media_format: Mapped[str] = mapped_column(String(32), default="text")
+    media_url: Mapped[str | None] = mapped_column(String(1024))
+    media_file_id_tg: Mapped[str | None] = mapped_column(String(256))  # кэш Telegram file_id
+    media_poster_url: Mapped[str | None] = mapped_column(String(1024))
     # Задел под этап 2: тип сценария (base — линейный; triggered — триггерные рассылки).
     scenario_type: Mapped[ScenarioType] = mapped_column(String(16), default=ScenarioType.BASE)
 

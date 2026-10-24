@@ -1,4 +1,4 @@
-"""Настройки мини-приложения (Админ): главная картинка + текст."""
+"""Настройки мини-приложения (Админ): главная картинка + текст + GLB."""
 
 from __future__ import annotations
 
@@ -19,11 +19,13 @@ router = APIRouter()
 class HeroIn(BaseModel):
     image_url: str | None = None
     title: str | None = None
+    glb_url: str | None = None
 
 
 class HeroOut(BaseModel):
     image_url: str | None
     title: str | None
+    glb_url: str | None
 
 
 @router.get("/hero", response_model=HeroOut)
@@ -33,6 +35,7 @@ async def read_hero(
     return HeroOut(
         image_url=await integrations.get(session, "miniapp.hero_image_url"),
         title=await integrations.get(session, "miniapp.hero_title"),
+        glb_url=await integrations.get(session, "miniapp.hero_glb_url"),
     )
 
 
@@ -44,6 +47,7 @@ async def save_hero(
     for key, val in [
         ("miniapp.hero_image_url", body.image_url or ""),
         ("miniapp.hero_title", body.title or ""),
+        ("miniapp.hero_glb_url", body.glb_url or ""),
     ]:
         row = await session.get(IntegrationSetting, key)
         if row is None:
@@ -51,4 +55,4 @@ async def save_hero(
         else:
             row.value = val
     await session.commit()
-    return HeroOut(image_url=body.image_url, title=body.title)
+    return HeroOut(image_url=body.image_url, title=body.title, glb_url=body.glb_url)

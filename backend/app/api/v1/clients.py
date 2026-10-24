@@ -16,6 +16,7 @@ from app.enums import Channel, OrderStatus
 from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order
+from app.services import promo
 from app.services.cdek_checkout import decode_destination
 
 router = APIRouter()
@@ -38,7 +39,10 @@ class ClientOut(BaseModel):
     loyal_discount: float
     discount_for_slave: float
     discount_master_code: float
+    discount_slave_code: float
     slave_code: str | None
+    master_code: str | None
+    number_slave: int
     number_orders: int
     is_new: bool
 
@@ -58,7 +62,10 @@ def _to_out(c: Client, *, is_new: bool) -> ClientOut:
         loyal_discount=float(c.loyal_discount),
         discount_for_slave=float(c.discount_for_slave),
         discount_master_code=float(c.discount_master_code),
+        discount_slave_code=float(c.discount_slave_code or 0),
         slave_code=c.slave_code,
+        master_code=c.master_code,
+        number_slave=int(c.number_slave or 0),
         number_orders=c.number_orders,
         is_new=is_new,
     )
@@ -100,6 +107,7 @@ async def upsert_client(
     # upsert вызывается из ботов только на входящее действие клиента (start,
     # контакт, кнопка, ответ) — используем как отметку последней активности.
     client.last_msg_at = datetime.now(UTC)
+    await promo.apply_defaults(session, client)
 
     await session.commit()
     await session.refresh(client)

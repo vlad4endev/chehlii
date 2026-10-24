@@ -7,12 +7,20 @@ export interface BotMessage {
   buttons: unknown[] | null
   channel_tg: boolean
   channel_max: boolean
+  media_format: string
+  media_url: string | null
+  media_file_id_tg: string | null
+  media_poster_url: string | null
 }
 
 export interface BotMessagePatch {
   text: string
   channel_tg?: boolean
   channel_max?: boolean
+  media_format?: string
+  media_url?: string | null
+  media_poster_url?: string | null
+  clear_media?: boolean
 }
 
 export const fetchBotMessages = () => apiGet<BotMessage[]>('/admin/bot-messages')

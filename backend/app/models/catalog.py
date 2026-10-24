@@ -21,6 +21,8 @@ class CaseType(Base, TimestampMixin):
     # Финансовые поля — скрыты от роли Дизайнер на уровне сериализации API.
     cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0)  # Себес
     margin: Mapped[float] = mapped_column(Numeric(12, 2), default=0)  # Маржа
+    # Тип пластины для этого чехла (склад: plate silver|black). По умолчанию чёрная.
+    plate_type: Mapped[str | None] = mapped_column(String(16), default="black", server_default="black")
 
     models: Mapped[list[CaseTypeModel]] = relationship(
         back_populates="case_type", cascade="all, delete-orphan"
@@ -33,7 +35,7 @@ class CaseType(Base, TimestampMixin):
 
 
 class CaseTypeModel(Base):
-    """Доступность типа чехла по модели iPhone (iPhone 14 … iPhone 17 Air)."""
+    """Доступность типа чехла по модели iPhone (канон — IPHONE_MODELS, 26 шт.)."""
 
     __tablename__ = "case_type_models"
     __table_args__ = (UniqueConstraint("case_type_id", "model_name", name="uq_case_type_model"),)
@@ -47,8 +49,8 @@ class CaseTypeModel(Base):
     # Фото чехла именно на этой модели iPhone. Если пусто — в мини-аппе берётся
     # обложка типа (CaseType.photo_url), а если и её нет — рисуется вектор-мокап.
     photo_url: Mapped[str | None] = mapped_column(String(1024))
-    # Складской остаток балванок для этой (тип × модель) пары.
-    # Списывается на -1 при переходе заказа в prepayment_paid (см. services/stock.py).
+    # Денормализованный кэш available = min(base, plate) для мини-аппа/ботов.
+    # Источник истины — stock_components; обновляется в services/warehouse.py.
     stock: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     case_type: Mapped[CaseType] = relationship(back_populates="models")

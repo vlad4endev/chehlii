@@ -5,7 +5,7 @@ import type { Stats } from './statsApi'
 const BASELINE_KEY = 'casetop:admin:notify-baseline'
 const TITLE_BASE = 'casetop · Админка'
 
-export type NotifyKind = 'consult' | 'order'
+export type NotifyKind = 'consult' | 'order' | 'review'
 
 export interface NotifyEvent {
   id: string
@@ -20,6 +20,7 @@ export interface NotifyBaseline {
   consult_unread: number
   orders_total: number
   max_order_id: number
+  reviews_pending: number
 }
 
 function maxOrderId(stats: Stats): number {
@@ -35,6 +36,7 @@ export function snapshotBaseline(stats: Stats): NotifyBaseline {
     consult_unread: stats.consult_unread || 0,
     orders_total: stats.orders_total || 0,
     max_order_id: maxOrderId(stats),
+    reviews_pending: stats.reviews_pending || 0,
   }
 }
 
@@ -49,6 +51,9 @@ export function loadBaseline(): NotifyBaseline | null {
       typeof parsed.max_order_id !== 'number'
     ) {
       return null
+    }
+    if (typeof parsed.reviews_pending !== 'number') {
+      parsed.reviews_pending = 0
     }
     return parsed
   } catch {
@@ -86,6 +91,14 @@ function orderCopy(count: number): { title: string; body: string } {
   }
   const word = pluralRu(count, 'новый заказ', 'новых заказа', 'новых заказов')
   return { title: `${count} ${word}`, body: 'Откройте раздел Заказы' }
+}
+
+function reviewCopy(count: number): { title: string; body: string } {
+  if (count === 1) {
+    return { title: 'Новый отзыв', body: 'Отзыв ждёт модерации' }
+  }
+  const word = pluralRu(count, 'новый отзыв', 'новых отзыва', 'новых отзывов')
+  return { title: `${count} ${word}`, body: 'Откройте раздел Отзывы' }
 }
 
 /**
@@ -126,6 +139,19 @@ export function diffStats(
       kind: 'order',
       count: orderDelta,
       href: '/orders',
+      title: copy.title,
+      body: copy.body,
+    })
+  }
+
+  const reviewDelta = (next.reviews_pending || 0) - (prev.reviews_pending || 0)
+  if (reviewDelta > 0) {
+    const copy = reviewCopy(reviewDelta)
+    events.push({
+      id: `review-${now}`,
+      kind: 'review',
+      count: reviewDelta,
+      href: '/reviews',
       title: copy.title,
       body: copy.body,
     })

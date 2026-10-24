@@ -47,11 +47,16 @@ async def upload_media(
     if res is None:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            "Формат не поддерживается. Фото: JPG/PNG/WEBP/GIF; видео: MP4/MOV/WEBM.",
+            "Формат не поддерживается. Фото: JPG/PNG/WEBP/GIF; видео: MP4/MOV/WEBM; 3D: GLB.",
         )
     ext, kind = res
     data = await file.read()
-    limit = media.MAX_VIDEO_BYTES if kind == "video" else media.MAX_BYTES
+    if kind == "video":
+        limit = media.MAX_VIDEO_BYTES
+    elif kind == "model":
+        limit = media.MAX_MODEL_BYTES
+    else:
+        limit = media.MAX_BYTES
     if len(data) > limit:
         mb = limit // (1024 * 1024)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"Файл больше {mb} МБ.")

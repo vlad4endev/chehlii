@@ -17,6 +17,7 @@ export interface CaseTypeAdmin {
   margin: number
   client_price: number
   is_active: boolean
+  plate_type: 'silver' | 'black' | null
   orders_count: number
   models: ModelAvailability[]
 }
@@ -29,6 +30,7 @@ export interface CaseTypeInput {
   cost: number
   margin: number
   is_active: boolean
+  plate_type: 'silver' | 'black'
   models: ModelAvailability[]
 }
 

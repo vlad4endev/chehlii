@@ -61,3 +61,5 @@ class PromoActivation(Base):
     owner_client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
     discount: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Когда пригласившему начислили бонус за первую оплату друга (идемпотентность).
+    rewarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

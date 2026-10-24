@@ -10,7 +10,13 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ChatAction
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile, InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
+from aiogram.types import (
+    BotCommand,
+    BufferedInputFile,
+    InputMediaPhoto,
+    InputMediaVideo,
+    LinkPreviewOptions,
+)
 
 from bots.core import delivery, payments
 from bots.core.backend import backend
@@ -372,6 +378,18 @@ async def _cancel(task: asyncio.Task) -> None:
         pass
 
 
+async def _setup_commands(bot: Bot) -> None:
+    try:
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="Начать / в меню"),
+                BotCommand(command="human", description="Позвать человека"),
+            ]
+        )
+    except Exception:  # noqa: BLE001
+        logging.warning("Telegram: не удалось set_my_commands", exc_info=True)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await texts.load()
@@ -388,6 +406,7 @@ async def main() -> None:
                 logging.warning("Telegram: нет связи (%s), повтор через 12 с", e)
                 await asyncio.sleep(12)
                 continue
+            await _setup_commands(bot)
             outbox = asyncio.create_task(_outbox_loop(bot, storage))
             watcher = asyncio.create_task(_watch_fingerprint(fp))
             polling = asyncio.create_task(dp.start_polling(bot))

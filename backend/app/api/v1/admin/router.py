@@ -15,11 +15,13 @@ from app.api.v1.admin.journeys import router as journeys_router
 from app.api.v1.admin.media import router as media_router
 from app.api.v1.admin.miniapp import router as miniapp_router
 from app.api.v1.admin.orders import router as orders_router
+from app.api.v1.admin.promo_settings import router as promo_settings_router
 from app.api.v1.admin.reviews import router as reviews_router
 from app.api.v1.admin.stats import router as stats_router
 from app.api.v1.admin.tg_proxy import router as tg_proxy_router
 from app.api.v1.admin.trash import router as trash_router
 from app.api.v1.admin.users import router as users_router
+from app.api.v1.admin.warehouse import router as warehouse_router
 
 admin_router = APIRouter()
 admin_router.include_router(auth_router, prefix="/auth", tags=["admin-auth"])
@@ -39,6 +41,10 @@ admin_router.include_router(
 admin_router.include_router(tg_proxy_router, prefix="/tg-proxy", tags=["admin-tg-proxy"])
 admin_router.include_router(media_router, prefix="/media", tags=["admin-media"])
 admin_router.include_router(miniapp_router, prefix="/miniapp", tags=["admin-miniapp"])
+admin_router.include_router(
+    promo_settings_router, prefix="/promo-settings", tags=["admin-promo"]
+)
 admin_router.include_router(trash_router, prefix="/trash", tags=["admin-trash"])
 admin_router.include_router(journeys_router, prefix="/journeys", tags=["admin-journeys"])
 admin_router.include_router(consult_router, prefix="/consult", tags=["admin-consult"])
+admin_router.include_router(warehouse_router, prefix="/warehouse", tags=["admin-warehouse"])

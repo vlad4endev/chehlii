@@ -1,6 +1,6 @@
-"""Публичные настройки мини-приложения (главная картинка + текст).
+"""Публичные настройки мини-приложения (главная картинка + текст + GLB).
 
-Хранится в integration_settings (ключи miniapp.hero_image_url, miniapp.hero_title).
+Хранится в integration_settings (ключи miniapp.hero_*).
 Правится через /admin/miniapp (только Админ), см. admin/miniapp.py.
 """
 
@@ -21,6 +21,7 @@ router = APIRouter()
 class Hero(BaseModel):
     image_url: str | None
     title: str | None
+    glb_url: str | None = None
 
 
 @router.get("/hero", response_model=Hero)
@@ -28,4 +29,5 @@ async def get_hero(session: Annotated[AsyncSession, Depends(get_session)]) -> He
     return Hero(
         image_url=await integrations.get(session, "miniapp.hero_image_url"),
         title=await integrations.get(session, "miniapp.hero_title"),
+        glb_url=await integrations.get(session, "miniapp.hero_glb_url"),
     )

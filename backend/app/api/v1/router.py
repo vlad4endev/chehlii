@@ -19,6 +19,7 @@ from app.api.v1.miniapp import router as miniapp_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.outbox import router as outbox_router
 from app.api.v1.payments import router as payments_router
+from app.api.v1.promo import router as promo_router
 from app.api.v1.reviews import router as reviews_router
 from app.api.v1.tg_proxy import router as tg_proxy_router
 from app.api.v1.ycp import feed_router as ycp_feed_router
@@ -40,6 +41,9 @@ api_router.include_router(orders_router, prefix="/orders", tags=["orders"], depe
 api_router.include_router(outbox_router, prefix="/outbox", tags=["outbox"], dependencies=_internal)
 api_router.include_router(
     bot_messages_router, prefix="/bot-messages", tags=["bot-messages"], dependencies=_internal
+)
+api_router.include_router(
+    promo_router, prefix="/promo", tags=["promo"], dependencies=_internal
 )
 api_router.include_router(
     consult_router, prefix="/consult", tags=["consult"], dependencies=_internal

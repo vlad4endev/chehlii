@@ -104,3 +104,28 @@ class ConsultStatus(StrEnum):
 class ConsultSender(StrEnum):
     CLIENT = "client"
     ADMIN = "admin"
+
+
+class StockKind(StrEnum):
+    """Вид складского компонента."""
+
+    BASE = "base"  # балванка
+    PLATE = "plate"  # пластина
+
+
+class PlateType(StrEnum):
+    """Цвет/тип пластины для печати."""
+
+    SILVER = "silver"
+    BLACK = "black"
+
+
+class StockMovementReason(StrEnum):
+    """Причина движения на складе."""
+
+    SUPPLY = "supply"
+    DEFECT_SUPPLIER = "defect_supplier"
+    DEFECT_PRINT = "defect_print"
+    DEFECT_GLUE = "defect_glue"
+    ORDER = "order"
+    ADJUST = "adjust"

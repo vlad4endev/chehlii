@@ -434,6 +434,34 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
             },
         ],
     },
+    {
+        "id": "warehouse",
+        "title": "Склад / закупка",
+        "hint": (
+            "Параметры расчёта закупки на странице «Склад»: "
+            "recommend = ceil((sold+defect)/N × (lead+safety)) − stock."
+        ),
+        "fields": [
+            {
+                "key": "warehouse.lookback_days",
+                "label": "Окно расхода N, дней",
+                "secret": False,
+                "placeholder": "30",
+            },
+            {
+                "key": "warehouse.lead_days",
+                "label": "Срок поставки, дней",
+                "secret": False,
+                "placeholder": "14",
+            },
+            {
+                "key": "warehouse.safety_days",
+                "label": "Страховой запас, дней",
+                "secret": False,
+                "placeholder": "7",
+            },
+        ],
+    },
 ]
 
 ALL_KEYS: list[str] = [f["key"] for g in INTEGRATION_SCHEMA for f in g["fields"]]

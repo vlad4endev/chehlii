@@ -17,7 +17,7 @@ from bots.core.payments import PayButton
 
 # Тексты кнопок главного меню (по ним же ловим нажатия).
 BTN_CATALOG = "🛍 Каталог чехлов"
-BTN_HELP = "✨ Поможем выбрать"
+BTN_HELP = "🙋 Позвать человека"
 BTN_DISCOUNT = "🎁 Моя скидочная программа"
 BTN_PAYMENTS = "💳 Мои оплаты"
 BTN_DELIVERIES = "📦 Мои доставки"
@@ -81,13 +81,41 @@ def mockup_kb(order_id: int) -> InlineKeyboardMarkup:
     )
 
 
+def materials_files_done_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Готово, дальше", callback_data="materials:files_done")]
+        ]
+    )
+
+
+def materials_skip_desc_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Без описания", callback_data="materials:skip_desc")]
+        ]
+    )
+
+
 def materials_confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="✅ Подтвердить", callback_data="materials:confirm"),
-                InlineKeyboardButton(text="🔄 Прислать заново", callback_data="materials:redo"),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text="🖼 Изменить фото", callback_data="materials:edit_files"),
+                InlineKeyboardButton(text="✏️ Изменить описание", callback_data="materials:edit_desc"),
+            ],
+        ]
+    )
+
+
+def pick_order_kb(order_ids: list[int]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"Заказ #{oid}", callback_data=f"order:pick:{oid}")]
+            for oid in order_ids[:8]
         ]
     )
 

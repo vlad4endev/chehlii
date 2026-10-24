@@ -15,6 +15,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.enums import AdminRole, BotMessageMode, ReviewStatus
 from app.models import AdminUser, BotMessage, CaseType, CaseTypeModel, Review
+from app.services import warehouse as wh
 
 CASE_TYPES = [
     {
@@ -55,10 +56,41 @@ BOT_MESSAGES = [
     ("msg_004а", "WebApp.sendData, тип=Стандарт", "Вы выбрали стандартный чехол. Укажите модель."),
     ("msg_004б", "WebApp.sendData, тип=Кастом", "Вы выбрали кастом-чехол. Укажите модель."),
     ("msg_005аб", "Выбор модели iPhone", "Подтвердите заказ: {type}, {model}, цена {price} ₽."),
-    ("msg_006а", "Подтверждение (Стандарт)", "Напишите имя или букву для чехла."),
-    ("msg_006б", "Подтверждение (Кастом)", "Пришлите фото/файлы и опишите пожелание."),
-    ("msg_007а", "Получение имени/буквы", "Чехол принят в работу. Внесите предоплату по кнопке."),
+    ("msg_006а", "Подтверждение (Стандарт, устарело)", "Напишите имя или букву для чехла."),
+    ("msg_006б", "Кастом: запрос фото", "Пришлите фото или файлы для кастом-чехла."),
+    (
+        "msg_006б_done",
+        "Кастом: фото получены",
+        "Готово. Теперь опишите пожелание текстом — или нажмите «Без описания».",
+    ),
+    (
+        "msg_006б_desc",
+        "Кастом: запрос описания",
+        "Опишите пожелание текстом — или нажмите «Без описания».",
+    ),
+    (
+        "msg_006б_summary",
+        "Кастом: сводка материалов",
+        "Проверьте кастом-чехол:\nОписание: {desc}\nВложений: {files}",
+    ),
+    ("msg_007а", "Стандарт: полная оплата", "Чехол принят в работу. Оплатите полную стоимость по кнопке."),
     ("msg_007б", "Получение файлов", "Чехол принят, ожидайте макет. Внесите предоплату."),
+    (
+        "msg_001_hint",
+        "Подсказка после старта",
+        "Если что-то непонятно — нажмите в меню кнопку «Позвать человека».",
+    ),
+    (
+        "welcome_back",
+        "Повторный /start (есть контакт)",
+        "С возвращением! Ваша скидка — {discount}%.",
+    ),
+    (
+        "msg_offscript",
+        "Сообщение вне сценария",
+        "Передали ваше сообщение менеджеру — ответим здесь. "
+        "Чтобы продолжить оформление, нажмите кнопку выше.",
+    ),
     ("msg_008а", "Webhook предоплаты (Стандарт)", "Предоплата прошла. Ожидайте ссылку постоплаты."),
     ("msg_008б", "Webhook предоплаты (Кастом)", "Предоплата прошла. Ожидайте макет."),
     ("msg_009аб", "Дизайнер загрузил макет", "Ваш макет готов. Подтвердите или переделать."),
@@ -77,16 +109,21 @@ BOT_MESSAGES = [
     ("msg_cancel", "+72 часа (авто-отмена)", "Заказ отменён из-за отсутствия оплаты."),
     (
         "msg_help",
-        "Кнопка «Поможем выбрать»",
-        "Напишите, что хотите подобрать: модель iPhone, цвет, идею, референс. "
-        "Можно фото и голосовые — ответим в этом чате.\n\n"
-        "Чтобы вернуться в меню, нажмите любую другую кнопку.",
+        "Кнопка «Позвать человека»",
+        "Менеджер подключится в ближайшее время — пишите здесь. "
+        "Можно текст, фото и голосовые.\n\n"
+        "Оформление заказа можно продолжить кнопками выше.",
     ),
-    ("msg_help_ack", "Клиент написал в консультацию", "Передали администратору. Ответим здесь ✨"),
+    (
+        "msg_help_ack",
+        "Клиент написал в консультацию",
+        "Передали ваше сообщение менеджеру — ответим здесь. "
+        "Чтобы продолжить оформление, нажмите кнопку выше.",
+    ),
     (
         "msg_help_close",
         "Продавец закрыл консультацию",
-        "Диалог закрыт. Если понадобится помощь, напишите сюда или нажмите «Поможем выбрать».",
+        "Диалог закрыт. Если понадобится помощь, напишите сюда или нажмите «Позвать человека».",
     ),
 ]
 
@@ -118,10 +155,25 @@ async def seed_catalog(session) -> None:
         session.add(case_type)
 
 
+# Коды, которые при сиде перезаписываем (приёмка 23.10 — смена формулировок).
+_REFRESH_MSG_CODES = {
+    "msg_001_hint",
+    "msg_006б",
+    "msg_007а",
+    "msg_help",
+    "msg_help_ack",
+    "msg_help_close",
+    "msg_offscript",
+}
+
+
 async def seed_bot_messages(session) -> None:
     for code, trigger, text in BOT_MESSAGES:
         existing = await session.scalar(select(BotMessage).where(BotMessage.code == code))
         if existing:
+            if code in _REFRESH_MSG_CODES and existing.text != text:
+                existing.text = text
+                existing.trigger = trigger
             continue
         session.add(BotMessage(code=code, trigger=trigger, text=text, mode=BotMessageMode.AUTO))
 
@@ -144,14 +196,20 @@ async def seed_reviews(session) -> None:
         session.add(Review(author_name=name, text=text, status=status))
 
 
+async def seed_warehouse(session) -> None:
+    """Балванки + серебряные/чёрные пластины по всем IPHONE_MODELS (qty 0)."""
+    await wh.ensure_components(session)
+
+
 async def main() -> None:
     async with SessionLocal() as session:
         await seed_admin(session)
         await seed_catalog(session)
         await seed_bot_messages(session)
         await seed_reviews(session)
+        await seed_warehouse(session)
         await session.commit()
-    print("Seed завершён: администратор, каталог, тексты бота, отзывы.")
+    print("Seed завершён: администратор, каталог, тексты бота, отзывы, склад.")
 
 
 if __name__ == "__main__":

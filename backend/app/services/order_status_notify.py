@@ -15,7 +15,7 @@ from app.enums import CaseBranch, OrderStatus, PaymentKind
 from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import cdek_checkout, consult, integrations, pricing, review_offer
+from app.services import cdek_checkout, consult, integrations, pricing, promo, review_offer
 from app.services.payment_flow import continuation_for
 
 # Статусы макета: сообщения только при прикреплении файла, не при PATCH status.
@@ -101,6 +101,8 @@ async def continue_after_paid(
     kind: PaymentKind,
 ) -> NotifyResult:
     """Следующий шаг сценария после оплаты (webhook или ручной статус «оплачено»)."""
+    if kind in (PaymentKind.PREPAYMENT, PaymentKind.POSTPAYMENT):
+        await promo.on_friend_order_paid(session, order, client)
     percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
     custom = order.branch == CaseBranch.CUSTOM
     step = continuation_for(
