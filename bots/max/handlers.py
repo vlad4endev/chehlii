@@ -62,6 +62,7 @@ from bots.max.keyboards import (
     materials_files_done_kb,
     materials_skip_desc_kb,
     pay_kb,
+    pick_order_kb,
 )
 from bots.max.states import OrderFlow
 
@@ -82,6 +83,32 @@ _OFFSCRIPT_STATES = {
 
 def _fmt_price(value: float) -> str:
     return f"{int(round(value)):,}".replace(",", " ")
+
+
+def _parallel_order_ids(data: dict) -> list[int]:
+    """Текущий заказ + paused — уникальные id для кнопок выбора."""
+    ids: list[int] = []
+    cur = data.get("order_id")
+    if cur:
+        ids.append(int(cur))
+    for p in data.get("paused_orders") or []:
+        oid = p.get("order_id")
+        if oid and int(oid) not in ids:
+            ids.append(int(oid))
+    return ids
+
+
+async def _offer_order_pick(
+    bot, chat_id: int, context: BaseContext, *, hint: str | None = None
+) -> bool:
+    """Если заказов > 1 — спросить «К какому?» и показать кнопки. True = показали."""
+    data = await context.get_data()
+    ids = _parallel_order_ids(data)
+    if len(ids) < 2:
+        return False
+    text = hint or "К какому заказу относится сообщение? Выберите кнопкой:"
+    await bot.send_message(chat_id=chat_id, text=text, attachments=[pick_order_kb(ids)])
+    return True
 
 
 def _order_prefix(order_id: int | str | None) -> str:
@@ -347,6 +374,12 @@ async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, 
         attachments=[confirm_kb()],
     )
     await backend.mark_journey(client_id, "msg_005аб")
+    if paused:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Предыдущий заказ на паузе. Чтобы вернуться к нему — нажмите кнопку:",
+            attachments=[pick_order_kb(_parallel_order_ids(await context.get_data()))],
+        )
 
 
 async def _resume_after_pay(bot, chat_id: int, payment_id: int) -> None:
@@ -1260,6 +1293,57 @@ async def _relay_offscript(event: MessageCreated, context: BaseContext) -> None:
         await event.message.answer(texts.get("msg_offscript") or texts.get("msg_help_ack"))
     else:
         await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
+    await _offer_order_pick(event.bot, event.message.recipient.chat_id, context)
+
+
+@router.message_callback(F.callback.payload.startswith("order:pick:"))
+async def on_pick_order(event: MessageCallback, context: BaseContext) -> None:
+    """Выбор заказа при нескольких параллельных сценариях (паритет TG)."""
+    payload = event.callback.payload or ""
+    try:
+        oid = int(payload.split(":")[-1])
+    except ValueError:
+        await event.answer(notification="Ошибка")
+        return
+    data = await context.get_data()
+    paused = list(data.get("paused_orders") or [])
+    chosen = None
+    rest = []
+    for p in paused:
+        if int(p.get("order_id") or 0) == oid:
+            chosen = p
+        else:
+            rest.append(p)
+    if chosen is None and int(data.get("order_id") or 0) == oid:
+        await event.answer(notification="Уже работаем с этим заказом")
+        return
+    if chosen is None:
+        await event.answer(notification="Заказ не найден в сессии")
+        return
+    cur = {
+        "order_id": data.get("order_id"),
+        "is_custom": data.get("is_custom"),
+        "fsm": await context.get_state(),
+        "materials_text": data.get("materials_text"),
+        "materials_files": data.get("materials_files"),
+    }
+    if cur["order_id"]:
+        rest.append(cur)
+    restore_fsm = chosen.get("fsm") or str(OrderFlow.confirming)
+    await context.set_state(restore_fsm)
+    await context.update_data(
+        order_id=chosen["order_id"],
+        is_custom=chosen.get("is_custom"),
+        materials_text=chosen.get("materials_text") or "",
+        materials_files=chosen.get("materials_files") or [],
+        paused_orders=rest,
+    )
+    await event.answer(notification=f"Заказ #{oid}")
+    await event.bot.send_message(
+        chat_id=event.message.recipient.chat_id,
+        text=f"Продолжаем заказ #{oid}. Пришлите то, что бот просил на этом шаге.",
+        attachments=[main_menu_kb()],
+    )
 
 
 @router.message_created(OrderFlow.consulting)

@@ -15,7 +15,7 @@ from app.enums import CaseBranch, OrderStatus, PaymentKind
 from app.models.client import Client
 from app.models.messaging import OutboundMessage
 from app.models.order import Order, OrderStatusHistory
-from app.services import cdek_checkout, consult, integrations, pricing, promo, review_offer
+from app.services import cdek_checkout, consult, integrations, pricing, promo, review_offer, stock
 from app.services.payment_flow import continuation_for
 
 # Статусы макета: сообщения только при прикреплении файла, не при PATCH status.
@@ -138,6 +138,8 @@ async def continue_after_paid(
                     created_at=datetime.now(UTC),
                 )
             )
+            # Кастом со 100% предоплатой: списание только на полной оплате.
+            await stock.maybe_deduct_for_order(session, order, OrderStatus.POSTPAYMENT_PAID)
         text = await scenario_text(session, "msg_011аб")
         await cdek_checkout.start_after_postpayment(session, order, client, text=text)
         return NotifyResult(True, "msg_011аб")

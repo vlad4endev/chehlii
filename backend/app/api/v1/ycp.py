@@ -425,7 +425,7 @@ async def checkout_placed(request: Request, session: Session) -> dict:
         order = await session.get(Order, payment.order_id)
         order.payment_status = PaymentStatus.PAID
         await _record_status(session, order, OrderStatus.PREPAYMENT_PAID, "ycp: оплата в Яндексе")
-        await stock.deduct_for_order(session, order)
+        await stock.maybe_deduct_for_order(session, order, OrderStatus.PREPAYMENT_PAID)
     # ponytail: on_delivery лишь фиксируем (заказ остаётся неоплаченным), разбирать при включении.
     await session.commit()
     return {}

@@ -46,6 +46,7 @@ def _help_row():
 def contact_kb():
     b = InlineKeyboardBuilder()
     b.row(RequestContactButton(text="📱 Поделиться контактом"))
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -133,6 +134,7 @@ def mockup_kb(order_id: int):
         CallbackButton(text="✅ Подтвердить", payload=f"mockup:approve:{order_id}"),
         CallbackButton(text="🔄 Переделать", payload=f"mockup:redo:{order_id}"),
     )
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -142,6 +144,7 @@ def delivery_service_kb(order_id: int, services: list):
     for s in services:
         if s in labels:
             b.row(CallbackButton(text=labels[s], payload=f"dlv:svc:{order_id}:{s}"))
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -154,6 +157,7 @@ def delivery_mode_kb(order_id: int, service: str | None = None):
             CallbackButton(text="📦 Пункт выдачи", payload=f"dlv:pvz:{order_id}"),
             CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"),
         )
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -169,12 +173,14 @@ def delivery_points_kb(order_id: int, points: list, service: str | None = None):
         b.row(*row)
     if service != "ozon":
         b.row(CallbackButton(text="🚚 Курьер до двери", payload=f"dlv:door:{order_id}"))
+    b.row(_help_row())
     return b.as_markup()
 
 
 def delivery_start_kb(order_id: int):
     b = InlineKeyboardBuilder()
     b.row(CallbackButton(text="📦 Оформить доставку", payload=f"dlv:go:{order_id}"))
+    b.row(_help_row())
     return b.as_markup()
 
 
@@ -182,4 +188,5 @@ def delivery_orders_kb(orders: list):
     b = InlineKeyboardBuilder()
     for o in orders[:5]:
         b.row(CallbackButton(text=f"#{o['id']} оформить доставку", payload=f"dlv:go:{o['id']}"))
+    b.row(_help_row())
     return b.as_markup()

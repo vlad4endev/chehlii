@@ -13,7 +13,6 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import IPHONE_MODELS
 from app.enums import PlateType, StockKind, StockMovementReason
 from app.models.catalog import CaseType, CaseTypeModel
 from app.models.order import Order
@@ -40,27 +39,31 @@ def _normalize_plate(plate_type: str | None) -> str:
     return plate_type
 
 
-async def ensure_components(session: AsyncSession) -> None:
-    """Идемпотентно создать base + silver/black plate для всех IPHONE_MODELS (qty 0)."""
+async def ensure_components_for_model(session: AsyncSession, model: str) -> None:
+    """Идемпотентно создать base + silver/black plate для одной модели (qty 0)."""
     existing = {
         (c.kind, c.model_name, c.plate_type)
         for c in (
-            await session.scalars(select(StockComponent))
+            await session.scalars(select(StockComponent).where(StockComponent.model_name == model))
         ).all()
     }
-    for model in IPHONE_MODELS:
-        if (StockKind.BASE, model, None) not in existing:
+    if (StockKind.BASE, model, None) not in existing:
+        session.add(StockComponent(kind=StockKind.BASE, model_name=model, plate_type=None, qty=0))
+    for plate in (PlateType.SILVER, PlateType.BLACK):
+        if (StockKind.PLATE, model, plate) not in existing:
             session.add(
-                StockComponent(kind=StockKind.BASE, model_name=model, plate_type=None, qty=0)
+                StockComponent(kind=StockKind.PLATE, model_name=model, plate_type=plate, qty=0)
             )
-        for plate in (PlateType.SILVER, PlateType.BLACK):
-            if (StockKind.PLATE, model, plate) not in existing:
-                session.add(
-                    StockComponent(
-                        kind=StockKind.PLATE, model_name=model, plate_type=plate, qty=0
-                    )
-                )
     await session.flush()
+
+
+async def ensure_components(session: AsyncSession) -> None:
+    """Идемпотентно создать base + silver/black plate для всех моделей из канона (qty 0)."""
+    # Локальный импорт: iphone_models → warehouse, избегаем цикла на уровне модуля.
+    from app.services import iphone_models as im
+
+    for model in await im.list_model_names(session):
+        await ensure_components_for_model(session, model)
 
 
 async def get_component(
@@ -213,6 +216,86 @@ async def write_off_defect(
         comment=comment,
         admin_user_id=admin_user_id,
     )
+
+
+async def set_qty(
+    session: AsyncSession,
+    component_id: int,
+    qty: int,
+    *,
+    comment: str | None = None,
+    admin_user_id: int | None = None,
+) -> StockMovement | None:
+    """Выставить абсолютный остаток (инвентаризация). Пишет движение reason=adjust."""
+    if qty < 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "qty не может быть отрицательным")
+    component = await session.get(StockComponent, component_id)
+    if component is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Позиция не найдена")
+    delta = qty - component.qty
+    if delta == 0:
+        return None
+    return await _apply_delta(
+        session,
+        component,
+        delta,
+        StockMovementReason.ADJUST,
+        comment=comment or f"Корректировка → {qty}",
+        admin_user_id=admin_user_id,
+    )
+
+
+async def create_position(
+    session: AsyncSession,
+    *,
+    kind: str,
+    model_name: str,
+    plate_type: str | None = None,
+    qty: int = 0,
+    comment: str | None = None,
+    admin_user_id: int | None = None,
+    register_canon: bool = True,
+) -> StockComponent:
+    """Создать складскую позицию (если ещё нет). Опционально — в канон моделей iPhone."""
+    from app.services import iphone_models as im
+
+    if kind not in (StockKind.BASE, StockKind.PLATE):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "kind: base|plate")
+    if qty < 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "qty не может быть отрицательным")
+
+    name = im.normalize_iphone_model_name(model_name)
+    if kind == StockKind.PLATE:
+        plate = _normalize_plate(plate_type)
+    else:
+        plate = None
+
+    if register_canon:
+        canon = await im.list_model_names(session)
+        if name not in canon:
+            # Без enable_on_all: только канон + склад; в типах чехлов — вручную.
+            await im.add_model(session, name, enable_on_all=False)
+        else:
+            await ensure_components_for_model(session, name)
+    else:
+        await ensure_components_for_model(session, name)
+
+    # После ensure у модели уже есть base + обе пластины; берём нужную.
+    try:
+        component = await get_component(session, kind, name, plate, create=False)
+    except HTTPException:
+        component = await get_component(session, kind, name, plate, create=True)
+
+    if qty > 0 and component.qty != qty:
+        await set_qty(
+            session,
+            component.id,
+            qty,
+            comment=comment or "Начальный остаток",
+            admin_user_id=admin_user_id,
+        )
+        await session.refresh(component)
+    return component
 
 
 async def deduct_for_order(session: AsyncSession, order: Order) -> None:

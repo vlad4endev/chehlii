@@ -58,6 +58,30 @@ def _fmt_price(value: float) -> str:
     return f"{int(round(value)):,}".replace(",", " ")
 
 
+def _parallel_order_ids(data: dict) -> list[int]:
+    """Текущий заказ + paused — уникальные id для кнопок выбора."""
+    ids: list[int] = []
+    cur = data.get("order_id")
+    if cur:
+        ids.append(int(cur))
+    for p in data.get("paused_orders") or []:
+        oid = p.get("order_id")
+        if oid and int(oid) not in ids:
+            ids.append(int(oid))
+    return ids
+
+
+async def _offer_order_pick(msg: Message, state: FSMContext, *, hint: str | None = None) -> bool:
+    """Если заказов > 1 — спросить «К какому?» и показать кнопки. True = показали."""
+    data = await state.get_data()
+    ids = _parallel_order_ids(data)
+    if len(ids) < 2:
+        return False
+    text = hint or "К какому заказу относится сообщение? Выберите кнопкой:"
+    await msg.answer(text, reply_markup=pick_order_kb(ids))
+    return True
+
+
 async def _client(msg: Message) -> dict:
     u = msg.from_user
     nickname = u.username or u.full_name if u else None
@@ -241,6 +265,11 @@ async def _begin_order(
         reply_markup=confirm_kb(),
     )
     await backend.mark_journey(client_id, "msg_005аб")
+    if paused:
+        await msg.answer(
+            "Предыдущий заказ на паузе. Чтобы вернуться к нему — нажмите кнопку:",
+            reply_markup=pick_order_kb(_parallel_order_ids(await state.get_data())),
+        )
 
 
 @router.message(F.web_app_data)
@@ -1140,6 +1169,8 @@ async def _relay_offscript(msg: Message, state: FSMContext) -> None:
         await msg.answer(texts.get("msg_offscript") or texts.get("msg_help_ack"))
     else:
         await msg.answer("Напишите текст или пришлите фото — передадим администратору.")
+    # Несколько активных заказов — предложить переключиться на нужный сценарий.
+    await _offer_order_pick(msg, state)
 
 
 @router.message(OrderFlow.consulting)

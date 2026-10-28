@@ -2,7 +2,7 @@
 
 from app.models.admin_user import AdminUser
 from app.models.base import Base
-from app.models.catalog import CaseType, CaseTypeModel
+from app.models.catalog import CaseType, CaseTypeModel, IphoneModel
 from app.models.client import Client
 from app.models.consult import ConsultMessage, ConsultThread
 from app.models.engagement import Favorite, PromoActivation, Review
@@ -18,6 +18,7 @@ __all__ = [
     "AdminUser",
     "CaseType",
     "CaseTypeModel",
+    "IphoneModel",
     "Client",
     "ConsultMessage",
     "ConsultThread",

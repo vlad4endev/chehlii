@@ -11,7 +11,7 @@ import io
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +52,21 @@ class DefectIn(BaseModel):
     plate_type: PlateType | None = None
     qty: int = Field(gt=0)
     reason: StockMovementReason
+    comment: str | None = None
+
+
+class ComponentCreateIn(BaseModel):
+    kind: StockKind
+    model_name: str = Field(min_length=1, max_length=64)
+    plate_type: PlateType | None = None
+    qty: int = Field(default=0, ge=0)
+    comment: str | None = None
+    # Если модели нет в каноне — добавить (без авто-включения во все типы).
+    register_canon: bool = True
+
+
+class ComponentAdjustIn(BaseModel):
+    qty: int = Field(ge=0)
     comment: str | None = None
 
 
@@ -111,6 +126,62 @@ async def list_components(_: AdminOnly, session: Session) -> list[ComponentOut]:
     rows = await wh.list_components(session)
     await session.commit()
     return [_component_out(r) for r in rows]
+
+
+@router.post("/components", response_model=ComponentOut, status_code=status.HTTP_201_CREATED)
+async def create_component(
+    body: ComponentCreateIn,
+    admin: AdminOnly,
+    session: Session,
+) -> ComponentOut:
+    c = await wh.create_position(
+        session,
+        kind=body.kind,
+        model_name=body.model_name,
+        plate_type=body.plate_type,
+        qty=body.qty,
+        comment=body.comment,
+        admin_user_id=admin.id,
+        register_canon=body.register_canon,
+    )
+    await session.commit()
+    await session.refresh(c)
+    return ComponentOut(
+        id=c.id,
+        kind=c.kind,
+        model_name=c.model_name,
+        plate_type=c.plate_type,
+        qty=c.qty,
+        available=c.qty,
+    )
+
+
+@router.patch("/components/{component_id}", response_model=ComponentOut)
+async def adjust_component(
+    component_id: int,
+    body: ComponentAdjustIn,
+    admin: AdminOnly,
+    session: Session,
+) -> ComponentOut:
+    await wh.set_qty(
+        session,
+        component_id,
+        body.qty,
+        comment=body.comment,
+        admin_user_id=admin.id,
+    )
+    await session.commit()
+    c = await session.get(StockComponent, component_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Позиция не найдена")
+    return ComponentOut(
+        id=c.id,
+        kind=c.kind,
+        model_name=c.model_name,
+        plate_type=c.plate_type,
+        qty=c.qty,
+        available=c.qty,
+    )
 
 
 @router.post("/supply", response_model=MovementOut, status_code=status.HTTP_201_CREATED)

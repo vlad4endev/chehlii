@@ -25,7 +25,10 @@ BTN_DELIVERIES = "📦 Мои доставки"
 
 def contact_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
+        keyboard=[
+            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)],
+            [KeyboardButton(text=BTN_HELP)],
+        ],
         resize_keyboard=True,
         one_time_keyboard=True,
     )

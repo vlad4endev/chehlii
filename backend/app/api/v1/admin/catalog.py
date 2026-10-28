@@ -14,10 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.admin.deps import AdminOnly
-from app.constants import IPHONE_MODELS
 from app.core.database import get_session
 from app.models.catalog import CaseType, CaseTypeModel
 from app.models.order import Order
+from app.services import iphone_models as im
 from app.services import warehouse as wh
 
 router = APIRouter()
@@ -28,6 +28,12 @@ class ModelAvailability(BaseModel):
     is_available: bool = True
     photo_url: str | None = None
     stock: int = Field(default=0, ge=0)
+
+
+class IphoneModelCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    # True → сразу доступна во всех типах чехлов; False → только в каноне/на складе.
+    enable_on_all: bool = False
 
 
 class CaseTypeIn(BaseModel):
@@ -57,13 +63,16 @@ class CaseTypeAdminOut(BaseModel):
     models: list[ModelAvailability]
 
 
-def _sorted_models(models: list[CaseTypeModel]) -> list[CaseTypeModel]:
-    """Порядок как в IPHONE_MODELS; неизвестные модели — в конце."""
-    rank = {name: i for i, name in enumerate(IPHONE_MODELS)}
+def _sorted_models(
+    models: list[CaseTypeModel],
+    canon: list[str],
+) -> list[CaseTypeModel]:
+    """Порядок как в каноне; неизвестные модели — в конце."""
+    rank = {name: i for i, name in enumerate(canon)}
     return sorted(models, key=lambda m: (rank.get(m.model_name, 10_000), m.model_name))
 
 
-def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
+def _to_out(ct: CaseType, orders_count: int, canon: list[str]) -> CaseTypeAdminOut:
     return CaseTypeAdminOut(
         id=ct.id,
         name=ct.name,
@@ -83,7 +92,7 @@ def _to_out(ct: CaseType, orders_count: int) -> CaseTypeAdminOut:
                 photo_url=m.photo_url,
                 stock=m.stock,
             )
-            for m in _sorted_models(ct.models)
+            for m in _sorted_models(ct.models, canon)
         ],
     )
 
@@ -96,8 +105,22 @@ async def _orders_counts(session: AsyncSession) -> dict[int, int]:
 
 
 @router.get("/iphone-models", response_model=list[str])
-async def iphone_models(_: AdminOnly) -> list[str]:
-    return IPHONE_MODELS
+async def iphone_models(
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[str]:
+    return await im.list_model_names(session)
+
+
+@router.post("/iphone-models", response_model=list[str], status_code=status.HTTP_201_CREATED)
+async def create_iphone_model(
+    payload: IphoneModelCreate,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[str]:
+    await im.add_model(session, payload.name, enable_on_all=payload.enable_on_all)
+    await session.commit()
+    return await im.list_model_names(session)
 
 
 @router.get("", response_model=list[CaseTypeAdminOut])
@@ -109,7 +132,8 @@ async def list_case_types(
         select(CaseType).options(selectinload(CaseType.models)).order_by(CaseType.id)
     )
     counts = await _orders_counts(session)
-    return [_to_out(ct, counts.get(ct.id, 0)) for ct in result.scalars().all()]
+    canon = await im.list_model_names(session)
+    return [_to_out(ct, counts.get(ct.id, 0), canon) for ct in result.scalars().all()]
 
 
 async def _get_or_404(session: AsyncSession, case_type_id: int) -> CaseType:
@@ -129,7 +153,8 @@ async def get_case_type(
 ) -> CaseTypeAdminOut:
     ct = await _get_or_404(session, case_type_id)
     counts = await _orders_counts(session)
-    return _to_out(ct, counts.get(ct.id, 0))
+    canon = await im.list_model_names(session)
+    return _to_out(ct, counts.get(ct.id, 0), canon)
 
 
 @router.post("", response_model=CaseTypeAdminOut, status_code=status.HTTP_201_CREATED)
@@ -163,7 +188,8 @@ async def create_case_type(
         await wh.sync_legacy_stock(session, m)
     await session.commit()
     await session.refresh(ct, ["models"])
-    return _to_out(ct, 0)
+    canon = await im.list_model_names(session)
+    return _to_out(ct, 0, canon)
 
 
 @router.patch("/{case_type_id}", response_model=CaseTypeAdminOut)
@@ -202,7 +228,8 @@ async def update_case_type(
     await session.commit()
     await session.refresh(ct, ["models"])
     counts = await _orders_counts(session)
-    return _to_out(ct, counts.get(ct.id, 0))
+    canon = await im.list_model_names(session)
+    return _to_out(ct, counts.get(ct.id, 0), canon)
 
 
 @router.delete("/{case_type_id}", status_code=status.HTTP_204_NO_CONTENT)

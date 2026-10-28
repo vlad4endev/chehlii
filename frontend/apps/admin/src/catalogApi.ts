@@ -40,6 +40,8 @@ export const uploadCatalogPhoto = (file: File) =>
 
 export const fetchCaseTypes = () => apiGet<CaseTypeAdmin[]>('/admin/case-types')
 export const fetchIphoneModels = () => apiGet<string[]>('/admin/case-types/iphone-models')
+export const createIphoneModel = (body: { name: string; enable_on_all?: boolean }) =>
+  apiSend<string[]>('POST', '/admin/case-types/iphone-models', body)
 export const createCaseType = (body: CaseTypeInput) =>
   apiSend<CaseTypeAdmin>('POST', '/admin/case-types', body)
 export const updateCaseType = (id: number, body: CaseTypeInput) =>

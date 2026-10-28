@@ -34,8 +34,18 @@ class CaseType(Base, TimestampMixin):
         return float(self.cost) + float(self.margin)
 
 
+class IphoneModel(Base, TimestampMixin):
+    """Канон моделей iPhone. Сид — constants.IPHONE_MODELS; дальше — через админку."""
+
+    __tablename__ = "iphone_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
+
 class CaseTypeModel(Base):
-    """Доступность типа чехла по модели iPhone (канон — IPHONE_MODELS, 26 шт.)."""
+    """Доступность типа чехла по модели iPhone (канон — таблица iphone_models)."""
 
     __tablename__ = "case_type_models"
     __table_args__ = (UniqueConstraint("case_type_id", "model_name", name="uq_case_type_model"),)

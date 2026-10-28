@@ -5,6 +5,7 @@ import {
   type CaseTypeAdmin,
   type CaseTypeInput,
   createCaseType,
+  createIphoneModel,
   deleteCaseType,
   fetchCaseTypes,
   fetchIphoneModels,
@@ -20,6 +21,7 @@ export function Catalog() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<CaseTypeAdmin | 'new' | null>(null)
+  const [modelsOpen, setModelsOpen] = useState(false)
 
   async function reload() {
     setLoading(true)
@@ -52,9 +54,14 @@ export function Catalog() {
     <div>
       <div className="page__head">
         <h1 className="page__title">Каталог</h1>
-        <button className="btn btn--primary" onClick={() => setEditing('new')}>
-          + Добавить тип
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn--ghost" onClick={() => setModelsOpen(true)}>
+            Модели iPhone
+          </button>
+          <button className="btn btn--primary" onClick={() => setEditing('new')}>
+            + Добавить тип
+          </button>
+        </div>
       </div>
 
       {loading && <div className="empty">Загрузка…</div>}
@@ -145,6 +152,112 @@ export function Catalog() {
           }}
         />
       )}
+
+      {modelsOpen && (
+        <ModelsManager
+          models={models}
+          onClose={() => setModelsOpen(false)}
+          onChanged={async (next) => {
+            setModels(next)
+            await reload()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ModelsManager({
+  models,
+  onClose,
+  onChanged,
+}: {
+  models: string[]
+  onClose: () => void
+  onChanged: (next: string[]) => void | Promise<void>
+}) {
+  const [name, setName] = useState('')
+  // Включить новую модель сразу во всех типах чехлов (чекбоксы в редакторе типа).
+  // false безопаснее: модель появится в каноне и на складе, а в продаже — после ручного включения.
+  // YOUR TURN: поменяйте стартовое значение, если по умолчанию хотите «сразу во всех типах».
+  const [enableOnAll, setEnableOnAll] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit() {
+    setError(null)
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setError('Укажите название модели')
+      return
+    }
+    setBusy(true)
+    try {
+      const next = await createIphoneModel({ name: trimmed, enable_on_all: enableOnAll })
+      setName('')
+      await onChanged(next)
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Не удалось добавить')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <h2 className="modal__title">Модели iPhone</h2>
+          <button className="modal__close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal__body">
+          <p className="field__hint" style={{ margin: 0 }}>
+            Новая модель попадает в канон и на склад (балванка + пластины с нулём). В типах чехлов —
+            по флагу ниже или вручную в редакторе типа.
+          </p>
+          <label className="field">
+            <span className="field__label">Название</span>
+            <input
+              className="input"
+              placeholder="например iPhone 19 Pro"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submit()
+              }}
+            />
+          </label>
+          <label className="field field--check">
+            <input
+              type="checkbox"
+              checked={enableOnAll}
+              onChange={(e) => setEnableOnAll(e.target.checked)}
+            />
+            <span>Сразу доступна во всех типах чехлов</span>
+          </label>
+          {error && <div className="empty">{error}</div>}
+          <div className="field">
+            <span className="field__label">Сейчас в каноне ({models.length})</span>
+            <div className="modelrows" style={{ maxHeight: 220, overflow: 'auto' }}>
+              {models.map((m) => (
+                <div key={m} className="modelrow">
+                  <span className="modelrow__name">{m}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
+            Закрыть
+          </button>
+          <button className="btn btn--primary" onClick={() => void submit()} disabled={busy}>
+            {busy ? 'Добавляем…' : '+ Добавить модель'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

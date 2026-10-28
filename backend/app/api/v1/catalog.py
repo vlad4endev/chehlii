@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants import IPHONE_MODELS
 from app.core.database import get_session
 from app.models.catalog import CaseType, CaseTypeModel
+from app.services import iphone_models as im
 
 router = APIRouter()
 
@@ -37,8 +37,8 @@ class CaseTypeOut(BaseModel):
     models: list[CaseModelOut]
 
 
-def _sorted_models(models: list[CaseTypeModel]) -> list[CaseTypeModel]:
-    rank = {name: i for i, name in enumerate(IPHONE_MODELS)}
+def _sorted_models(models: list[CaseTypeModel], canon: list[str]) -> list[CaseTypeModel]:
+    rank = {name: i for i, name in enumerate(canon)}
     return sorted(models, key=lambda m: (rank.get(m.model_name, 10_000), m.model_name))
 
 
@@ -46,6 +46,7 @@ def _sorted_models(models: list[CaseTypeModel]) -> list[CaseTypeModel]:
 async def list_case_types(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[CaseTypeOut]:
+    canon = await im.list_model_names(session)
     result = await session.execute(
         select(CaseType)
         .where(CaseType.is_active.is_(True))
@@ -68,7 +69,7 @@ async def list_case_types(
                     photo_url=m.photo_url,
                     in_stock=m.stock > 0,
                 )
-                for m in _sorted_models(ct.models)
+                for m in _sorted_models(ct.models, canon)
                 if m.is_available
             ],
         )

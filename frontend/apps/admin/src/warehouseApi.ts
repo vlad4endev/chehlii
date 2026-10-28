@@ -74,6 +74,20 @@ export const REASON_LABEL: Record<string, string> = {
 
 export const fetchComponents = () => apiGet<StockComponent[]>('/admin/warehouse/components')
 
+export const createComponent = (body: {
+  kind: StockKind
+  model_name: string
+  plate_type?: PlateType | null
+  qty?: number
+  comment?: string
+  register_canon?: boolean
+}) => apiSend<StockComponent>('POST', '/admin/warehouse/components', body)
+
+export const adjustComponent = (
+  id: number,
+  body: { qty: number; comment?: string },
+) => apiSend<StockComponent>('PATCH', `/admin/warehouse/components/${id}`, body)
+
 export const postSupply = (body: {
   kind: StockKind
   model_name: string

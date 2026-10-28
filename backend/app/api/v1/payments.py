@@ -445,8 +445,7 @@ async def _apply_paid(session: AsyncSession, payment: Payment) -> None:
         )
         if new is not None and not rewind:
             order.status = new
-            if new == OrderStatus.PREPAYMENT_PAID:
-                await stock.deduct_for_order(session, order)
+            await stock.maybe_deduct_for_order(session, order, new)
             session.add(_history(order.id, new, f"{payment.gateway}: оплата подтверждена"))
         client = await session.get(Client, order.client_id)
         # Заказ уже дальше по воронке — повторный вебхук не шлёт шаг заново.

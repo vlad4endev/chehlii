@@ -167,7 +167,7 @@ export function Landing({ items }: { items: CaseType[] }) {
             </div>
             <div className="lp-hero__meta lp-word lp-word--7">
               <span><b>{MIN_PRICE_LABEL}</b> · чехол с принтом</span>
-              <span><b>iPhone 14 — 17 Air</b> · все модели</span>
+              <span><b>Все модели iPhone 11–18</b></span>
               <span><b>3–5 дней</b> · от заказа до отправки</span>
             </div>
           </div>
@@ -228,7 +228,7 @@ export function Landing({ items }: { items: CaseType[] }) {
             <div className="lp-marquee__group" key={i}>
               <span>Гравировка имени</span><span className="lp-marquee__sep">✦</span>
               <span>Авторский принт</span><span className="lp-marquee__sep">✦</span>
-              <span>iPhone 14 — 17 Air</span><span className="lp-marquee__sep">✦</span>
+              <span>iPhone 11–18</span><span className="lp-marquee__sep">✦</span>
               <span>Ручная сборка</span><span className="lp-marquee__sep">✦</span>
               <span>Матовый и глянец</span><span className="lp-marquee__sep">✦</span>
               <span>Подарок под ключ</span><span className="lp-marquee__sep">✦</span>
@@ -247,7 +247,7 @@ export function Landing({ items }: { items: CaseType[] }) {
           <BentoCell size="md" title="Гравировка" text="Имя, инициал, монограмма. Тонко и навсегда.">
             <div className="lp-bento__art lp-bento__art--engrave" />
           </BentoCell>
-          <BentoCell size="sm" title="Все iPhone" text="От 14 до 17 Air — под вашу модель." />
+          <BentoCell size="sm" title="Все iPhone" text="От 11 до 18 — под вашу модель." />
           <BentoCell size="sm" title="Финиши" text="Матовый · Глянец · Тактильный полимер." />
           <BentoCell size="md" title="Быстро" text="3–5 дней от согласования до отправки в СДЭК." />
           <BentoCell size="sm" title="Подарок" text="Красивая упаковка. Открыл — и уже подарок." />

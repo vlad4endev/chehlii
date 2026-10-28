@@ -10,11 +10,13 @@ import asyncio
 
 from sqlalchemy import select
 
-from app.constants import IPHONE_MODELS
 from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.enums import AdminRole, BotMessageMode, ReviewStatus
 from app.models import AdminUser, BotMessage, CaseType, CaseTypeModel, Review
+from app.models.settings import IntegrationSetting
+from app.services import iphone_models as im
+from app.services import promo
 from app.services import warehouse as wh
 
 CASE_TYPES = [
@@ -146,12 +148,13 @@ async def seed_admin(session) -> None:
 
 
 async def seed_catalog(session) -> None:
+    models = await im.list_model_names(session)
     for ct in CASE_TYPES:
         existing = await session.scalar(select(CaseType).where(CaseType.name == ct["name"]))
         if existing:
             continue
         case_type = CaseType(**ct)
-        case_type.models = [CaseTypeModel(model_name=m, is_available=True) for m in IPHONE_MODELS]
+        case_type.models = [CaseTypeModel(model_name=m, is_available=True) for m in models]
         session.add(case_type)
 
 
@@ -197,19 +200,41 @@ async def seed_reviews(session) -> None:
 
 
 async def seed_warehouse(session) -> None:
-    """Балванки + серебряные/чёрные пластины по всем IPHONE_MODELS (qty 0)."""
+    """Балванки + серебряные/чёрные пластины по всем моделям канона (qty 0)."""
     await wh.ensure_components(session)
+
+
+# Дефолты приёмки 23.10: друг / пригласившему / потолок. Не затираем ненулевые.
+_PROMO_DEFAULTS = {
+    promo.FRIEND_KEY: "5",
+    promo.INVITER_KEY: "5",
+    promo.MAX_KEY: "20",
+}
+
+
+async def seed_promo_defaults(session) -> None:
+    """Проставить 5/5/20, если ключа нет или значение пустое/0."""
+    for key, val in _PROMO_DEFAULTS.items():
+        row = await session.get(IntegrationSetting, key)
+        if row is None:
+            session.add(IntegrationSetting(key=key, value=val))
+            continue
+        cur = (row.value or "").strip()
+        if cur in ("", "0", "0.0"):
+            row.value = val
 
 
 async def main() -> None:
     async with SessionLocal() as session:
+        await im.ensure_seeded(session)
         await seed_admin(session)
         await seed_catalog(session)
         await seed_bot_messages(session)
         await seed_reviews(session)
         await seed_warehouse(session)
+        await seed_promo_defaults(session)
         await session.commit()
-    print("Seed завершён: администратор, каталог, тексты бота, отзывы, склад.")
+    print("Seed завершён: администратор, каталог, тексты бота, отзывы, склад, промо.")
 
 
 if __name__ == "__main__":

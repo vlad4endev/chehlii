@@ -12,6 +12,8 @@ import {
   KIND_LABEL,
   PLATE_LABEL,
   REASON_LABEL,
+  adjustComponent,
+  createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
   fetchMovements,
@@ -57,6 +59,9 @@ export function Warehouse() {
   const [defectQty, setDefectQty] = useState(1)
   const [defectReason, setDefectReason] = useState<DefectReason>('defect_supplier')
   const [defectComment, setDefectComment] = useState('')
+
+  const [addOpen, setAddOpen] = useState(false)
+  const [editRow, setEditRow] = useState<StockComponent | null>(null)
 
   async function reload() {
     setLoading(true)
@@ -145,6 +150,9 @@ export function Warehouse() {
       <div className="page__head">
         <h1 className="page__title">Склад</h1>
         <div className="row-actions">
+          <button className="btn btn--primary" onClick={() => setAddOpen(true)}>
+            + Позиция
+          </button>
           <button
             className="btn btn--ghost"
             disabled={busy === 'purchase'}
@@ -174,6 +182,10 @@ export function Warehouse() {
         <>
           <section className="trash-block">
             <div className="field__label">Компоненты · {components.length}</div>
+            <div className="field__hint" style={{ marginBottom: 10 }}>
+              Клик по строке — править остаток (корректировка). «+ Позиция» — новая модель или
+              недостающий вид.
+            </div>
             <div className="tablewrap">
               <table className="table">
                 <thead>
@@ -182,17 +194,31 @@ export function Warehouse() {
                     <th>Модель</th>
                     <th>Пластина</th>
                     <th className="num">Остаток</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {components.map((c) => (
-                    <tr key={c.id}>
+                    <tr key={c.id} onClick={() => setEditRow(c)} style={{ cursor: 'pointer' }}>
                       <td>{KIND_LABEL[c.kind] ?? c.kind}</td>
                       <td className="strong">{c.model_name}</td>
                       <td>
                         {c.plate_type ? PLATE_LABEL[c.plate_type] ?? c.plate_type : '—'}
                       </td>
                       <td className={`num mono${c.qty === 0 ? ' stock--empty' : ''}`}>{c.qty}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          style={{ padding: '4px 10px', fontSize: 13 }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditRow(c)
+                          }}
+                        >
+                          Изменить
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -441,6 +467,248 @@ export function Warehouse() {
           </section>
         </>
       )}
+
+      {editRow && (
+        <EditQtyModal
+          row={editRow}
+          busy={busy === 'edit'}
+          onClose={() => setEditRow(null)}
+          onSave={async (qty, comment) => {
+            setBusy('edit')
+            try {
+              await adjustComponent(editRow.id, { qty, comment: comment || undefined })
+              setEditRow(null)
+              setPurchase(null)
+              await reload()
+            } catch (err) {
+              alert(err instanceof ApiError ? err.message : 'Не удалось сохранить')
+            } finally {
+              setBusy(null)
+            }
+          }}
+        />
+      )}
+
+      {addOpen && (
+        <AddPositionModal
+          models={models}
+          busy={busy === 'add'}
+          onClose={() => setAddOpen(false)}
+          onSave={async (payload) => {
+            setBusy('add')
+            try {
+              await createComponent(payload)
+              setAddOpen(false)
+              setPurchase(null)
+              await reload()
+            } catch (err) {
+              alert(err instanceof ApiError ? err.message : 'Не удалось создать позицию')
+            } finally {
+              setBusy(null)
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditQtyModal({
+  row,
+  busy,
+  onClose,
+  onSave,
+}: {
+  row: StockComponent
+  busy: boolean
+  onClose: () => void
+  onSave: (qty: number, comment: string) => void | Promise<void>
+}) {
+  const [qty, setQty] = useState(row.qty)
+  const [comment, setComment] = useState('')
+
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <h2 className="modal__title">Изменить остаток</h2>
+          <button className="modal__close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal__body">
+          <p className="field__hint" style={{ margin: 0 }}>
+            {KIND_LABEL[row.kind] ?? row.kind} · {row.model_name}
+            {row.plate_type ? ` · ${PLATE_LABEL[row.plate_type] ?? row.plate_type}` : ''}
+            <br />
+            Сейчас: <b className="mono">{row.qty}</b> шт. Разница уйдёт в журнал как
+            «Корректировка».
+          </p>
+          <label className="field">
+            <span className="field__label">Новый остаток</span>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={qty}
+              onChange={(e) => setQty(Math.max(0, Number(e.target.value) || 0))}
+              autoFocus
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Комментарий</span>
+            <input
+              className="input"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="инвентаризация, пересчёт…"
+            />
+          </label>
+        </div>
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </button>
+          <button
+            className="btn btn--primary"
+            disabled={busy || qty === row.qty}
+            onClick={() => void onSave(qty, comment)}
+          >
+            {busy ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddPositionModal({
+  models,
+  busy,
+  onClose,
+  onSave,
+}: {
+  models: string[]
+  busy: boolean
+  onClose: () => void
+  onSave: (payload: {
+    kind: StockKind
+    model_name: string
+    plate_type?: PlateType | null
+    qty: number
+    comment?: string
+    register_canon?: boolean
+  }) => void | Promise<void>
+}) {
+  const [kind, setKind] = useState<StockKind>('base')
+  const [modelName, setModelName] = useState(models[0] ?? '')
+  const [plate, setPlate] = useState<PlateType>('black')
+  const [qty, setQty] = useState(0)
+  const [comment, setComment] = useState('')
+  // YOUR TURN: true — неизвестная модель сразу в канон iPhone (+ все 3 компонента на складе).
+  // false — только выбранная позиция, без канона (редко нужно).
+  const [registerCanon, setRegisterCanon] = useState(true)
+
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal__head">
+          <h2 className="modal__title">Новая позиция</h2>
+          <button className="modal__close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="modal__body">
+          <label className="field">
+            <span className="field__label">Вид</span>
+            <select
+              className="input"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as StockKind)}
+            >
+              <option value="base">Балванка</option>
+              <option value="plate">Пластина</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">Модель</span>
+            <input
+              className="input"
+              list="wh-models"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              placeholder="iPhone 19 Pro или выберите из списка"
+              required
+            />
+            <datalist id="wh-models">
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </label>
+          {kind === 'plate' && (
+            <label className="field">
+              <span className="field__label">Тип пластины</span>
+              <select
+                className="input"
+                value={plate}
+                onChange={(e) => setPlate(e.target.value as PlateType)}
+              >
+                <option value="black">Чёрная</option>
+                <option value="silver">Серебро</option>
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span className="field__label">Начальный остаток</span>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={qty}
+              onChange={(e) => setQty(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Комментарий</span>
+            <input
+              className="input"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="необязательно"
+            />
+          </label>
+          <label className="field field--check">
+            <input
+              type="checkbox"
+              checked={registerCanon}
+              onChange={(e) => setRegisterCanon(e.target.checked)}
+            />
+            <span>Добавить модель в канон (если новой ещё нет)</span>
+          </label>
+        </div>
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </button>
+          <button
+            className="btn btn--primary"
+            disabled={busy || !modelName.trim()}
+            onClick={() =>
+              void onSave({
+                kind,
+                model_name: modelName.trim(),
+                plate_type: kind === 'plate' ? plate : null,
+                qty,
+                comment: comment || undefined,
+                register_canon: registerCanon,
+              })
+            }
+          >
+            {busy ? 'Создание…' : 'Создать'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
