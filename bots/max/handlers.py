@@ -72,13 +72,14 @@ CHANNEL = "max"
 _PAYLOAD_ORDER_RE = re.compile(r"order[_-](\d+)")
 
 # Состояния, где свободный текст — не ввод сценария (переслать менеджеру).
-_OFFSCRIPT_STATES = {
+# tuple: State в maxapi нехешируемый, set падает при импорте.
+_OFFSCRIPT_STATES = (
     OrderFlow.confirming,
     OrderFlow.confirming_materials,
     OrderFlow.delivery_mode,
     OrderFlow.delivery_pvz,
     OrderFlow.waiting_contact,
-}
+)
 
 
 def _fmt_price(value: float) -> str:
