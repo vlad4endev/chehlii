@@ -1,17 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import {
+  type Column,
+  type Filters,
+  type QtyTarget,
+  type RowFacts,
+  type Sort,
+  type Status,
+  DEFAULT_SORT,
+  QTY_TARGET_LABEL,
+  SORT_OPTIONS,
+  activeFilterCount,
+  emptyFilters,
+  facetsOf,
+  hasQtyRange,
+  isEmptyQuery,
+  isSortKey,
+  matchesFilters,
+  matchesQuery,
+  parseQuery,
+  sameSort,
+  sortId,
+  sortRows,
+} from './stockQuery'
 import type { Availability, AvailabilityRow, PlateType, StockComponent, StockKind } from '../warehouseApi'
-
-/** Состояние модели с точки зрения продаж: можно ли собрать чехол и надолго ли хватит. */
-type Status = 'out' | 'low' | 'ok'
 
 const STATUS_TILES: { key: Status; title: string }[] = [
   { key: 'out', title: 'Нельзя продать' },
   { key: 'low', title: 'Заканчивается' },
   { key: 'ok', title: 'В достатке' },
 ]
-
-type Column = 'base' | 'silver' | 'black'
 
 const COLUMNS: { key: Column; title: string; sub?: string }[] = [
   { key: 'base', title: 'Балванка' },
@@ -108,17 +126,56 @@ interface Props {
   highlight?: string | null
 }
 
+const SORT_KEY = 'casetop:admin:warehouse:sort'
+
+function loadSort(): Sort {
+  try {
+    const [key, dir] = (localStorage.getItem(SORT_KEY) ?? '').split(':')
+    if (isSortKey(key) && (dir === 'asc' || dir === 'desc')) return { key, dir }
+  } catch {
+    /* хранилище недоступно — берём порядок по умолчанию */
+  }
+  return DEFAULT_SORT
+}
+
+const sellableOf = (entries: AvailabilityRow[]): number | null => {
+  const used = (['black', 'silver'] as const).filter((p) => entries.some((e) => e.used_plates.includes(p)))
+  return used.length === 0 ? null : Math.min(...used.map((p) => Math.min(...entries.map((e) => e[p]))))
+}
+
 export function StockMatrix({ components, availability, onOpen, onSupply, highlight }: Props) {
   const flashRef = useRef<HTMLTableRowElement | null>(null)
   useEffect(() => {
     flashRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [highlight])
+  const searchRef = useRef<HTMLInputElement>(null)
+
   const [search, setSearch] = useState('')
   // ?low=1 — переход с обзора («заканчивается на складе»): сразу показываем проблемные модели.
-  const [statuses, setStatuses] = useState<Set<Status>>(() =>
-    new URLSearchParams(window.location.search).get('low') === '1' ? new Set<Status>(['out', 'low']) : new Set(),
-  )
+  const [filters, setFilters] = useState<Filters>(() => {
+    const f = emptyFilters()
+    if (new URLSearchParams(window.location.search).get('low') === '1') {
+      f.statuses = new Set<Status>(['out', 'low'])
+    }
+    return f
+  })
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [sort, setSort] = useState<Sort>(loadSort)
   const threshold = availability?.threshold ?? 0
+
+  // «/» — быстрый переход к поиску, как в привычных админках.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+      if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   const byModel = useMemo(
     () => new Map((availability?.models ?? []).map((m) => [m.model_name, m])),
@@ -128,45 +185,104 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
 
   const all = useMemo(() => groupByModel(components), [components])
 
+  // Всё, что нужно для поиска, фильтров и сортировки, считаем один раз на строку.
+  const facts = useMemo(
+    () =>
+      all.map((r, index): RowFacts & { row: ModelRow } => {
+        const entries = membersOf(r).map((m) => byModel.get(m)).filter(isRow)
+        return {
+          row: r,
+          model: r.model,
+          members: r.members,
+          qty: { base: r.base?.qty ?? null, silver: r.silver?.qty ?? null, black: r.black?.qty ?? null },
+          sellable: sellableOf(entries),
+          status: statusOf(entries),
+          index,
+        }
+      }),
+    [all, byModel],
+  )
+
+  const facets = useMemo(() => facetsOf(all.map((r) => r.model)), [all])
+
   const counts = useMemo(() => {
     const c: Record<Status, number> = { out: 0, low: 0, ok: 0 }
-    for (const r of all) {
-      const s = statusOf(membersOf(r).map((m) => byModel.get(m)).filter(isRow))
-      if (s) c[s] += 1
-    }
+    for (const f of facts) if (f.status) c[f.status] += 1
     return c
-  }, [all, byModel])
+  }, [facts])
 
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return all.filter((r) => {
-      if (needle && ![r.model, ...r.members].some((n) => n.toLowerCase().includes(needle))) return false
-      if (statuses.size > 0) {
-        const s = statusOf(membersOf(r).map((m) => byModel.get(m)).filter(isRow))
-        if (!s || !statuses.has(s)) return false
-      }
-      return true
-    })
-  }, [all, search, statuses, byModel])
+  const query = useMemo(() => parseQuery(search), [search])
 
-  const filtered = search !== '' || statuses.size > 0
+  const rows = useMemo(
+    () =>
+      sortRows(
+        facts.filter((f) => matchesQuery([f.model, ...f.members], query) && matchesFilters(f, filters)),
+        sort,
+      ),
+    [facts, query, filters, sort],
+  )
+
+  const filterCount = activeFilterCount(filters)
+  const filtered = !isEmptyQuery(query) || filterCount > 0
   const reset = () => {
     setSearch('')
-    setStatuses(new Set())
+    setFilters(emptyFilters())
   }
-  const toggle = (s: Status) =>
-    setStatuses((prev) => {
-      const next = new Set(prev)
-      if (next.has(s)) next.delete(s)
-      else next.add(s)
-      return next
+  const patch = (p: Partial<Filters>) => setFilters((prev) => ({ ...prev, ...p }))
+  const toggleIn = <T,>(set: Set<T>, v: T): Set<T> => {
+    const next = new Set(set)
+    if (next.has(v)) next.delete(v)
+    else next.add(v)
+    return next
+  }
+  const applySort = (next: Sort) => {
+    setSort(next)
+    try {
+      localStorage.setItem(SORT_KEY, sortId(next))
+    } catch {
+      /* не страшно: просто не запомним */
+    }
+  }
+  // Клик по заголовку: первый раз — от меньшего к большему, второй — наоборот, третий — как в каталоге.
+  const clickHeader = (key: Column | 'model' | 'sellable') => {
+    if (sort.key !== key) applySort({ key, dir: key === 'model' ? 'desc' : 'asc' })
+    else if (sort.dir === (key === 'model' ? 'desc' : 'asc')) applySort({ key, dir: key === 'model' ? 'asc' : 'desc' })
+    else applySort(DEFAULT_SORT)
+  }
+  const ariaSort = (key: Column | 'model' | 'sellable'): 'ascending' | 'descending' | 'none' =>
+    sort.key !== key ? 'none' : sort.dir === 'asc' ? 'ascending' : 'descending'
+  const arrow = (key: Column | 'model' | 'sellable') =>
+    sort.key !== key ? '↕' : sort.dir === 'asc' ? '↑' : '↓'
+
+  // Подписи включённых условий — их можно снять по одному.
+  const chips: { id: string; label: string; clear: () => void }[] = []
+  if (!isEmptyQuery(query)) chips.push({ id: 'q', label: `Поиск: ${search.trim()}`, clear: () => setSearch('') })
+  if (filters.series.size > 0)
+    chips.push({ id: 's', label: `Серия: ${[...filters.series].join(', ')}`, clear: () => patch({ series: new Set() }) })
+  if (filters.variants.size > 0)
+    chips.push({ id: 'v', label: `Вариант: ${[...filters.variants].join(', ')}`, clear: () => patch({ variants: new Set() }) })
+  if (filters.statuses.size > 0)
+    chips.push({
+      id: 'st',
+      label: `Состояние: ${STATUS_TILES.filter((t) => filters.statuses.has(t.key)).map((t) => t.title.toLowerCase()).join(', ')}`,
+      clear: () => patch({ statuses: new Set() }),
     })
+  if (hasQtyRange(filters)) {
+    const { qtyMin: lo, qtyMax: hi } = filters
+    const range = lo !== '' && hi !== '' ? (lo === hi ? lo : `${lo}–${hi}`) : lo !== '' ? `от ${lo}` : `до ${hi}`
+    chips.push({
+      id: 'n',
+      label: `Остаток ${QTY_TARGET_LABEL[filters.qtyTarget]}: ${range}`,
+      clear: () => patch({ qtyMin: '', qtyMax: '' }),
+    })
+  }
+  if (filters.onlyGroups) chips.push({ id: 'g', label: 'Только универсальные группы', clear: () => patch({ onlyGroups: false }) })
 
   return (
     <div>
       <div className="stocktiles" role="group" aria-label="Фильтр по состоянию">
         {STATUS_TILES.map((t) => {
-          const active = statuses.has(t.key)
+          const active = filters.statuses.has(t.key)
           return (
             <button
               key={t.key}
@@ -174,7 +290,7 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
               className={`stocktile stocktile--${t.key}${active ? ' stocktile--active' : ''}`}
               aria-pressed={active}
               disabled={!availability}
-              onClick={() => toggle(t.key)}
+              onClick={() => patch({ statuses: toggleIn(filters.statuses, t.key) })}
             >
               <span className="stocktile__num mono">{availability ? counts[t.key] : '—'}</span>
               <span className="stocktile__text">
@@ -194,30 +310,176 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
         <label className="stocksearch__field">
           <span className="sr-only">Найти модель</span>
           <input
+            ref={searchRef}
             className="input"
             type="search"
-            placeholder="Найти модель, например 15 Pro"
+            placeholder="Найти модель, например 15 pro   ( / )"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && search) {
+                e.stopPropagation()
+                setSearch('')
+              }
+            }}
           />
         </label>
+        <button
+          type="button"
+          className={`btn btn--ghost${panelOpen || filterCount > 0 ? ' btn--on' : ''}`}
+          aria-expanded={panelOpen}
+          aria-controls="stock-filter-panel"
+          onClick={() => setPanelOpen((v) => !v)}
+        >
+          Фильтры{filterCount > 0 && <span className="btn__badge">{filterCount}</span>}
+        </button>
+        <label className="stocksort">
+          <span className="stocksort__label">Порядок</span>
+          <select
+            className="input"
+            value={sortId(sort)}
+            onChange={(e) => {
+              const found = SORT_OPTIONS.find((o) => sortId(o) === e.target.value)
+              if (found) applySort({ key: found.key, dir: found.dir })
+            }}
+          >
+            {!SORT_OPTIONS.some((o) => sameSort(o, sort)) && <option value={sortId(sort)}>Свой порядок</option>}
+            {SORT_OPTIONS.map((o) => (
+              <option key={sortId(o)} value={sortId(o)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {panelOpen && (
+        <div id="stock-filter-panel" className="filterpanel">
+          <p className="field__hint filterpanel__tip">
+            Как искать: несколько слов — найдётся модель со всеми («16 pro»); «-max» — без этого слова; в кавычках —
+            фраза; слово «iPhone» писать не нужно, можно по-русски («про макс»).
+          </p>
+          <fieldset className="filterpanel__group">
+            <legend className="filterpanel__legend">Серия</legend>
+            <div className="chipset">
+              {facets.series.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`chipbtn${filters.series.has(s) ? ' chipbtn--on' : ''}`}
+                  aria-pressed={filters.series.has(s)}
+                  onClick={() => patch({ series: toggleIn(filters.series, s) })}
+                >
+                  {/^\d+$/.test(s) ? `iPhone ${s}` : s}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="filterpanel__group">
+            <legend className="filterpanel__legend">Вариант</legend>
+            <div className="chipset">
+              {facets.variants.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chipbtn${filters.variants.has(v) ? ' chipbtn--on' : ''}`}
+                  aria-pressed={filters.variants.has(v)}
+                  onClick={() => patch({ variants: toggleIn(filters.variants, v) })}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="filterpanel__group filterpanel__group--wide">
+            <legend className="filterpanel__legend">Остаток, шт.</legend>
+            <div className="qtyrange">
+              <label className="qtyrange__field">
+                <span className="stockfilters__label">Чего</span>
+                <select
+                  className="input"
+                  value={filters.qtyTarget}
+                  onChange={(e) => patch({ qtyTarget: e.target.value as QtyTarget })}
+                >
+                  {(Object.keys(QTY_TARGET_LABEL) as QtyTarget[]).map((k) => (
+                    <option key={k} value={k}>
+                      {QTY_TARGET_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="qtyrange__field qtyrange__field--num">
+                <span className="stockfilters__label">От</span>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={filters.qtyMin}
+                  onChange={(e) => patch({ qtyMin: e.target.value })}
+                />
+              </label>
+              <label className="qtyrange__field qtyrange__field--num">
+                <span className="stockfilters__label">До</span>
+                <input
+                  className="input"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={filters.qtyMax}
+                  onChange={(e) => patch({ qtyMax: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="chipset" style={{ marginTop: 8 }}>
+              <button type="button" className="chipbtn" onClick={() => patch({ qtyMin: '0', qtyMax: '0' })}>
+                Ноль
+              </button>
+              <button
+                type="button"
+                className="chipbtn"
+                disabled={threshold === 0}
+                onClick={() => patch({ qtyMin: '', qtyMax: String(threshold) })}
+              >
+                Мало (≤ {threshold})
+              </button>
+              <button type="button" className="chipbtn" onClick={() => patch({ qtyMin: '', qtyMax: '' })}>
+                Любой
+              </button>
+            </div>
+          </fieldset>
+          <label className="stockfilters__check">
+            <input
+              type="checkbox"
+              checked={filters.onlyGroups}
+              onChange={(e) => patch({ onlyGroups: e.target.checked })}
+            />
+            Только универсальные группы
+          </label>
+        </div>
+      )}
+
+      <div className="activechips" aria-live="polite">
+        <span className="field__hint">Моделей: {rows.length === all.length ? all.length : `${rows.length} из ${all.length}`}</span>
+        {chips.map((c) => (
+          <button key={c.id} type="button" className="activechip" onClick={c.clear} aria-label={`Убрать: ${c.label}`}>
+            {c.label} <span aria-hidden="true">✕</span>
+          </button>
+        ))}
         {filtered && (
           <button type="button" className="btn btn--ghost btn--sm" onClick={reset}>
-            Сбросить
+            Сбросить всё
           </button>
         )}
-        <span className="field__hint stocksearch__count" aria-live="polite">
-          Моделей: {rows.length === all.length ? all.length : `${rows.length} из ${all.length}`}
-        </span>
       </div>
 
       {rows.length === 0 ? (
         <div className="empty">
-          {all.length === 0 ? 'На складе пока нет позиций.' : 'По выбранным фильтрам ничего нет.'}
+          {all.length === 0 ? 'На складе пока нет позиций.' : 'По выбранным условиям ничего не найдено.'}
           {filtered && (
             <div style={{ marginTop: 12 }}>
               <button type="button" className="btn btn--ghost btn--sm" onClick={reset}>
-                Сбросить фильтры
+                Сбросить поиск и фильтры
               </button>
             </div>
           )}
@@ -227,23 +489,27 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
           <table className="table table--stock">
             <thead>
               <tr>
-                <th>Модель</th>
+                <th aria-sort={ariaSort('model')}>
+                  <SortHead label="Модель" arrow={arrow('model')} onClick={() => clickHeader('model')} />
+                </th>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} className="cell-qty">
-                    {c.title}
-                    {c.sub && <span className="th-sub">{c.sub}</span>}
+                  <th key={c.key} className="cell-qty" aria-sort={ariaSort(c.key)}>
+                    <SortHead label={c.title} sub={c.sub} arrow={arrow(c.key)} onClick={() => clickHeader(c.key)} />
                   </th>
                 ))}
-                <th title="Сколько чехлов можно продать: меньшее из балванки и пластины нужного цвета">
-                  Можно собрать
-                  <span className="th-sub">чехлов</span>
+                <th
+                  aria-sort={ariaSort('sellable')}
+                  title="Сколько чехлов можно продать: меньшее из балванки и пластины нужного цвета"
+                >
+                  <SortHead label="Можно собрать" sub="чехлов" arrow={arrow('sellable')} onClick={() => clickHeader('sellable')} />
                 </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {rows.map((f) => {
+                const r = f.row
                 const entries = entriesOf(r)
-                const status = statusOf(entries)
+                const status = f.status
                 return (
                   <tr
                     key={r.model}
@@ -289,9 +555,23 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
         </div>
       )}
       <p className="field__hint" style={{ margin: '10px 0 0' }}>
-        Нажмите на число в таблице — откроется приход, брак или правка остатка.
+        Нажмите на число в таблице — откроется приход, брак или правка остатка. Заголовки колонок сортируют.
       </p>
     </div>
+  )
+}
+
+function SortHead({ label, sub, arrow, onClick }: { label: string; sub?: string; arrow: string; onClick: () => void }) {
+  return (
+    <button type="button" className="sorthead" onClick={onClick} title="Сортировать">
+      <span>
+        {label}
+        {sub && <span className="th-sub">{sub}</span>}
+      </span>
+      <span className="sorthead__arrow" aria-hidden="true">
+        {arrow}
+      </span>
+    </button>
   )
 }
 
