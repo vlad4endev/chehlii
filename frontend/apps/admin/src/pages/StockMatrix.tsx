@@ -31,10 +31,10 @@ const STATUS_TILES: { key: Status; title: string }[] = [
   { key: 'ok', title: 'В достатке' },
 ]
 
-const COLUMNS: { key: Column; title: string; sub?: string }[] = [
-  { key: 'base', title: 'Балванка' },
-  { key: 'silver', title: 'Пластина', sub: 'серебро' },
-  { key: 'black', title: 'Пластина', sub: 'чёрная' },
+const COLUMNS: { key: Column; title: string; sub?: string; short: string }[] = [
+  { key: 'base', title: 'Балванка', short: 'Балванка' },
+  { key: 'silver', title: 'Пластина', sub: 'серебро', short: 'Пл. серебро' },
+  { key: 'black', title: 'Пластина', sub: 'чёрная', short: 'Пл. чёрная' },
 ]
 
 export interface ModelRow {
@@ -487,6 +487,14 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
       ) : (
         <div className="tablewrap">
           <table className="table table--stock">
+            <colgroup>
+              <col className="col-model" />
+              <col className="col-qty" />
+              <col className="col-qty" />
+              <col className="col-qty" />
+              <col className="col-sell" />
+              <col className="col-act" />
+            </colgroup>
             <thead>
               <tr>
                 <th aria-sort={ariaSort('model')}>
@@ -502,6 +510,9 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                   title="Сколько чехлов можно продать: меньшее из балванки и пластины нужного цвета"
                 >
                   <SortHead label="Можно собрать" sub="чехлов" arrow={arrow('sellable')} onClick={() => clickHeader('sellable')} />
+                </th>
+                <th className="col-act">
+                  <span className="sr-only">Действие</span>
                 </th>
               </tr>
             </thead>
@@ -525,17 +536,9 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                           Универсальная группа · {modelsWord(r.members.length)}
                         </span>
                       )}
-                      <button
-                        type="button"
-                        className={`rowaction${status === 'out' || status === 'low' ? ' rowaction--hot' : ''}`}
-                        aria-label={`Принять поставку: ${r.model}`}
-                        onClick={() => onSupply(r.model)}
-                      >
-                        + Приход
-                      </button>
                     </td>
                     {COLUMNS.map((c) => (
-                      <td key={c.key} className="cell-qty" data-label={c.sub ? `${c.title} · ${c.sub}` : c.title}>
+                      <td key={c.key} className="cell-qty" data-label={c.short}>
                         <QtyCell
                           component={r[c.key]}
                           threshold={threshold}
@@ -546,6 +549,16 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                     ))}
                     <td className="stockrow__sell" data-label="Можно собрать">
                       <Sellable entries={entries} threshold={threshold} />
+                    </td>
+                    <td className="stockrow__act">
+                      <button
+                        type="button"
+                        className={`btn btn--sm ${status === 'out' || status === 'low' ? 'btn--hot' : 'btn--ghost'}`}
+                        aria-label={`Принять поставку: ${r.model}`}
+                        onClick={() => onSupply(r.model)}
+                      >
+                        + Приход
+                      </button>
                     </td>
                   </tr>
                 )

@@ -119,11 +119,30 @@ export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
 
   return (
     <section className="whsection" aria-labelledby="wh-log-title">
-      <h2 id="wh-log-title" className="whsection__title">
-        Журнал движений <span className="whsection__count">{total}</span>
-      </h2>
+      <div className="whsection__head">
+        <h2 id="wh-log-title" className="whsection__title">
+          Журнал движений <span className="whsection__count">{total}</span>
+        </h2>
+        <div className="whsection__actions">
+          {filtered && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => {
+                setFilters({})
+                setModel('')
+              }}
+            >
+              Сбросить
+            </button>
+          )}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={() => void exportXlsx()} disabled={exporting || total === 0}>
+            {exporting ? 'Готовим файл…' : 'Excel'}
+          </button>
+        </div>
+      </div>
 
-      <div className="stockfilters">
+      <div className="logfilters">
         <label className="stockfilters__field">
           <span className="stockfilters__label">Модель</span>
           <input
@@ -161,21 +180,6 @@ export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
           <span className="stockfilters__label">По дату</span>
           <input className="input" type="date" value={filters.date_to ?? ''} min={filters.date_from || undefined} onChange={(e) => set({ date_to: e.target.value || undefined })} />
         </label>
-        {filtered && (
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => {
-              setFilters({})
-              setModel('')
-            }}
-          >
-            Сбросить
-          </button>
-        )}
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => void exportXlsx()} disabled={exporting || total === 0}>
-          {exporting ? 'Готовим файл…' : 'Excel'}
-        </button>
       </div>
 
       {error && (
@@ -185,7 +189,7 @@ export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
       )}
 
       <div className="tablewrap">
-        <table className="table">
+        <table className="table table--log">
           <thead>
             <tr>
               <th>Когда</th>

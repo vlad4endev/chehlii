@@ -501,9 +501,6 @@ select.input { appearance: none; cursor: pointer; }
 .stocktile__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .stocktile__title { font-size: 14px; font-weight: 700; }
 .stocktile__sub { font-size: 12px; color: var(--ink-soft); }
-.stocksearch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 12px; }
-.stocksearch__field { flex: 1 1 320px; max-width: 520px; }
-.stocksearch__count { margin-left: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* Склад: статус модели и «можно собрать» */
@@ -532,9 +529,7 @@ select.input { appearance: none; cursor: pointer; }
 @media (max-width: 640px) {
   .stocktiles { grid-template-columns: 1fr; gap: 8px; }
   .stocktile { min-height: 56px; padding: 10px 14px; }
-  .stocksearch__field { max-width: none; }
-  .stocksearch__count { margin-left: 0; }
-  .page__head .row-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; white-space: normal; text-align: left; }
+      .page__head .row-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; white-space: normal; text-align: left; }
   .page__head .row-actions > .btn { flex: 1 1 100%; width: auto; }
   .page__head .row-actions > .btn + .btn, .page__head .row-actions > .menu { flex: 1 1 0; min-width: 0; }
   .menu .btn { width: 100%; }
@@ -1333,10 +1328,6 @@ select.input { appearance: none; cursor: pointer; }
 .invinput--bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, #fff); }
 
 /* Склад: быстрый приход, итог операции, подсветка изменённой строки */
-.rowaction { display: block; margin-top: 4px; padding: 6px 0; min-height: 32px; border: none; background: none; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
-.rowaction:hover { color: var(--ink); text-decoration-color: var(--ink); }
-.rowaction--hot { color: var(--ink); }
-.rowaction:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; border-radius: 6px; }
 .toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; border: 1px solid #b9e0cb; background: #ecf8f1; color: #1d6b48; font-size: 14px; font-weight: 600; }
 .toast__close { flex: none; width: 32px; height: 32px; border: none; border-radius: 8px; background: none; color: inherit; font-size: 15px; }
 .toast__close:hover { background: rgba(0, 0, 0, 0.06); }
@@ -1356,9 +1347,6 @@ select.input { appearance: none; cursor: pointer; }
 }
 
 /* Склад: порядок, панель фильтров, активные условия, сортировка по заголовкам */
-.stocksort { display: flex; align-items: center; gap: 8px; }
-.stocksort__label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 700; }
-.stocksort .input { min-width: 220px; }
 .btn--on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .btn__badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; line-height: 20px; text-align: center; }
 .filterpanel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin-bottom: 12px; padding: 16px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-sm); }
@@ -1381,11 +1369,79 @@ select.input { appearance: none; cursor: pointer; }
 th[aria-sort="ascending"] .sorthead__arrow, th[aria-sort="descending"] .sorthead__arrow { opacity: 1; color: var(--ink); }
 th.cell-qty .sorthead { text-align: center; }
 @media (max-width: 640px) {
-  .stocksort { width: 100%; flex-wrap: wrap; }
-  .stocksort .input { flex: 1 1 100%; min-width: 0; }
-  .stocksearch .btn:not(.btn--sm) { flex: 1 1 100%; }
-  .filterpanel { grid-template-columns: 1fr; padding: 14px; }
+      .filterpanel { grid-template-columns: 1fr; padding: 14px; }
   .qtyrange__field { flex: 1 1 100%; }
   .qtyrange__field--num { flex: 1 1 calc(50% - 6px); width: auto; }
 }
 .filterpanel__tip { grid-column: 1 / -1; margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); }
+
+/* ── Склад: единая сетка ──────────────────────────────────
+   Отступы кратны 4: между блоками 28, между элементами панели 12–16, внутри — 8. */
+.pendingbox { margin-bottom: 28px; }
+
+/* Панель: поиск | фильтры | порядок — одна строка одной высоты */
+.stocksearch { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(220px, 300px); gap: 12px; align-items: center; margin-bottom: 12px; }
+.stocksearch .input, .stocksearch .btn { height: 44px; }
+.stocksearch .btn { padding: 0 20px; }
+.stocksort { position: relative; display: block; }
+.stocksort__label { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 12.5px; color: var(--ink-faint); pointer-events: none; }
+.stocksort .input { width: 100%; padding-left: 76px; }
+.activechips { margin-bottom: 16px; }
+
+/* Таблица: фиксированные колонки — числа и заголовки лежат на одних осях */
+@media (min-width: 641px) {
+  .table--stock { table-layout: fixed; }
+  .table--stock .col-model { width: 26%; }
+  .table--stock .col-qty { width: 12%; }
+  .table--stock .col-act { width: 116px; }
+  .table--stock td, .table--stock th { vertical-align: middle; }
+  .table--stock th { vertical-align: bottom; }
+  .table--stock .stockrow__act { text-align: right; }
+  .table--stock tbody tr { height: 68px; }
+}
+.stockrow__model { overflow-wrap: anywhere; }
+.btn--hot { background: var(--panel); border-color: var(--accent); color: var(--ink); }
+.btn--hot:hover { background: var(--accent); color: #fff; }
+.sorthead { position: relative; }
+.sorthead__arrow { position: absolute; right: -18px; bottom: 6px; }
+th.cell-qty .sorthead { justify-content: center; }
+th:not(.cell-qty) .sorthead__arrow { position: static; }
+
+/* Журнал: ровная сетка фильтров и прокрутка таблицы вместо сжатия */
+.logfilters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 16px; align-items: end; margin-bottom: 12px; }
+.logfilters .stockfilters__field { min-width: 0; }
+.logfilters .input { width: 100%; height: 44px; }
+.logfilters .btn { height: 44px; }
+.tablewrap > .table.table--log { min-width: 880px; }
+.table--log td:nth-child(1), .table--log td:nth-child(2) { white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .stocksearch { grid-template-columns: auto minmax(0, 1fr); }
+  .stocksearch__field { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .stocksearch { grid-template-columns: 1fr; gap: 8px; }
+  .stocksearch .btn { width: 100%; }
+  .stocksort .input { padding-left: 76px; }
+  .page__head .row-actions > .btn + .btn, .page__head .row-actions > .menu .btn { padding: 0 6px; font-size: 13px; white-space: nowrap; }
+  .table--stock td.stockrow__act { grid-column: 1 / -1; }
+  .table--stock td.stockrow__act .btn { width: 100%; height: 44px; }
+  .table--stock td[data-label]::before { white-space: nowrap; }
+  .tablewrap > .table.table--log { min-width: 880px; }
+  .table--stock colgroup { display: none; }
+}
+
+.stocksearch__field { display: block; min-width: 0; }
+.stocksearch__field .input { width: 100%; }
+.whsection__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.whsection__head .whsection__title { margin: 0; }
+.whsection__actions { display: flex; align-items: center; gap: 8px; }
+.sellchip { padding: 4px 10px; }
+@media (min-width: 1100px) {
+  .table--stock .col-model { width: 22%; }
+  .table--stock .col-qty { width: 11%; }
+  .table--stock .col-act { width: 108px; }
+  .table--stock .sellable { flex-wrap: nowrap; }
+}
+.stockrow__act .btn { white-space: nowrap; padding: 0 10px; }
+@media (min-width: 1100px) { .table--stock .col-act { width: 120px; } }
