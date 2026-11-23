@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import type { PlateType, StockComponent, StockKind } from '../warehouseApi'
+import type { Availability, AvailabilityRow, PlateType, StockComponent, StockKind } from '../warehouseApi'
 
 /** Изделие, по которому фильтруем: всё сразу или одна колонка склада. */
 type ItemFilter = 'all' | 'base' | 'silver' | 'black'
@@ -56,17 +56,52 @@ export function groupByModel(components: StockComponent[]): ModelRow[] {
   return [...rows.values()]
 }
 
+const isRow = (x: AvailabilityRow | undefined): x is AvailabilityRow => x !== undefined
+
+/** Модели, чей остаток показывает строка: члены группы или сама модель. */
+const membersOf = (r: ModelRow): string[] => (r.members.length > 0 ? r.members : [r.model])
+
+const PLATE_NAME: Record<PlateType, string> = { black: 'чёрная', silver: 'серебро' }
+
+/** «Чёрная 4 · серебро 0» только по продаваемым цветам; красный — нет, жёлтый — мало. */
+function Sellable({ entries, threshold }: { entries: AvailabilityRow[]; threshold: number }) {
+  if (entries.length === 0) return <span className="muted">—</span>
+  const used = (['black', 'silver'] as const).filter((p) => entries.some((e) => e.used_plates.includes(p)))
+  if (used.length === 0) return <span className="muted">не продаётся</span>
+  return (
+    <span className="sellable">
+      {used.map((p) => {
+        const count = Math.min(...entries.map((e) => e[p]))
+        const state = count === 0 ? 'out' : count <= threshold ? 'low' : 'ok'
+        return (
+          <span key={p} className={`sellable__item sellable__item--${state}`}>
+            {PLATE_NAME[p]} <b className="mono">{count}</b>
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 interface Props {
   components: StockComponent[]
+  /** Сколько чехлов можно собрать и что заканчивается; null — ещё не загружено. */
+  availability: Availability | null
   /** Нажатие на число открывает действия над позицией (приход, брак, правка). */
   onOpen: (component: StockComponent) => void
 }
 
-export function StockMatrix({ components, onOpen }: Props) {
+export function StockMatrix({ components, availability, onOpen }: Props) {
   const [item, setItem] = useState<ItemFilter>('all')
   const [model, setModel] = useState('')
   const [search, setSearch] = useState('')
   const [onlyEmpty, setOnlyEmpty] = useState(false)
+  // ?low=1 — переход с обзора («заканчивается на складе»).
+  const [onlyLow, setOnlyLow] = useState(() => new URLSearchParams(window.location.search).get('low') === '1')
+  const byModel = useMemo(
+    () => new Map((availability?.models ?? []).map((m) => [m.model_name, m])),
+    [availability],
+  )
 
   const all = useMemo(() => groupByModel(components), [components])
   const columns = COLUMNS.filter((c) => item === 'all' || c.key === item)
@@ -76,20 +111,22 @@ export function StockMatrix({ components, onOpen }: Props) {
     return all.filter((r) => {
       if (model && r.model !== model) return false
       if (needle && ![r.model, ...r.members].some((n) => n.toLowerCase().includes(needle))) return false
+      if (onlyLow && !membersOf(r).some((m) => byModel.get(m)?.low || byModel.get(m)?.out)) return false
       if (onlyEmpty) {
         const shown = columns.map((c) => r[c.key]).filter((c): c is StockComponent => !!c)
         if (!shown.some((c) => c.qty === 0)) return false
       }
       return true
     })
-  }, [all, model, search, onlyEmpty, columns])
+  }, [all, model, search, onlyEmpty, onlyLow, byModel, columns])
 
-  const filtered = item !== 'all' || model !== '' || search !== '' || onlyEmpty
+  const filtered = item !== 'all' || model !== '' || search !== '' || onlyEmpty || onlyLow
   const reset = () => {
     setItem('all')
     setModel('')
     setSearch('')
     setOnlyEmpty(false)
+    setOnlyLow(false)
   }
 
   return (
@@ -137,6 +174,10 @@ export function StockMatrix({ components, onOpen }: Props) {
           />
           Только закончившиеся
         </label>
+        <label className="stockfilters__check">
+          <input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} />
+          Мало или нет{availability ? ` (≤ ${availability.threshold})` : ''}
+        </label>
         {filtered && (
           <button type="button" className="btn btn--ghost btn--sm" onClick={reset}>
             Сбросить
@@ -166,6 +207,7 @@ export function StockMatrix({ components, onOpen }: Props) {
             <thead>
               <tr>
                 <th>Модель</th>
+                <th title="Сколько чехлов можно собрать: минимум из балванки и пластины">Можно собрать</th>
                 {columns.map((c) => (
                   <th key={c.key} className="num">
                     {c.prefix && (
@@ -189,6 +231,12 @@ export function StockMatrix({ components, onOpen }: Props) {
                         Универсальная группа · {modelsWord(r.members.length)}
                       </span>
                     )}
+                  </td>
+                  <td>
+                    <Sellable
+                      entries={membersOf(r).map((m) => byModel.get(m)).filter(isRow)}
+                      threshold={availability?.threshold ?? 0}
+                    />
                   </td>
                   {columns.map((c) => (
                     <td key={c.key} className="num">

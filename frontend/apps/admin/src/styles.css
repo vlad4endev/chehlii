@@ -1242,3 +1242,10 @@ select.input { appearance: none; cursor: pointer; }
 .pendingbox__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 10px; background: #fff; border: 1px solid var(--line); }
 .pendingbox__info { display: flex; flex-direction: column; min-width: 0; }
 .stockflag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #8a4b08; background: #fdf0dc; border: 1px solid #e8c9a0; }
+
+/* Склад: «можно собрать» */
+.sellable { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+.sellable__item { color: var(--ink-soft); }
+.sellable__item b { color: var(--ink); }
+.sellable__item--low b { color: #b86200; }
+.sellable__item--out b { color: var(--danger); }

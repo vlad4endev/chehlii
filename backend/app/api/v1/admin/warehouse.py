@@ -22,6 +22,7 @@ from app.core.database import get_session
 from app.enums import PlateType, StockGroupScope, StockKind, StockMovementReason
 from app.models.warehouse import StockComponent, StockMovement
 from app.services import iphone_models as im
+from app.services import stock_availability as sa
 from app.services import stock_groups as sg
 from app.services import stock_pending as sp
 from app.services import warehouse as wh
@@ -56,6 +57,23 @@ class PendingOrderOut(BaseModel):
 class DeductAllOut(BaseModel):
     deducted: int
     remaining: int
+
+
+class AvailabilityRow(BaseModel):
+    model_name: str
+    group_name: str | None
+    black: int
+    silver: int
+    used_plates: list[str]
+    low: bool
+    out: bool
+
+
+class AvailabilityOut(BaseModel):
+    threshold: int
+    models: list[AvailabilityRow]
+    low: int
+    out: int
 
 
 class GroupIn(BaseModel):
@@ -485,3 +503,9 @@ async def post_deduct_one(order_id: int, _: WarehouseStaff, session: Session) ->
     await sp.deduct_one(session, order_id)
     await session.commit()
     return {"deducted": 1, "remaining": await sp.pending_count(session)}
+
+
+@router.get("/availability", response_model=AvailabilityOut)
+async def get_availability(_: WarehouseStaff, session: Session) -> dict:
+    """Сколько чехлов можно собрать по моделям и что заканчивается (порог — в Настройках)."""
+    return await sa.availability(session)

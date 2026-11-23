@@ -439,7 +439,9 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
         "title": "Склад / закупка",
         "hint": (
             "Параметры расчёта закупки на странице «Склад»: "
-            "recommend = ceil((sold+defect)/N × (lead+safety)) − stock."
+            "recommend = ceil((sold+defect)/N × (lead+safety)) − stock. "
+            "Порог «мало» — когда подсвечивать модель, которой осталось не больше этого числа "
+            "чехлов (и показывать её на обзоре)."
         ),
         "fields": [
             {
@@ -459,6 +461,12 @@ INTEGRATION_SCHEMA: list[dict[str, Any]] = [
                 "label": "Страховой запас, дней",
                 "secret": False,
                 "placeholder": "7",
+            },
+            {
+                "key": "warehouse.low_stock",
+                "label": "Порог «мало», шт.",
+                "secret": False,
+                "placeholder": "3",
             },
         ],
     },

@@ -212,3 +212,25 @@ export const deductAvailablePending = () =>
     'POST',
     '/admin/warehouse/pending-deductions/deduct-available',
   )
+
+/** Сколько чехлов можно собрать по модели: минимум из балванки и пластины (с учётом групп). */
+export interface AvailabilityRow {
+  model_name: string
+  group_name: string | null
+  black: number
+  silver: number
+  /** Цвета пластин, которые продаются активными типами чехлов с этой моделью. */
+  used_plates: PlateType[]
+  low: boolean
+  out: boolean
+}
+
+export interface Availability {
+  /** Порог «мало» из Настроек, шт. */
+  threshold: number
+  models: AvailabilityRow[]
+  low: number
+  out: number
+}
+
+export const fetchAvailability = () => apiGet<Availability>('/admin/warehouse/availability')

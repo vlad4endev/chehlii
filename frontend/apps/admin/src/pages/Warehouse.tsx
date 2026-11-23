@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import {
   type DefectReason,
   type PlateType,
+  type Availability,
   type PendingOrder,
   type PurchaseSuggestion,
   type StockComponent,
@@ -14,6 +15,7 @@ import {
   createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
+  fetchAvailability,
   fetchPendingDeductions,
   fetchWarehouseModels,
   fetchPurchaseSuggestion,
@@ -39,6 +41,7 @@ export function Warehouse() {
   const [models, setModels] = useState<string[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
   const [pending, setPending] = useState<PendingOrder[]>([])
+  const [availability, setAvailability] = useState<Availability | null>(null)
   const [purchase, setPurchase] = useState<PurchaseSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,11 +76,13 @@ export function Warehouse() {
       setError(null)
     }
     try {
-      const [comps, mdl, waiting] = await Promise.all([
+      const [comps, mdl, waiting, avail] = await Promise.all([
         fetchComponents(),
         fetchWarehouseModels(),
         fetchPendingDeductions(),
+        fetchAvailability(),
       ])
+      setAvailability(avail)
       setPending(waiting)
       setComponents(comps)
       setModels(mdl)
@@ -204,7 +209,7 @@ export function Warehouse() {
 
           <section className="trash-block">
             <div className="field__label">Остатки по моделям</div>
-            <StockMatrix components={components} onOpen={setEditRow} />
+            <StockMatrix components={components} availability={availability} onOpen={setEditRow} />
           </section>
 
           <div className="grid2" style={{ display: 'grid', gap: 24, gridTemplateColumns: '1fr 1fr' }}>

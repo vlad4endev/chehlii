@@ -27,6 +27,7 @@ from app.models.consult import ConsultThread
 from app.models.engagement import Review
 from app.models.messaging import Broadcast
 from app.models.order import Order
+from app.services import stock_availability, stock_pending
 
 router = APIRouter()
 
@@ -190,6 +191,12 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
     def _count(statuses: set[OrderStatus]) -> int:
         return sum(1 for o in orders if o.status in statuses)
 
+    # Склад — только Админу (дизайнер склад не видит): запросы не делаем впустую.
+    stock_summary = (
+        await stock_availability.availability(session) if admin else {"low": 0, "out": 0}
+    )
+    stock_waiting = await stock_pending.pending_count(session) if admin else 0
+
     attention_raw = [
         (
             "pay",
@@ -211,6 +218,18 @@ async def dashboard_stats(user: CurrentAdmin, session: Session) -> StatsOut:
         ),
         ("review", "Отзывы на модерации", reviews_pending, "/reviews"),
         ("consult", "Ждут ответа в чате", consult_waiting, "/consult"),
+        (
+            "stock_pending",
+            "Оплачено, но не списано со склада",
+            stock_waiting,
+            "/warehouse",
+        ),
+        (
+            "stock_low",
+            "Закончилось или заканчивается на складе",
+            stock_summary["low"] + stock_summary["out"],
+            "/warehouse?low=1",
+        ),
     ]
     attention = [
         AttentionItem(key=k, label=lbl, count=c, href=href)
