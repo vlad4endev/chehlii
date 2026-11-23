@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -114,6 +114,7 @@ class MovementOut(BaseModel):
     comment: str | None
     order_id: int | None
     admin_user_id: int | None
+    admin_name: str | None = None
     created_at: datetime
 
 
@@ -255,41 +256,107 @@ async def post_defect(body: DefectIn, admin: WarehouseStaff, session: Session) -
     return await _movement_out(session, mov.id)
 
 
+def _movement_filter(
+    model: str | None,
+    kind: StockKind | None,
+    reason: StockMovementReason | None,
+    order_id: int | None,
+    date_from: date | None,
+    date_to: date | None,
+) -> wh.MovementFilter:
+    return wh.MovementFilter(
+        model=(model or "").strip() or None,
+        kind=kind,
+        reason=reason,
+        order_id=order_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 @router.get("/movements", response_model=MovementsPage)
 async def get_movements(
     _: WarehouseStaff,
     session: Session,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    model: Annotated[str | None, Query(max_length=64)] = None,
+    kind: StockKind | None = None,
+    reason: StockMovementReason | None = None,
+    order_id: Annotated[int | None, Query(ge=1)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> MovementsPage:
-    rows, total = await wh.list_movements(session, limit=limit, offset=offset)
-    # Подтянуть компоненты для kind/model/plate
-    ids = {m.component_id for m in rows}
-    comps = {}
-    if ids:
-        comps = {
-            c.id: c
-            for c in (
-                await session.scalars(select(StockComponent).where(StockComponent.id.in_(ids)))
-            ).all()
-        }
-    items = [
-        MovementOut(
-            id=m.id,
-            component_id=m.component_id,
-            kind=comps[m.component_id].kind if m.component_id in comps else "",
-            model_name=comps[m.component_id].model_name if m.component_id in comps else "",
-            plate_type=comps[m.component_id].plate_type if m.component_id in comps else None,
-            delta=m.delta,
-            reason=m.reason,
-            comment=m.comment,
-            order_id=m.order_id,
-            admin_user_id=m.admin_user_id,
-            created_at=m.created_at,
+    """Журнал движений: новые первыми, с фильтрами и автором операции."""
+    flt = _movement_filter(model, kind, reason, order_id, date_from, date_to)
+    rows, total = await wh.list_movements(session, limit=limit, offset=offset, flt=flt)
+    return MovementsPage(
+        items=[MovementOut(**r) for r in rows], total=total, limit=limit, offset=offset
+    )
+
+
+MAX_EXPORT_ROWS = 20_000
+
+
+@router.get("/movements/export.xlsx")
+async def export_movements(
+    _: WarehouseStaff,
+    session: Session,
+    model: Annotated[str | None, Query(max_length=64)] = None,
+    kind: StockKind | None = None,
+    reason: StockMovementReason | None = None,
+    order_id: Annotated[int | None, Query(ge=1)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> StreamingResponse:
+    """Журнал в Excel — с теми же фильтрами, что на экране (не больше 20 000 строк)."""
+    from openpyxl import Workbook
+
+    flt = _movement_filter(model, kind, reason, order_id, date_from, date_to)
+    rows, total = await wh.list_movements(session, limit=MAX_EXPORT_ROWS, offset=0, flt=flt)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Движения"
+    ws.append(
+        ["Когда (UTC)", "Вид", "Модель", "Пластина", "Δ", "Причина", "Кто", "Заказ", "Комментарий"]
+    )
+    kind_label = {StockKind.BASE: "Балванка", StockKind.PLATE: "Пластина"}
+    plate_label = {PlateType.SILVER: "серебро", PlateType.BLACK: "чёрная"}
+    reason_label = {
+        StockMovementReason.SUPPLY: "Поставка",
+        StockMovementReason.DEFECT_SUPPLIER: "Брак поставщика",
+        StockMovementReason.DEFECT_PRINT: "Брак печати",
+        StockMovementReason.DEFECT_GLUE: "Брак склейки",
+        StockMovementReason.ORDER: "Заказ",
+        StockMovementReason.ADJUST: "Корректировка",
+    }
+    for r in rows:
+        ws.append(
+            [
+                r["created_at"].astimezone(UTC).strftime("%Y-%m-%d %H:%M"),
+                kind_label.get(r["kind"], r["kind"]),
+                r["model_name"],
+                plate_label.get(r["plate_type"], "—"),
+                r["delta"],
+                reason_label.get(r["reason"], r["reason"]),
+                r["admin_name"] or "—",
+                r["order_id"] or "",
+                r["comment"] or "",
+            ]
         )
-        for m in rows
-    ]
-    return MovementsPage(items=items, total=total, limit=limit, offset=offset)
+    if total > len(rows):
+        ws.append([])
+        ws.append(
+            [f"Показаны первые {len(rows)} из {total}: сузьте фильтры, чтобы выгрузить остальное."]
+        )
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="stock-movements.xlsx"'},
+    )
 
 
 @router.get("/purchase-suggestion", response_model=PurchaseOut)

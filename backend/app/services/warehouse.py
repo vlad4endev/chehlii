@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, update
@@ -16,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import PlateType, StockKind, StockMovementReason
+from app.models.admin_user import AdminUser
 from app.models.catalog import CaseType, CaseTypeModel, IphoneModel
 from app.models.order import Order
 from app.models.warehouse import StockComponent, StockGroup, StockMovement
@@ -467,22 +469,95 @@ async def list_components(session: AsyncSession) -> list[dict]:
     ]
 
 
+@dataclass(frozen=True)
+class MovementFilter:
+    """Условия отбора журнала движений; пустое условие не ограничивает выдачу."""
+
+    model: str | None = None  # часть названия модели или группы
+    kind: str | None = None
+    reason: str | None = None
+    order_id: int | None = None
+    date_from: date | None = None  # включительно, по UTC
+    date_to: date | None = None  # включительно, по UTC
+
+
+def _movement_query(flt: MovementFilter):
+    stmt = (
+        select(
+            StockMovement,
+            StockComponent,
+            AdminUser.full_name,
+            AdminUser.email,
+        )
+        .join(StockComponent, StockComponent.id == StockMovement.component_id)
+        .outerjoin(AdminUser, AdminUser.id == StockMovement.admin_user_id)
+    )
+    if flt.model:
+        needle = flt.model.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        # Модель из «универсальной» группы лежит в журнале под именем группы — ищем и по ней.
+        in_group = (
+            select(StockGroup.name)
+            .join(IphoneModel, IphoneModel.stock_group_id == StockGroup.id)
+            .where(IphoneModel.name.ilike(pattern, escape="\\"))
+        )
+        stmt = stmt.where(
+            or_(
+                StockComponent.model_name.ilike(pattern, escape="\\"),
+                StockComponent.model_name.in_(in_group),
+            )
+        )
+    if flt.kind:
+        stmt = stmt.where(StockComponent.kind == flt.kind)
+    if flt.reason:
+        stmt = stmt.where(StockMovement.reason == flt.reason)
+    if flt.order_id is not None:
+        stmt = stmt.where(StockMovement.order_id == flt.order_id)
+    if flt.date_from:
+        start = datetime.combine(flt.date_from, time.min, tzinfo=UTC)
+        stmt = stmt.where(StockMovement.created_at >= start)
+    if flt.date_to:
+        end = datetime.combine(flt.date_to, time.min, tzinfo=UTC) + timedelta(days=1)
+        stmt = stmt.where(StockMovement.created_at < end)
+    return stmt
+
+
+def _movement_row(movement, component, full_name, email) -> dict:
+    return {
+        "id": movement.id,
+        "component_id": movement.component_id,
+        "kind": component.kind,
+        "model_name": component.model_name,
+        "plate_type": component.plate_type,
+        "delta": movement.delta,
+        "reason": movement.reason,
+        "comment": movement.comment,
+        "order_id": movement.order_id,
+        "admin_user_id": movement.admin_user_id,
+        # Кто сделал: имя, а если не заполнено — почта; пусто у системных операций (заказ).
+        "admin_name": (full_name or email) if movement.admin_user_id else None,
+        "created_at": movement.created_at,
+    }
+
+
 async def list_movements(
     session: AsyncSession,
     *,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[StockMovement], int]:
-    total = await session.scalar(select(func.count(StockMovement.id))) or 0
+    flt: MovementFilter | None = None,
+) -> tuple[list[dict], int]:
+    """Журнал движений с позицией и автором; новые первыми. total — под тем же отбором."""
+    stmt = _movement_query(flt or MovementFilter())
+    total = await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     rows = (
-        await session.scalars(
-            select(StockMovement)
-            .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+        await session.execute(
+            stmt.order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
             .limit(limit)
             .offset(offset)
         )
     ).all()
-    return list(rows), total
+    return [_movement_row(*r) for r in rows], int(total or 0)
 
 
 async def _setting_int(session: AsyncSession, key: str, default: int) -> int:

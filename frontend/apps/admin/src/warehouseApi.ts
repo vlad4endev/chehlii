@@ -35,6 +35,8 @@ export interface StockMovement {
   comment: string | null
   order_id: number | null
   admin_user_id: number | null
+  /** Кто сделал: имя или почта; пусто у автоматических списаний по заказу. */
+  admin_name: string | null
   created_at: string
 }
 
@@ -119,8 +121,38 @@ export const postDefect = (body: {
   comment?: string
 }) => apiSend<StockMovement>('POST', '/admin/warehouse/defect', body)
 
-export const fetchMovements = (limit = 50, offset = 0) =>
-  apiGet<MovementsPage>(`/admin/warehouse/movements?limit=${limit}&offset=${offset}`)
+export interface MovementFilters {
+  model?: string
+  kind?: StockKind | ''
+  reason?: string
+  date_from?: string
+  date_to?: string
+}
+
+function movementQuery(f: MovementFilters, limit?: number, offset?: number): string {
+  const q = new URLSearchParams()
+  if (limit !== undefined) q.set('limit', String(limit))
+  if (offset !== undefined) q.set('offset', String(offset))
+  for (const [key, value] of Object.entries(f)) if (value) q.set(key, value)
+  return q.toString()
+}
+
+export const fetchMovements = (limit = 50, offset = 0, filters: MovementFilters = {}) =>
+  apiGet<MovementsPage>(`/admin/warehouse/movements?${movementQuery(filters, limit, offset)}`)
+
+/** Скачать журнал в Excel с теми же фильтрами, что на экране. */
+export async function downloadMovementsXlsx(filters: MovementFilters = {}): Promise<void> {
+  const res = await fetch(apiUrl(`/admin/warehouse/movements/export.xlsx?${movementQuery(filters)}`), {
+    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+  })
+  if (!res.ok) throw new Error(`Не удалось скачать журнал (ошибка ${res.status})`)
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'stock-movements.xlsx'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export const fetchPurchaseSuggestion = () =>
   apiGet<PurchaseSuggestion>('/admin/warehouse/purchase-suggestion')

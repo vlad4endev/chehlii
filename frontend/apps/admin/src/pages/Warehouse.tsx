@@ -9,33 +9,22 @@ import {
   type PurchaseSuggestion,
   type StockComponent,
   type StockKind,
-  type StockMovement,
   KIND_LABEL,
   PLATE_LABEL,
-  REASON_LABEL,
   createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
   fetchPendingDeductions,
   fetchWarehouseModels,
-  fetchMovements,
   fetchPurchaseSuggestion,
   postDefect,
   postSupply,
 } from '../warehouseApi'
+import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
 import { StockActionModal } from './StockActionModal'
 import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
-
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 
 const DEFECT_OPTIONS: { value: DefectReason; label: string }[] = [
   { value: 'defect_supplier', label: 'Брак поставщика' },
@@ -48,8 +37,7 @@ export function Warehouse() {
   const isAdmin = user?.role === 'admin'
   const [components, setComponents] = useState<StockComponent[]>([])
   const [models, setModels] = useState<string[]>([])
-  const [movements, setMovements] = useState<StockMovement[]>([])
-  const [movTotal, setMovTotal] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [pending, setPending] = useState<PendingOrder[]>([])
   const [purchase, setPurchase] = useState<PurchaseSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,17 +73,15 @@ export function Warehouse() {
       setError(null)
     }
     try {
-      const [comps, mdl, mov, waiting] = await Promise.all([
+      const [comps, mdl, waiting] = await Promise.all([
         fetchComponents(),
         fetchWarehouseModels(),
-        fetchMovements(50, 0),
         fetchPendingDeductions(),
       ])
       setPending(waiting)
       setComponents(comps)
       setModels(mdl)
-      setMovements(mov.items)
-      setMovTotal(mov.total)
+      setRefreshKey((k) => k + 1) // журнал подтянет новые записи, сохранив свои фильтры
       if (!supplyModel && mdl[0]) setSupplyModel(mdl[0])
       if (!defectModel && mdl[0]) setDefectModel(mdl[0])
       loadedOnce.current = true
@@ -417,49 +403,7 @@ export function Warehouse() {
             </section>
           )}
 
-          <section className="trash-block">
-            <div className="field__label">Движения · {movTotal}</div>
-            <div className="tablewrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Когда</th>
-                    <th>Вид</th>
-                    <th>Модель</th>
-                    <th>Δ</th>
-                    <th>Причина</th>
-                    <th>Комментарий</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movements.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="muted">
-                        Пока нет движений
-                      </td>
-                    </tr>
-                  )}
-                  {movements.map((m) => (
-                    <tr key={m.id}>
-                      <td className="muted mono">{fmtDate(m.created_at)}</td>
-                      <td>
-                        {KIND_LABEL[m.kind] ?? m.kind}
-                        {m.plate_type
-                          ? ` · ${PLATE_LABEL[m.plate_type] ?? m.plate_type}`
-                          : ''}
-                      </td>
-                      <td>{m.model_name}</td>
-                      <td className={`num mono${m.delta < 0 ? ' stock--empty' : ''}`}>
-                        {m.delta > 0 ? `+${m.delta}` : m.delta}
-                      </td>
-                      <td>{REASON_LABEL[m.reason] ?? m.reason}</td>
-                      <td className="muted">{m.comment || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <MovementsLog refreshKey={refreshKey} />
         </>
       )}
 
