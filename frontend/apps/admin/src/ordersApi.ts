@@ -7,6 +7,8 @@ export interface StatusOption {
 
 export interface OrderRow {
   id: number
+  /** Оплачен, а склад не списан (не хватало остатка). */
+  stock_pending?: boolean
   created_at: string
   channel: 'tg' | 'max'
   client_name: string | null

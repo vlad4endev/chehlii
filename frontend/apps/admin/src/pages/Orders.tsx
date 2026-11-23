@@ -66,7 +66,11 @@ export function Orders() {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<SortKey>('date_desc')
   const [view, setView] = useState<ViewMode>('table')
-  const [openId, setOpenId] = useState<number | null>(null)
+  // ?open=<id> — ссылка из других разделов (например, со склада) сразу открывает заказ.
+  const [openId, setOpenId] = useState<number | null>(() => {
+    const raw = new URLSearchParams(window.location.search).get('open')
+    return raw && /^\d+$/.test(raw) ? Number(raw) : null
+  })
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -247,6 +251,11 @@ export function Orders() {
                 </td>
                 <td>
                   <StatusPill status={o.status} label={o.status_label} />
+                  {o.stock_pending && (
+                    <span className="stockflag" title="Заказ оплачен, но на складе не хватило остатка — спишите на странице «Склад»">
+                      не списано
+                    </span>
+                  )}
                 </td>
                 {isAdmin && <td className="num mono">{o.final_price != null ? money(o.final_price) : '—'}</td>}
               </tr>

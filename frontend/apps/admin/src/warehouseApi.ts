@@ -152,3 +152,31 @@ export const saveGroup = (body: { name: string; scope: GroupScope; models: strin
 
 export const deleteGroup = (name: string) =>
   apiSend<void>('DELETE', `/admin/warehouse/groups/${encodeURIComponent(name)}`)
+
+/** Оплаченный заказ, по которому склад ещё не списан (не хватало остатка в момент оплаты). */
+export interface PendingOrder {
+  order_id: number
+  status: string
+  model_name: string
+  case_name: string
+  plate_type: PlateType
+  is_custom: boolean
+  created_at: string
+  /** Хватает ли остатка прямо сейчас (с учётом более ранних заказов в очереди). */
+  can_deduct: boolean
+}
+
+export const fetchPendingDeductions = () =>
+  apiGet<PendingOrder[]>('/admin/warehouse/pending-deductions')
+
+export const deductPendingOrder = (orderId: number) =>
+  apiSend<{ deducted: number; remaining: number }>(
+    'POST',
+    `/admin/warehouse/pending-deductions/${orderId}/deduct`,
+  )
+
+export const deductAvailablePending = () =>
+  apiSend<{ deducted: number; remaining: number }>(
+    'POST',
+    '/admin/warehouse/pending-deductions/deduct-available',
+  )

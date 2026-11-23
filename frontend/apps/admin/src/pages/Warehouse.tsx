@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../api'
 import { useAuth } from '../auth'
 import {
   type DefectReason,
   type PlateType,
+  type PendingOrder,
   type PurchaseSuggestion,
   type StockComponent,
   type StockKind,
@@ -15,12 +16,14 @@ import {
   createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
+  fetchPendingDeductions,
   fetchWarehouseModels,
   fetchMovements,
   fetchPurchaseSuggestion,
   postDefect,
   postSupply,
 } from '../warehouseApi'
+import { PendingDeductions } from './PendingDeductions'
 import { StockActionModal } from './StockActionModal'
 import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
@@ -47,6 +50,7 @@ export function Warehouse() {
   const [models, setModels] = useState<string[]>([])
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [movTotal, setMovTotal] = useState(0)
+  const [pending, setPending] = useState<PendingOrder[]>([])
   const [purchase, setPurchase] = useState<PurchaseSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -69,25 +73,39 @@ export function Warehouse() {
   const [groupsOpen, setGroupsOpen] = useState(false)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
 
+  // Спиннер только при первой загрузке. Дальше данные обновляются на месте: иначе таблица
+  // размонтировалась бы после каждой операции, сбрасывая фильтры и сообщения об ошибках.
+  const loadedOnce = useRef(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+
   async function reload() {
-    setLoading(true)
-    setError(null)
+    const firstLoad = !loadedOnce.current
+    if (firstLoad) {
+      setLoading(true)
+      setError(null)
+    }
     try {
-      const [comps, mdl, mov] = await Promise.all([
+      const [comps, mdl, mov, waiting] = await Promise.all([
         fetchComponents(),
         fetchWarehouseModels(),
         fetchMovements(50, 0),
+        fetchPendingDeductions(),
       ])
+      setPending(waiting)
       setComponents(comps)
       setModels(mdl)
       setMovements(mov.items)
       setMovTotal(mov.total)
       if (!supplyModel && mdl[0]) setSupplyModel(mdl[0])
       if (!defectModel && mdl[0]) setDefectModel(mdl[0])
+      loadedOnce.current = true
+      setRefreshError(null)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить склад')
+      const message = e instanceof ApiError ? e.message : 'Не удалось загрузить склад'
+      if (firstLoad) setError(message)
+      else setRefreshError(`${message}. Показаны последние загруженные данные.`)
     } finally {
-      setLoading(false)
+      if (firstLoad) setLoading(false)
     }
   }
 
@@ -188,9 +206,16 @@ export function Warehouse() {
 
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
+      {refreshError && (
+        <div className="form-msg form-msg--err" role="alert">
+          {refreshError}
+        </div>
+      )}
 
       {!loading && !error && (
         <>
+          <PendingDeductions items={pending} onChanged={reload} />
+
           <section className="trash-block">
             <div className="field__label">Остатки по моделям</div>
             <StockMatrix components={components} onOpen={setEditRow} />

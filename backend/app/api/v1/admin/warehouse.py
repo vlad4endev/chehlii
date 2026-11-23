@@ -23,6 +23,7 @@ from app.enums import PlateType, StockGroupScope, StockKind, StockMovementReason
 from app.models.warehouse import StockComponent, StockMovement
 from app.services import iphone_models as im
 from app.services import stock_groups as sg
+from app.services import stock_pending as sp
 from app.services import warehouse as wh
 
 router = APIRouter()
@@ -39,6 +40,22 @@ class ComponentOut(BaseModel):
     available: int
     # Модели, которые делят этот остаток («универсальная» группа); у обычной модели пусто.
     members: list[str] = []
+
+
+class PendingOrderOut(BaseModel):
+    order_id: int
+    status: str
+    model_name: str
+    case_name: str
+    plate_type: str
+    is_custom: bool
+    created_at: datetime
+    can_deduct: bool
+
+
+class DeductAllOut(BaseModel):
+    deducted: int
+    remaining: int
 
 
 class GroupIn(BaseModel):
@@ -380,3 +397,24 @@ async def remove_group(name: str, admin: AdminOnly, session: Session) -> None:
     """Распустить группу: остаток целиком достаётся первой модели группы."""
     await sg.delete_group(session, name, admin_user_id=admin.id)
     await session.commit()
+
+
+@router.get("/pending-deductions", response_model=list[PendingOrderOut])
+async def get_pending_deductions(_: WarehouseStaff, session: Session) -> list[dict]:
+    """Оплаченные заказы, по которым склад не списан (не хватало остатка в момент оплаты)."""
+    return await sp.list_pending(session)
+
+
+@router.post("/pending-deductions/deduct-available", response_model=DeductAllOut)
+async def post_deduct_available(_: WarehouseStaff, session: Session) -> dict[str, int]:
+    """Списать все ожидающие заказы, на которые теперь хватает остатка."""
+    out = await sp.deduct_available(session)
+    await session.commit()
+    return out
+
+
+@router.post("/pending-deductions/{order_id}/deduct", response_model=DeductAllOut)
+async def post_deduct_one(order_id: int, _: WarehouseStaff, session: Session) -> dict[str, int]:
+    await sp.deduct_one(session, order_id)
+    await session.commit()
+    return {"deducted": 1, "remaining": await sp.pending_count(session)}

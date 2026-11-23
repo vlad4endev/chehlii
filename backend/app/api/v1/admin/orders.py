@@ -38,6 +38,7 @@ from app.services import (
     yandex_disk,
 )
 from app.services import order_state_machine as fsm
+from app.services.stock_pending import is_awaiting_deduction
 from app.services.order_status_notify import (
     MOCKUP_STATUSES,
     NotifyResult,
@@ -94,6 +95,8 @@ class OrderRow(BaseModel):
     status_label: str
     payment_status: PaymentStatus | None
     final_price: float | None  # None для Дизайнера
+    # Оплачен, а склад не списан (не хватало остатка) — подсказка на складе и в списке.
+    stock_pending: bool = False
 
 
 class StatusOption(BaseModel):
@@ -180,6 +183,7 @@ def _row(order: Order, client: Client, case: CaseType | None, *, admin: bool) ->
         status_label=STATUS_LABELS.get(order.status, order.status),
         payment_status=order.payment_status,
         final_price=order_value(order) if admin else None,
+        stock_pending=is_awaiting_deduction(order),
     )
 
 
