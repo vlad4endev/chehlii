@@ -48,4 +48,5 @@ class PromoStateGuard(BaseMiddleware):
             and not is_plain_text(event)
         ):
             await state.set_state(None)  # данные FSM (заказы, паузы) не трогаем
+            data["raw_state"] = None  # фильтры хендлеров берут state из кэша data
         return await handler(event, data)

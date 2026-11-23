@@ -42,8 +42,7 @@ from bots.tg.keyboards import (
     mockup_kb,
     pay_kb,
 )
-from bots.tg.pending_fsm import PendingFsmMiddleware
-from bots.tg.promo_guard import PromoStateGuard
+from bots.tg.middlewares import install as install_middlewares
 from bots.tg.states import OrderFlow
 
 
@@ -396,8 +395,7 @@ async def main() -> None:
     await texts.load()
     storage = RedisStorage.from_url(settings.redis_url)
     dp = Dispatcher(storage=storage)
-    dp.message.outer_middleware(PendingFsmMiddleware())
-    dp.message.outer_middleware(PromoStateGuard())
+    install_middlewares(dp)
     dp.include_router(router)
 
     try:

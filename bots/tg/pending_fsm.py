@@ -39,7 +39,8 @@ async def apply_pending_fsm(state: FSMContext, pending: dict[str, Any]) -> None:
     mapped = _STATE_MAP.get(name)
     if mapped is None:
         return
-    data: dict[str, Any] = {}
+    # Админ сам перевёл клиента на шаг сценария — режим «говорю с человеком» закончен.
+    data: dict[str, Any] = {"human_chat": False}
     oid = pending.get("order_id")
     if oid is not None:
         data["order_id"] = oid
@@ -66,4 +67,7 @@ class PendingFsmMiddleware(BaseMiddleware):
                 )
                 if pending:
                     await apply_pending_fsm(state, pending)
+                    # aiogram кэширует state в data до этого middleware — без обновления
+                    # фильтры хендлеров увидят старый шаг (и он сработает на «закрытых» данных).
+                    data["raw_state"] = await state.get_state()
         return await handler(event, data)

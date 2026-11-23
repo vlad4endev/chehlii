@@ -30,7 +30,8 @@ from bots.core.scenario import (
 )
 from bots.core.texts import texts
 from bots.max.chat_map import bind_redis, chat_for_async, known_chat_async
-from bots.max.handlers import router
+from bots.max.handlers import relay_human_chat, router
+from bots.max.human_chat import HumanChatGuard, HumanChatReset
 from bots.max.keyboards import (
     contact_kb,
     delivery_mode_kb,
@@ -261,6 +262,8 @@ async def main() -> None:
     dp.include_routers(router)
     dp.register_outer_middleware(PendingFsmMiddleware())
     dp.register_outer_middleware(PromoStateGuard())
+    dp.register_outer_middleware(HumanChatGuard(relay_human_chat))
+    dp.register_outer_middleware(HumanChatReset())
 
     bot = Bot(settings.max_bot_token)
     outbox = asyncio.create_task(_outbox_loop(bot, dp))

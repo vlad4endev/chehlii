@@ -17,8 +17,9 @@ from bots.max.keyboards import CB_DISCOUNT
 from bots.max.states import OrderFlow
 
 
-def _state_name(state: Any) -> Any:
-    return getattr(state, "state", state)
+def _state_name(state: Any) -> str:
+    """maxapi State и строка из Redis приводятся к одному виду: «OrderFlow:шаг»."""
+    return str(state)
 
 
 def leaves_promo_mode(event_object: Any) -> bool:

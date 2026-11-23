@@ -363,6 +363,7 @@ async def _show_order_confirm(bot, chat_id: int, order_id: int, client_id: int, 
         is_custom=order["is_custom"],
         pending_order_id=None,
         paused_orders=paused,
+        human_chat=False,
         materials_text="",
         materials_files=[],
     )
@@ -802,6 +803,9 @@ async def _call_human(
     current = await context.get_state()
     if current is None:
         await context.set_state(OrderFlow.consulting)
+    elif str(current) != str(OrderFlow.consulting):
+        # Шаг сценария сохраняем, но реплики клиента теперь идут менеджеру, а не в этот шаг.
+        await context.update_data(human_chat=True)
     try:
         await consult.ingest(client["id"], "[Клиент нажал «Позвать человека»]", [])
     except Exception as e:  # noqa: BLE001
@@ -1367,6 +1371,31 @@ async def _relay_offscript(event: MessageCreated, context: BaseContext) -> None:
     else:
         await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
     await _offer_order_pick(event.bot, event.message.recipient.chat_id, context)
+
+
+async def relay_human_chat(event: MessageCreated, context: BaseContext) -> None:
+    """Реплика клиента во время разговора с человеком посреди заказа → менеджеру.
+
+    Шаг сценария не трогаем (клиент сможет к нему вернуться); подтверждение «передано»
+    на каждую реплику не шлём — это уже живой диалог, ответит менеджер."""
+    s = event.message.sender
+    await remember_async(s.user_id, event.message.recipient.chat_id)
+    client = await backend.upsert_client(
+        CHANNEL, str(s.user_id), nickname=(s.username or s.full_name)
+    )
+    if await _relay_review(event, client, context):
+        return
+    order_id = (await context.get_data()).get("order_id")
+    raw = (event.message.body.text or "").strip()
+    tagged = f"[Заказ #{order_id}] {raw}".strip() if order_id else raw
+    try:
+        ok = await consult.ingest(client["id"], tagged or None, await _consult_files_max(event))
+    except Exception as e:  # noqa: BLE001
+        logging.warning("human chat relay failed: %s", e, exc_info=True)
+        await event.message.answer("Не получилось передать сообщение, попробуйте ещё раз.")
+        return
+    if not ok:
+        await event.message.answer("Напишите текст или пришлите фото — передадим администратору.")
 
 
 @router.message_callback(F.callback.payload.startswith("order:pick:"))

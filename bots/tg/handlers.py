@@ -279,6 +279,7 @@ async def _begin_order(
         order_id=order["id"],
         is_custom=order["is_custom"],
         paused_orders=paused,
+        human_chat=False,
         materials_text="",
         materials_files=[],
         pending_case_id=None,
@@ -647,6 +648,9 @@ async def _call_human(msg: Message, state: FSMContext) -> None:
     # Если сценария нет — переводим в consulting; иначе только открываем тред.
     if current is None:
         await state.set_state(OrderFlow.consulting)
+    elif current != OrderFlow.consulting.state:
+        # Шаг сценария сохраняем, но реплики клиента теперь идут менеджеру, а не в этот шаг.
+        await state.update_data(human_chat=True)
     try:
         await consult.ingest(client["id"], "[Клиент нажал «Позвать человека»]", [])
     except Exception as e:  # noqa: BLE001
@@ -1253,6 +1257,27 @@ async def _relay_offscript(msg: Message, state: FSMContext) -> None:
         await msg.answer("Напишите текст или пришлите фото — передадим администратору.")
     # Несколько активных заказов — предложить переключиться на нужный сценарий.
     await _offer_order_pick(msg, state)
+
+
+async def relay_human_chat(msg: Message, state: FSMContext) -> None:
+    """Реплика клиента во время разговора с человеком посреди заказа → менеджеру.
+
+    Шаг сценария не трогаем (клиент сможет к нему вернуться); подтверждение «передано»
+    на каждую реплику не шлём — это уже живой диалог, ответит менеджер."""
+    client = await _client(msg)
+    if await _relay_review(msg, client, state):
+        return
+    order_id = (await state.get_data()).get("order_id")
+    raw = (msg.caption or msg.text or "").strip()
+    tagged = f"[Заказ #{order_id}] {raw}".strip() if order_id else raw
+    try:
+        ok = await consult.ingest(client["id"], tagged or None, await _consult_files(msg))
+    except Exception as e:  # noqa: BLE001
+        logging.warning("human chat relay failed: %s", e, exc_info=True)
+        await msg.answer("Не получилось передать сообщение, попробуйте ещё раз.")
+        return
+    if not ok:
+        await msg.answer("Напишите текст или пришлите фото — передадим администратору.")
 
 
 @router.message(OrderFlow.consulting)

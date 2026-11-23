@@ -40,7 +40,8 @@ async def apply_pending_fsm(context: BaseContext, pending: dict[str, Any]) -> No
     if mapped is None:
         return
     await context.set_state(mapped)
-    data: dict[str, Any] = {}
+    # Админ сам перевёл клиента на шаг сценария — режим «говорю с человеком» закончен.
+    data: dict[str, Any] = {"human_chat": False}
     oid = pending.get("order_id")
     if oid is not None:
         data["order_id"] = oid
