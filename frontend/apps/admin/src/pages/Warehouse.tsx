@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { ApiError } from '../api'
+import { useModalA11y } from '../useModalA11y'
 import { useAuth } from '../auth'
 import {
-  type DefectReason,
   type PlateType,
   type Availability,
   type PendingOrder,
@@ -19,20 +19,12 @@ import {
   fetchPendingDeductions,
   fetchWarehouseModels,
   fetchPurchaseSuggestion,
-  postDefect,
-  postSupply,
 } from '../warehouseApi'
 import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
 import { StockActionModal } from './StockActionModal'
 import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
-
-const DEFECT_OPTIONS: { value: DefectReason; label: string }[] = [
-  { value: 'defect_supplier', label: 'Брак поставщика' },
-  { value: 'defect_print', label: 'Брак печати' },
-  { value: 'defect_glue', label: 'Брак склейки' },
-]
 
 export function Warehouse() {
   const { user } = useAuth()
@@ -46,19 +38,6 @@ export function Warehouse() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-
-  const [supplyKind, setSupplyKind] = useState<StockKind>('base')
-  const [supplyModel, setSupplyModel] = useState('')
-  const [supplyPlate, setSupplyPlate] = useState<PlateType>('black')
-  const [supplyQty, setSupplyQty] = useState(1)
-  const [supplyComment, setSupplyComment] = useState('')
-
-  const [defectKind, setDefectKind] = useState<StockKind>('base')
-  const [defectModel, setDefectModel] = useState('')
-  const [defectPlate, setDefectPlate] = useState<PlateType>('black')
-  const [defectQty, setDefectQty] = useState(1)
-  const [defectReason, setDefectReason] = useState<DefectReason>('defect_supplier')
-  const [defectComment, setDefectComment] = useState('')
 
   const [addOpen, setAddOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
@@ -87,8 +66,6 @@ export function Warehouse() {
       setComponents(comps)
       setModels(mdl)
       setRefreshKey((k) => k + 1) // журнал подтянет новые записи, сохранив свои фильтры
-      if (!supplyModel && mdl[0]) setSupplyModel(mdl[0])
-      if (!defectModel && mdl[0]) setDefectModel(mdl[0])
       loadedOnce.current = true
       setRefreshError(null)
     } catch (e) {
@@ -103,51 +80,6 @@ export function Warehouse() {
   useEffect(() => {
     reload()
   }, [])
-
-  async function onSupply(e: FormEvent) {
-    e.preventDefault()
-    setBusy('supply')
-    try {
-      await postSupply({
-        kind: supplyKind,
-        model_name: supplyModel,
-        plate_type: supplyKind === 'plate' ? supplyPlate : null,
-        qty: Number(supplyQty) || 0,
-        comment: supplyComment || undefined,
-      })
-      setSupplyQty(1)
-      setSupplyComment('')
-      setPurchase(null)
-      await reload()
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Не удалось оформить поставку')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function onDefect(e: FormEvent) {
-    e.preventDefault()
-    setBusy('defect')
-    try {
-      await postDefect({
-        kind: defectKind,
-        model_name: defectModel,
-        plate_type: defectKind === 'plate' ? defectPlate : null,
-        qty: Number(defectQty) || 0,
-        reason: defectReason,
-        comment: defectComment || undefined,
-      })
-      setDefectQty(1)
-      setDefectComment('')
-      setPurchase(null)
-      await reload()
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Не удалось списать брак')
-    } finally {
-      setBusy(null)
-    }
-  }
 
   async function onPurchase() {
     setBusy('purchase')
@@ -211,158 +143,6 @@ export function Warehouse() {
             <div className="field__label">Остатки по моделям</div>
             <StockMatrix components={components} availability={availability} onOpen={setEditRow} />
           </section>
-
-          <div className="grid2" style={{ display: 'grid', gap: 24, gridTemplateColumns: '1fr 1fr' }}>
-            <section className="trash-block">
-              <div className="field__label">Поставка</div>
-              <form className="form" onSubmit={onSupply}>
-                <label className="field">
-                  <span className="field__label">Вид</span>
-                  <select
-                    className="input"
-                    value={supplyKind}
-                    onChange={(e) => setSupplyKind(e.target.value as StockKind)}
-                  >
-                    <option value="base">Балванка</option>
-                    <option value="plate">Пластина</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Модель</span>
-                  <select
-                    className="input"
-                    value={supplyModel}
-                    onChange={(e) => setSupplyModel(e.target.value)}
-                    required
-                  >
-                    {models.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {supplyKind === 'plate' && (
-                  <label className="field">
-                    <span className="field__label">Тип пластины</span>
-                    <select
-                      className="input"
-                      value={supplyPlate}
-                      onChange={(e) => setSupplyPlate(e.target.value as PlateType)}
-                    >
-                      <option value="black">Чёрная</option>
-                      <option value="silver">Серебро</option>
-                    </select>
-                  </label>
-                )}
-                <label className="field">
-                  <span className="field__label">Количество</span>
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={supplyQty}
-                    onChange={(e) => setSupplyQty(Number(e.target.value))}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Комментарий</span>
-                  <input
-                    className="input"
-                    value={supplyComment}
-                    onChange={(e) => setSupplyComment(e.target.value)}
-                    placeholder="необязательно"
-                  />
-                </label>
-                <button className="btn btn--primary" type="submit" disabled={busy === 'supply'}>
-                  {busy === 'supply' ? 'Сохранение…' : 'Оприходовать'}
-                </button>
-              </form>
-            </section>
-
-            <section className="trash-block">
-              <div className="field__label">Списание брака</div>
-              <form className="form" onSubmit={onDefect}>
-                <label className="field">
-                  <span className="field__label">Вид</span>
-                  <select
-                    className="input"
-                    value={defectKind}
-                    onChange={(e) => setDefectKind(e.target.value as StockKind)}
-                  >
-                    <option value="base">Балванка</option>
-                    <option value="plate">Пластина</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Модель</span>
-                  <select
-                    className="input"
-                    value={defectModel}
-                    onChange={(e) => setDefectModel(e.target.value)}
-                    required
-                  >
-                    {models.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {defectKind === 'plate' && (
-                  <label className="field">
-                    <span className="field__label">Тип пластины</span>
-                    <select
-                      className="input"
-                      value={defectPlate}
-                      onChange={(e) => setDefectPlate(e.target.value as PlateType)}
-                    >
-                      <option value="black">Чёрная</option>
-                      <option value="silver">Серебро</option>
-                    </select>
-                  </label>
-                )}
-                <label className="field">
-                  <span className="field__label">Причина</span>
-                  <select
-                    className="input"
-                    value={defectReason}
-                    onChange={(e) => setDefectReason(e.target.value as DefectReason)}
-                  >
-                    {DEFECT_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Количество</span>
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={defectQty}
-                    onChange={(e) => setDefectQty(Number(e.target.value))}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Комментарий</span>
-                  <input
-                    className="input"
-                    value={defectComment}
-                    onChange={(e) => setDefectComment(e.target.value)}
-                    placeholder="необязательно"
-                  />
-                </label>
-                <button className="btn btn--danger" type="submit" disabled={busy === 'defect'}>
-                  {busy === 'defect' ? 'Списание…' : 'Списать брак'}
-                </button>
-              </form>
-            </section>
-          </div>
 
           {purchase && (
             <section className="trash-block">
@@ -485,10 +265,22 @@ function AddPositionModal({
   // YOUR TURN: true — неизвестная модель сразу в канон iPhone (+ все 3 компонента на складе).
   // false — только выбранная позиция, без канона (редко нужно).
   const [registerCanon, setRegisterCanon] = useState(true)
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalA11y(cardRef, () => {
+    if (!busy) onClose()
+  })
 
   return (
     <div className="modal" onClick={onClose}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        className="modal__card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Новая позиция"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal__head">
           <h2 className="modal__title">Новая позиция</h2>
           <button className="modal__close" onClick={onClose}>

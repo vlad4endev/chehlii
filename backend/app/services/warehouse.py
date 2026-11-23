@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, update
@@ -22,7 +22,12 @@ from app.models.catalog import CaseType, CaseTypeModel, IphoneModel
 from app.models.order import Order
 from app.models.warehouse import StockComponent, StockGroup, StockMovement
 from app.services import integrations
-from app.services.stock_keys import members_by_group_name, models_for_key, stock_key
+from app.services.stock_keys import (
+    members_by_group_name,
+    models_for_key,
+    scope_applies,
+    stock_key,
+)
 
 # Предел одной операции: больше не нужно складу и безопасно для колонки INTEGER.
 MAX_QTY = 1_000_000
@@ -76,12 +81,43 @@ async def ensure_components_for_model(session: AsyncSession, model: str) -> None
 
 
 async def ensure_components(session: AsyncSession) -> None:
-    """Идемпотентно создать base + silver/black plate для всех моделей из канона (qty 0)."""
+    """Идемпотентно создать недостающие base + silver/black plate для всех моделей из канона.
+
+    Один проход вместо запросов на каждую модель: читаем модели с группами и все позиции
+    разом, недостающие добавляем одним INSERT … ON CONFLICT DO NOTHING (qty 0).
+    У модели из «универсальной» группы нужна позиция группы, а не модели."""
     # Локальный импорт: iphone_models → warehouse, избегаем цикла на уровне модуля.
     from app.services import iphone_models as im
 
-    for model in await im.list_model_names(session):
-        await ensure_components_for_model(session, model)
+    await im.ensure_seeded(session)
+    models = (
+        await session.execute(
+            select(IphoneModel.name, StockGroup.name, StockGroup.scope)
+            .outerjoin(StockGroup, StockGroup.id == IphoneModel.stock_group_id)
+        )
+    ).all()
+    wanted: set[tuple[str, str, str | None]] = set()
+    for name, group, scope in models:
+        base_key = group if group and scope_applies(scope, StockKind.BASE) else name
+        plate_key = group if group and scope_applies(scope, StockKind.PLATE) else name
+        wanted.add((StockKind.BASE, base_key, None))
+        wanted.add((StockKind.PLATE, plate_key, PlateType.SILVER))
+        wanted.add((StockKind.PLATE, plate_key, PlateType.BLACK))
+
+    existing = {
+        (c.kind, c.model_name, c.plate_type)
+        for c in (await session.scalars(select(StockComponent))).all()
+    }
+    missing = wanted - existing
+    if missing:
+        await session.execute(
+            pg_insert(StockComponent)
+            .values([
+                {"kind": k, "model_name": m, "plate_type": p, "qty": 0}
+                for k, m, p in sorted(missing, key=lambda t: (t[1], t[0], t[2] or ""))
+            ])
+            .on_conflict_do_nothing()
+        )
 
 
 async def get_component(
@@ -587,7 +623,7 @@ async def purchase_suggestion(session: AsyncSession) -> list[dict]:
     await ensure_components(session)
     cfg = await purchase_settings(session)
     n = max(1, cfg["lookback_days"])
-    since = datetime.now(timezone.utc) - timedelta(days=n)
+    since = datetime.now(UTC) - timedelta(days=n)
     horizon = cfg["lead_days"] + cfg["safety_days"]
 
     # Расход: отрицательные дельты по order + defect_* за период.

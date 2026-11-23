@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../api'
+import { useModalA11y } from '../useModalA11y'
 import {
   type DefectReason,
   type StockComponent,
@@ -44,6 +45,11 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const cardRef = useRef<HTMLFormElement>(null)
+  // Пока идёт запись, закрывать нельзя: иначе человек не узнает, сохранилось ли.
+  useModalA11y(cardRef, () => {
+    if (!busy) onClose()
+  })
 
   const title =
     `${KIND_LABEL[row.kind] ?? row.kind} · ${row.model_name}` +
@@ -98,6 +104,8 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
   return (
     <div className="modal" onClick={onClose}>
       <form
+        ref={cardRef}
+        tabIndex={-1}
         className="modal__card"
         role="dialog"
         aria-modal="true"

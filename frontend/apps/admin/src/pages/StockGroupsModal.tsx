@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError } from '../api'
+import { useModalA11y } from '../useModalA11y'
 import {
   GROUP_SCOPE_LABEL,
   type GroupScope,
@@ -26,6 +27,10 @@ export function StockGroupsModal({ models, onClose, onChanged }: Props) {
   const [editing, setEditing] = useState<StockGroup | 'new' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalA11y(cardRef, () => {
+    if (!busy) onClose()
+  })
 
   async function load() {
     try {
@@ -61,6 +66,8 @@ export function StockGroupsModal({ models, onClose, onChanged }: Props) {
   return (
     <div className="modal" onClick={onClose}>
       <div
+        ref={cardRef}
+        tabIndex={-1}
         className="modal__card"
         role="dialog"
         aria-modal="true"
