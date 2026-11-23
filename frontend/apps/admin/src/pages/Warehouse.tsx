@@ -13,7 +13,6 @@ import {
   KIND_LABEL,
   PLATE_LABEL,
   REASON_LABEL,
-  adjustComponent,
   createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
@@ -22,6 +21,7 @@ import {
   postDefect,
   postSupply,
 } from '../warehouseApi'
+import { StockActionModal } from './StockActionModal'
 import { StockMatrix } from './StockMatrix'
 
 const fmtDate = (iso: string) =>
@@ -188,7 +188,7 @@ export function Warehouse() {
         <>
           <section className="trash-block">
             <div className="field__label">Остатки по моделям</div>
-            <StockMatrix components={components} canEdit={isAdmin} onEdit={setEditRow} />
+            <StockMatrix components={components} onOpen={setEditRow} />
           </section>
 
           <div className="grid2" style={{ display: 'grid', gap: 24, gridTemplateColumns: '1fr 1fr' }}>
@@ -434,22 +434,13 @@ export function Warehouse() {
       )}
 
       {editRow && (
-        <EditQtyModal
+        <StockActionModal
           row={editRow}
-          busy={busy === 'edit'}
+          canAdjust={isAdmin}
           onClose={() => setEditRow(null)}
-          onSave={async (qty, comment) => {
-            setBusy('edit')
-            try {
-              await adjustComponent(editRow.id, { qty, comment: comment || undefined })
-              setEditRow(null)
-              setPurchase(null)
-              await reload()
-            } catch (err) {
-              alert(err instanceof ApiError ? err.message : 'Не удалось сохранить')
-            } finally {
-              setBusy(null)
-            }
+          onDone={async () => {
+            setPurchase(null)
+            await reload()
           }}
         />
       )}
@@ -474,75 +465,6 @@ export function Warehouse() {
           }}
         />
       )}
-    </div>
-  )
-}
-
-function EditQtyModal({
-  row,
-  busy,
-  onClose,
-  onSave,
-}: {
-  row: StockComponent
-  busy: boolean
-  onClose: () => void
-  onSave: (qty: number, comment: string) => void | Promise<void>
-}) {
-  const [qty, setQty] = useState(row.qty)
-  const [comment, setComment] = useState('')
-
-  return (
-    <div className="modal" onClick={onClose}>
-      <div className="modal__card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal__head">
-          <h2 className="modal__title">Изменить остаток</h2>
-          <button className="modal__close" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal__body">
-          <p className="field__hint" style={{ margin: 0 }}>
-            {KIND_LABEL[row.kind] ?? row.kind} · {row.model_name}
-            {row.plate_type ? ` · ${PLATE_LABEL[row.plate_type] ?? row.plate_type}` : ''}
-            <br />
-            Сейчас: <b className="mono">{row.qty}</b> шт. Разница уйдёт в журнал как
-            «Корректировка».
-          </p>
-          <label className="field">
-            <span className="field__label">Новый остаток</span>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={qty}
-              onChange={(e) => setQty(Math.max(0, Number(e.target.value) || 0))}
-              autoFocus
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Комментарий</span>
-            <input
-              className="input"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="инвентаризация, пересчёт…"
-            />
-          </label>
-        </div>
-        <div className="modal__actions">
-          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
-            Отмена
-          </button>
-          <button
-            className="btn btn--primary"
-            disabled={busy || qty === row.qty}
-            onClick={() => void onSave(qty, comment)}
-          >
-            {busy ? 'Сохранение…' : 'Сохранить'}
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

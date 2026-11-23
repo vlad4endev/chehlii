@@ -47,12 +47,11 @@ export function groupByModel(components: StockComponent[]): ModelRow[] {
 
 interface Props {
   components: StockComponent[]
-  /** Править остаток может только админ; печатнику ячейки доступны только для чтения. */
-  canEdit: boolean
-  onEdit: (component: StockComponent) => void
+  /** Нажатие на число открывает действия над позицией (приход, брак, правка). */
+  onOpen: (component: StockComponent) => void
 }
 
-export function StockMatrix({ components, canEdit, onEdit }: Props) {
+export function StockMatrix({ components, onOpen }: Props) {
   const [item, setItem] = useState<ItemFilter>('all')
   const [model, setModel] = useState('')
   const [search, setSearch] = useState('')
@@ -136,7 +135,7 @@ export function StockMatrix({ components, canEdit, onEdit }: Props) {
 
       <div className="field__hint" style={{ margin: '4px 0 10px' }} aria-live="polite">
         Показано моделей: {rows.length} из {all.length}
-        {canEdit ? '. Нажмите на число, чтобы поправить остаток.' : '.'}
+        . Нажмите на число — приход, брак или правка остатка.
       </div>
 
       {rows.length === 0 ? (
@@ -178,8 +177,7 @@ export function StockMatrix({ components, canEdit, onEdit }: Props) {
                       <QtyCell
                         component={r[c.key]}
                         label={`${c.prefix ? c.prefix + ' ' : ''}${c.label}, ${r.model}`}
-                        canEdit={canEdit}
-                        onEdit={onEdit}
+                        onOpen={onOpen}
                       />
                     </td>
                   ))}
@@ -196,23 +194,20 @@ export function StockMatrix({ components, canEdit, onEdit }: Props) {
 function QtyCell({
   component,
   label,
-  canEdit,
-  onEdit,
+  onOpen,
 }: {
   component?: StockComponent
   label: string
-  canEdit: boolean
-  onEdit: (component: StockComponent) => void
+  onOpen: (component: StockComponent) => void
 }) {
   if (!component) return <span className="muted">—</span>
   const cls = `mono${component.qty === 0 ? ' stock--empty' : ''}`
-  if (!canEdit) return <span className={cls}>{component.qty}</span>
   return (
     <button
       type="button"
       className={`qtybtn ${cls}`}
-      aria-label={`${label}: остаток ${component.qty}. Изменить`}
-      onClick={() => onEdit(component)}
+      aria-label={`${label}: остаток ${component.qty}. Приход, брак, правка`}
+      onClick={() => onOpen(component)}
     >
       {component.qty}
     </button>
