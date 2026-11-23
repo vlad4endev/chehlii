@@ -8,8 +8,11 @@
 
 /* ── Хедер ─────────────────────────────────────────── */
 .header { padding: calc(var(--pad) + 8px) var(--pad) 6px; }
+.brand-mark { flex: none; display: block; border-radius: 8px; }
 .wordmark {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 27px;

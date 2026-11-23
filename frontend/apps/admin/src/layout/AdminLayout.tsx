@@ -117,6 +117,7 @@ export function AdminLayout() {
       <div className="scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <aside className="sidebar">
         <div className="sidebar__brand">
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={28} height={28} />
           casetop <span className="sidebar__badge">admin</span>
         </div>
 

@@ -59,7 +59,8 @@ input, select, textarea { font-family: inherit; }
   flex-direction: column;
   gap: 16px;
 }
-.login__brand { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; text-transform: lowercase; margin-bottom: 8px; }
+.brand-mark { flex: none; display: block; border-radius: 8px; }
+.login__brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; text-transform: lowercase; margin-bottom: 8px; }
 .login__error { color: var(--danger); font-size: 13px; }
 
 /* ── Поля / кнопки ────────────────────────────────── */

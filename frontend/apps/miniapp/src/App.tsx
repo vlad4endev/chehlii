@@ -54,7 +54,10 @@ export function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="wordmark">casetop</div>
+        <div className="wordmark">
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={30} height={30} />
+          casetop
+        </div>
         <p className="tagline">
           Индивидуальные чехлы <span className="serif-it">уникального дизайна</span> для вас и близких
         </p>

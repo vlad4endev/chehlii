@@ -103,6 +103,7 @@ body:has(.lp) { background: var(--lp-paper); }
   display: flex; align-items: center; gap: 24px;
 }
 .lp-nav__brand {
+  display: inline-flex; align-items: center; gap: 10px;
   font-family: var(--font-display, 'Unbounded', sans-serif);
   font-weight: 800; font-size: 20px; letter-spacing: -0.02em;
   color: var(--lp-ink); text-decoration: none; text-transform: lowercase;
@@ -477,7 +478,7 @@ body:has(.lp) { background: var(--lp-paper); }
   display: grid; grid-template-columns: 1.5fr 2fr; gap: 40px;
 }
 @media (max-width: 720px) { .lp-foot__inner { grid-template-columns: 1fr; } }
-.lp-foot__brand { font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; text-transform: lowercase; color: var(--lp-ink); }
+.lp-foot__brand { display: flex; align-items: center; gap: 14px; font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -0.02em; text-transform: lowercase; color: var(--lp-ink); }
 .lp-foot__cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
 @media (max-width: 720px) { .lp-foot__cols { grid-template-columns: 1fr; gap: 28px; } }
 .lp-foot__cols a { display: block; color: var(--lp-ink-soft); text-decoration: none; font-size: 14px; padding: 5px 0; transition: color 0.15s; }

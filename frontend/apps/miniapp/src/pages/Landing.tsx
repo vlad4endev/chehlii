@@ -125,7 +125,10 @@ export function Landing({ items }: { items: CaseType[] }) {
       {/* ── Навбар ── */}
       <header className={`lp-nav${scrolled ? ' lp-nav--scrolled' : ''}`}>
         <div className="lp-nav__inner">
-          <a href="#top" className="lp-nav__brand">casetop</a>
+          <a href="#top" className="lp-nav__brand">
+            <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={28} height={28} />
+            casetop
+          </a>
           <nav className="lp-nav__links">
             <a href="#gallery">Каталог</a>
             <a href="#how">Как</a>
@@ -335,7 +338,10 @@ export function Landing({ items }: { items: CaseType[] }) {
       {/* ── Footer ── */}
       <footer className="lp-foot">
         <div className="lp-foot__inner">
-          <div className="lp-foot__brand">casetop</div>
+          <div className="lp-foot__brand">
+            <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={40} height={40} />
+            casetop
+          </div>
           <div className="lp-foot__cols">
             <div>
               <div className="lp-foot__head">Продукт</div>

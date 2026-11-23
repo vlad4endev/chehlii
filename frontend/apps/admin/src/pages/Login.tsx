@@ -30,6 +30,7 @@ export function Login() {
     <div className="login">
       <form className="login__card" onSubmit={submit}>
         <div className="login__brand">
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={32} height={32} />
           casetop · админка
         </div>
         <label className="field">
