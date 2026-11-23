@@ -117,6 +117,14 @@ class StockKind(StrEnum):
     PLATE = "plate"  # пластина
 
 
+class StockGroupScope(StrEnum):
+    """Что делит группа «универсальных» моделей: одну балванку, пластину или и то и другое."""
+
+    BOTH = "both"
+    BASE = "base"
+    PLATE = "plate"
+
+
 class PlateType(StrEnum):
     """Цвет/тип пластины для печати."""
 

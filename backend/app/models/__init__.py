@@ -11,7 +11,7 @@ from app.models.messaging import BotMessage, Broadcast, OutboundMessage
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
 from app.models.settings import IntegrationSetting
-from app.models.warehouse import StockComponent, StockMovement
+from app.models.warehouse import StockComponent, StockGroup, StockMovement
 
 __all__ = [
     "Base",
@@ -34,5 +34,6 @@ __all__ = [
     "Payment",
     "IntegrationSetting",
     "StockComponent",
+    "StockGroup",
     "StockMovement",
 ]

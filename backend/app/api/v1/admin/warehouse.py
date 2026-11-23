@@ -19,8 +19,9 @@ from sqlalchemy import select
 
 from app.api.v1.admin.deps import AdminOnly, WarehouseStaff
 from app.core.database import get_session
-from app.enums import PlateType, StockKind, StockMovementReason
+from app.enums import PlateType, StockGroupScope, StockKind, StockMovementReason
 from app.models.warehouse import StockComponent, StockMovement
+from app.services import stock_groups as sg
 from app.services import warehouse as wh
 
 router = APIRouter()
@@ -35,6 +36,21 @@ class ComponentOut(BaseModel):
     qty: int
     # Для UI: «доступно» = текущий qty компонента (available считается на паре base×plate).
     available: int
+    # Модели, которые делят этот остаток («универсальная» группа); у обычной модели пусто.
+    members: list[str] = []
+
+
+class GroupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    scope: StockGroupScope = StockGroupScope.BOTH
+    models: list[str]
+
+
+class GroupOut(BaseModel):
+    id: int
+    name: str
+    scope: StockGroupScope
+    models: list[str]
 
 
 class SupplyIn(BaseModel):
@@ -117,6 +133,7 @@ def _component_out(c: dict) -> ComponentOut:
         plate_type=c["plate_type"],
         qty=c["qty"],
         available=c["qty"],
+        members=c.get("members", []),
     )
 
 
@@ -330,3 +347,29 @@ async def _movement_out(session: AsyncSession, movement_id: int) -> MovementOut:
         admin_user_id=mov.admin_user_id,
         created_at=mov.created_at,
     )
+
+
+@router.get("/groups", response_model=list[GroupOut])
+async def get_groups(_: AdminOnly, session: Session) -> list[dict]:
+    return await sg.list_groups(session)
+
+
+@router.post("/groups", response_model=GroupOut)
+async def post_group(body: GroupIn, admin: AdminOnly, session: Session) -> dict:
+    """Создать группу «универсальных» моделей или обновить состав существующей (по имени)."""
+    out = await sg.save_group(
+        session,
+        name=body.name,
+        scope=body.scope,
+        models=body.models,
+        admin_user_id=admin.id,
+    )
+    await session.commit()
+    return out
+
+
+@router.delete("/groups/{name}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_group(name: str, admin: AdminOnly, session: Session) -> None:
+    """Распустить группу: остаток целиком достаётся первой модели группы."""
+    await sg.delete_group(session, name, admin_user_id=admin.id)
+    await session.commit()

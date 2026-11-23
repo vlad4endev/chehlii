@@ -41,6 +41,25 @@ class StockComponent(Base):
     )
 
 
+class StockGroup(Base):
+    """Группа моделей iPhone с общим складским остатком («универсальные» модели).
+
+    Остаток хранится в stock_components под именем группы (model_name = name),
+    а не под каждой моделью. scope — что именно общее: both | base | plate.
+    """
+
+    __tablename__ = "stock_groups"
+    __table_args__ = (
+        CheckConstraint("scope IN ('both', 'base', 'plate')", name="ck_stock_groups_scope"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    scope: Mapped[str] = mapped_column(
+        String(8), default="both", server_default="both", nullable=False
+    )
+
+
 class StockMovement(Base):
     """Движение по компоненту: поставка, брак, заказ, корректировка."""
 

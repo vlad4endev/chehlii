@@ -42,6 +42,10 @@ class IphoneModel(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # Группа «универсальных» моделей с общим складским остатком (см. models/warehouse.py).
+    stock_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stock_groups.id", ondelete="SET NULL"), index=True
+    )
 
 
 class CaseTypeModel(Base):

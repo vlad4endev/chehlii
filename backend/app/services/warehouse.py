@@ -18,6 +18,7 @@ from app.models.catalog import CaseType, CaseTypeModel
 from app.models.order import Order
 from app.models.warehouse import StockComponent, StockMovement
 from app.services import integrations
+from app.services.stock_keys import members_by_group_name, models_for_key, stock_key
 
 DEFAULT_LOOKBACK_DAYS = 30
 DEFAULT_LEAD_DAYS = 14
@@ -40,19 +41,27 @@ def _normalize_plate(plate_type: str | None) -> str:
 
 
 async def ensure_components_for_model(session: AsyncSession, model: str) -> None:
-    """Идемпотентно создать base + silver/black plate для одной модели (qty 0)."""
+    """Идемпотентно создать base + silver/black plate для одной модели (qty 0).
+
+    Для модели из группы «универсальных» создаются позиции группы, а не модели."""
+    base_key = await stock_key(session, StockKind.BASE, model)
+    plate_key = await stock_key(session, StockKind.PLATE, model)
     existing = {
         (c.kind, c.model_name, c.plate_type)
         for c in (
-            await session.scalars(select(StockComponent).where(StockComponent.model_name == model))
+            await session.scalars(
+                select(StockComponent).where(StockComponent.model_name.in_({base_key, plate_key}))
+            )
         ).all()
     }
-    if (StockKind.BASE, model, None) not in existing:
-        session.add(StockComponent(kind=StockKind.BASE, model_name=model, plate_type=None, qty=0))
+    if (StockKind.BASE, base_key, None) not in existing:
+        session.add(
+            StockComponent(kind=StockKind.BASE, model_name=base_key, plate_type=None, qty=0)
+        )
     for plate in (PlateType.SILVER, PlateType.BLACK):
-        if (StockKind.PLATE, model, plate) not in existing:
+        if (StockKind.PLATE, plate_key, plate) not in existing:
             session.add(
-                StockComponent(kind=StockKind.PLATE, model_name=model, plate_type=plate, qty=0)
+                StockComponent(kind=StockKind.PLATE, model_name=plate_key, plate_type=plate, qty=0)
             )
     await session.flush()
 
@@ -74,7 +83,10 @@ async def get_component(
     *,
     create: bool = True,
 ) -> StockComponent:
-    """Найти компонент; при create — создать с qty=0."""
+    """Найти компонент; при create — создать с qty=0.
+
+    model_name — модель или ключ группы: для модели из группы остаток общий."""
+    model_name = await stock_key(session, kind, model_name)
     plate = None if kind == StockKind.BASE else plate_type
     if kind == StockKind.PLATE and plate not in (PlateType.SILVER, PlateType.BLACK):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Для пластины укажите plate_type: silver|black")
@@ -115,18 +127,19 @@ async def available_for_sale(
 
 
 async def sync_legacy_stock(session: AsyncSession, model_name: str) -> None:
-    """Обновить case_type_models.stock для всех типов с этой моделью."""
-    rows = (
-        await session.execute(
-            select(CaseTypeModel, CaseType.plate_type)
-            .join(CaseType, CaseType.id == CaseTypeModel.case_type_id)
-            .where(CaseTypeModel.model_name == model_name)
-        )
-    ).all()
-    for ctm, plate_type in rows:
-        ctm.stock = await available_for_sale(
-            session, model_name=model_name, plate_type=plate_type
-        )
+    """Обновить case_type_models.stock для всех типов с этой моделью.
+
+    model_name — модель или ключ группы: у группы остаток общий, поэтому обновляем все её модели."""
+    for model in await models_for_key(session, model_name):
+        rows = (
+            await session.execute(
+                select(CaseTypeModel, CaseType.plate_type)
+                .join(CaseType, CaseType.id == CaseTypeModel.case_type_id)
+                .where(CaseTypeModel.model_name == model)
+            )
+        ).all()
+        for ctm, plate_type in rows:
+            ctm.stock = await available_for_sale(session, model_name=model, plate_type=plate_type)
 
 
 async def _apply_delta(
@@ -377,6 +390,7 @@ async def list_components(session: AsyncSession) -> list[dict]:
             )
         )
     ).all()
+    members = await members_by_group_name(session)
     return [
         {
             "id": c.id,
@@ -384,6 +398,8 @@ async def list_components(session: AsyncSession) -> list[dict]:
             "model_name": c.model_name,
             "plate_type": c.plate_type,
             "qty": c.qty,
+            # Пусто у обычной модели; у группы — какие модели делят этот остаток.
+            "members": members.get(c.model_name, []),
         }
         for c in rows
     ]
