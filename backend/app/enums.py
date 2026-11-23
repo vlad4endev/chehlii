@@ -23,10 +23,14 @@ class CaseBranch(StrEnum):
 
 
 class AdminRole(StrEnum):
-    """Роли AdminUI. Дизайнер и менеджер доставок — одна роль (ТЗ v2.0)."""
+    """Роли AdminUI. Дизайнер и менеджер доставок — одна роль (ТЗ v2.0).
+
+    Печатник: смотрит заказы (без цен и без смены статусов) и ведёт склад.
+    """
 
     ADMIN = "admin"
     DESIGNER = "designer"
+    PRINTER = "printer"
 
 
 class OrderStatus(StrEnum):

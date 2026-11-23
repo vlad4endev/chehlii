@@ -27,6 +27,7 @@ export interface UserPatch {
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Администратор',
   designer: 'Дизайнер',
+  printer: 'Печатник',
 }
 
 export const fetchUsers = () => apiGet<AdminUserRow[]>('/admin/users')

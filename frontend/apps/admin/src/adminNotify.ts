@@ -102,7 +102,7 @@ function reviewCopy(count: number): { title: string; body: string } {
 }
 
 /**
- * Сравнить prev и next. consultOnly=false для дизайнера (только заказы).
+ * Сравнить prev и next. includeConsult=false для дизайнера и печатника (только заказы).
  * Первый заход: вызывающий сохраняет baseline и не вызывает diff.
  */
 export function diffStats(

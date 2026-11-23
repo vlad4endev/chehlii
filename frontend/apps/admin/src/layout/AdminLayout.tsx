@@ -19,7 +19,7 @@ import { type Section, groupsFor, sectionByPath } from '../sections'
 import { type Stats, fetchStats } from '../statsApi'
 import { initials } from '../ui'
 
-const ROLE_LABEL: Record<string, string> = { admin: 'Администратор', designer: 'Дизайнер' }
+const ROLE_LABEL: Record<string, string> = { admin: 'Администратор', designer: 'Дизайнер', printer: 'Печатник' }
 const TOAST_MS = 6000
 
 function badgeValue(section: Section, stats: Stats | null): number | null {
@@ -64,9 +64,9 @@ export function AdminLayout() {
     }
   }, [])
 
-  // Метрики для бейджей и уведомлений (admin + designer).
+  // Метрики для бейджей и уведомлений (все роли панели).
   useEffect(() => {
-    if (!user || (user.role !== 'admin' && user.role !== 'designer')) return
+    if (!user) return
     let alive = true
     const includeConsult = user.role === 'admin'
     const load = () =>

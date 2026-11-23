@@ -1,6 +1,6 @@
 import type { Role } from './api'
 
-// Разделы AdminUI, иконки и доступ по ролям (ТЗ: у Дизайнера — только Заказы).
+// Разделы AdminUI, иконки и доступ по ролям (Дизайнер — Заказы; Печатник — Заказы и Склад).
 export interface Section {
   path: string
   label: string
@@ -14,16 +14,16 @@ export const OVERVIEW: Section = {
   path: '/',
   label: 'Обзор',
   icon: 'overview',
-  roles: ['admin', 'designer'],
+  roles: ['admin', 'designer', 'printer'],
 }
 
 // Разделы-страницы (используются и для роутинга в App.tsx).
 // «Тексты бота» переехали в Настройки → вкладка «Боты», поэтому в меню их нет.
 export const SECTIONS: Section[] = [
-  { path: '/orders', label: 'Заказы', icon: 'orders', roles: ['admin', 'designer'], badge: 'orders_active' },
+  { path: '/orders', label: 'Заказы', icon: 'orders', roles: ['admin', 'designer', 'printer'], badge: 'orders_active' },
   { path: '/consult', label: 'Сообщения', icon: 'chat', roles: ['admin'], badge: 'consult_waiting' },
   { path: '/catalog', label: 'Каталог', icon: 'catalog', roles: ['admin'] },
-  { path: '/warehouse', label: 'Склад', icon: 'box', roles: ['admin'] },
+  { path: '/warehouse', label: 'Склад', icon: 'box', roles: ['admin', 'printer'] },
   { path: '/clients', label: 'Клиенты', icon: 'clients', roles: ['admin'] },
   { path: '/journeys', label: 'Клиентские пути', icon: 'clients', roles: ['admin'] },
   { path: '/reviews', label: 'Отзывы', icon: 'reviews', roles: ['admin'], badge: 'reviews_pending' },

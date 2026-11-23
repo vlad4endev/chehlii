@@ -2,7 +2,7 @@
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 const TOKEN_KEY = 'casetop:admin:token'
 
-export type Role = 'admin' | 'designer'
+export type Role = 'admin' | 'designer' | 'printer'
 
 export interface AdminUser {
   id: number

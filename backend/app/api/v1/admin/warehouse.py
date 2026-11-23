@@ -1,8 +1,7 @@
 """Склад (AdminUI): компоненты, поставки, брак, движения, расчёт закупки.
 
-Доступ: только Админ.
-# AdminRole.PRODUCTION (доступ только к складу) не добавляли — затронуло бы Role/Users/навигацию;
-# при появлении отдельной роли производства расширить deps здесь.
+Доступ: Админ и Печатник — остатки, движения, поставки и брак.
+Только Админ: создание позиции, ручная корректировка остатка, расчёт закупки.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
-from app.api.v1.admin.deps import AdminOnly
+from app.api.v1.admin.deps import AdminOnly, WarehouseStaff
 from app.core.database import get_session
 from app.enums import PlateType, StockKind, StockMovementReason
 from app.models.warehouse import StockComponent, StockMovement
@@ -122,7 +121,7 @@ def _component_out(c: dict) -> ComponentOut:
 
 
 @router.get("/components", response_model=list[ComponentOut])
-async def list_components(_: AdminOnly, session: Session) -> list[ComponentOut]:
+async def list_components(_: WarehouseStaff, session: Session) -> list[ComponentOut]:
     rows = await wh.list_components(session)
     await session.commit()
     return [_component_out(r) for r in rows]
@@ -185,7 +184,7 @@ async def adjust_component(
 
 
 @router.post("/supply", response_model=MovementOut, status_code=status.HTTP_201_CREATED)
-async def post_supply(body: SupplyIn, admin: AdminOnly, session: Session) -> MovementOut:
+async def post_supply(body: SupplyIn, admin: WarehouseStaff, session: Session) -> MovementOut:
     mov = await wh.supply(
         session,
         kind=body.kind,
@@ -200,7 +199,7 @@ async def post_supply(body: SupplyIn, admin: AdminOnly, session: Session) -> Mov
 
 
 @router.post("/defect", response_model=MovementOut, status_code=status.HTTP_201_CREATED)
-async def post_defect(body: DefectIn, admin: AdminOnly, session: Session) -> MovementOut:
+async def post_defect(body: DefectIn, admin: WarehouseStaff, session: Session) -> MovementOut:
     mov = await wh.write_off_defect(
         session,
         kind=body.kind,
@@ -217,7 +216,7 @@ async def post_defect(body: DefectIn, admin: AdminOnly, session: Session) -> Mov
 
 @router.get("/movements", response_model=MovementsPage)
 async def get_movements(
-    _: AdminOnly,
+    _: WarehouseStaff,
     session: Session,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

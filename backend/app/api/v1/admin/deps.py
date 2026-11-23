@@ -43,6 +43,27 @@ async def require_admin(user: CurrentAdmin) -> AdminUser:
 
 AdminOnly = Annotated[AdminUser, Depends(require_admin)]
 
+_ORDER_EDITOR_ROLES = frozenset({AdminRole.ADMIN, AdminRole.DESIGNER})
+_WAREHOUSE_ROLES = frozenset({AdminRole.ADMIN, AdminRole.PRINTER})
+
+
+async def require_order_editor(user: CurrentAdmin) -> AdminUser:
+    """Менять статусы заказа и загружать макеты могут Админ и Дизайнер (не Печатник)."""
+    if user.role not in _ORDER_EDITOR_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Недостаточно прав для изменения заказа")
+    return user
+
+
+async def require_warehouse_staff(user: CurrentAdmin) -> AdminUser:
+    """Склад: Админ и Печатник (поставки, брак, остатки)."""
+    if user.role not in _WAREHOUSE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Недостаточно прав для склада")
+    return user
+
+
+OrderEditor = Annotated[AdminUser, Depends(require_order_editor)]
+WarehouseStaff = Annotated[AdminUser, Depends(require_warehouse_staff)]
+
 
 def is_admin(user: AdminUser) -> bool:
     return user.role == AdminRole.ADMIN

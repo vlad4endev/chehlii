@@ -16,7 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.admin.deps import AdminOnly, CurrentAdmin, is_admin
+from app.api.v1.admin.deps import AdminOnly, CurrentAdmin, OrderEditor, is_admin
 from app.core.database import get_session
 from app.enums import AdminRole, CaseBranch, Channel, OrderStatus, PaymentStatus
 from app.models.admin_user import AdminUser
@@ -229,6 +229,8 @@ def _forward_statuses(current: OrderStatus) -> list[OrderStatus]:
 def _allowed_next(order: Order, role: AdminRole) -> list[StatusOption]:
     """Статусы для обычного select. Макетные — только через «Загрузить и отправить»."""
     nxt = [s for s in _forward_statuses(order.status) if s not in MOCKUP_STATUSES]
+    if role == AdminRole.PRINTER:
+        return []
     if role != AdminRole.ADMIN:
         nxt = [s for s in nxt if s in DESIGNER_STATUSES]
     return [StatusOption(value=s, label=STATUS_LABELS.get(s, s)) for s in nxt]
@@ -609,7 +611,7 @@ async def _record(
 async def change_status(
     order_id: int,
     payload: StatusChangeIn,
-    user: CurrentAdmin,
+    user: OrderEditor,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> OrderDetail:
     order, _, _ = await _load(session, order_id)
@@ -673,7 +675,7 @@ _MOCKUP_DEFAULT_TEXT = (
 @router.post("/{order_id}/mockup", response_model=OrderDetail)
 async def upload_mockup(
     order_id: int,
-    user: CurrentAdmin,
+    user: OrderEditor,
     session: Annotated[AsyncSession, Depends(get_session)],
     file: Annotated[UploadFile, File()],
 ) -> OrderDetail:

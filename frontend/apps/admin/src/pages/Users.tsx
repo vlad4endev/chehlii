@@ -72,6 +72,7 @@ export function Users() {
             { label: 'Всего', value: items.length },
             { label: 'Администраторов', value: items.filter((u) => u.role === 'admin').length },
             { label: 'Дизайнеров', value: items.filter((u) => u.role === 'designer').length },
+            { label: 'Печатников', value: items.filter((u) => u.role === 'printer').length },
             { label: 'Активных', value: items.filter((u) => u.is_active).length },
           ]}
         />
@@ -151,6 +152,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
   return (
     <select className="input" value={value} onChange={(e) => onChange(e.target.value as Role)}>
       <option value="designer">Дизайнер</option>
+      <option value="printer">Печатник</option>
       <option value="admin">Администратор</option>
     </select>
   )

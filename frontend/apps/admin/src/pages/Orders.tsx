@@ -288,6 +288,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
   const mockupInputRef = useRef<HTMLInputElement>(null)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const canEditOrder = user?.role !== 'printer'
   const forwardValues = useMemo(
     () => new Set(order?.allowed_next.map((s) => s.value) ?? []),
     [order],
@@ -522,33 +523,37 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
                   Копия на Яндекс.Диске ↗
                 </a>
               )}
-              <div className="inline-form">
-                <input
-                  ref={mockupInputRef}
-                  className="input"
-                  type="file"
-                  accept="image/*,.pdf"
-                  disabled={busy || mockupBusy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) void sendMockup(file)
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={busy || mockupBusy}
-                  onClick={() => mockupInputRef.current?.click()}
-                >
-                  {mockupBusy ? 'Отправка…' : 'Загрузить и отправить'}
-                </button>
-              </div>
-              {mockupErr && <div className="form-msg form-msg--err">{mockupErr}</div>}
-              {mockupOk && <div className="form-msg form-msg--ok">{mockupOk}</div>}
-              <div className="card__hint">
-                Файл сохранится локально и на Яндекс.Диске. Клиент увидит картинку в чате
-                с кнопками «Подтвердить / Переделать», статус станет «Отправка макета».
-              </div>
+              {canEditOrder && (
+                <>
+                <div className="inline-form">
+                  <input
+                    ref={mockupInputRef}
+                    className="input"
+                    type="file"
+                    accept="image/*,.pdf"
+                    disabled={busy || mockupBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void sendMockup(file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    disabled={busy || mockupBusy}
+                    onClick={() => mockupInputRef.current?.click()}
+                  >
+                    {mockupBusy ? 'Отправка…' : 'Загрузить и отправить'}
+                  </button>
+                </div>
+                {mockupErr && <div className="form-msg form-msg--err">{mockupErr}</div>}
+                {mockupOk && <div className="form-msg form-msg--ok">{mockupOk}</div>}
+                <div className="card__hint">
+                  Файл сохранится локально и на Яндекс.Диске. Клиент увидит картинку в чате
+                  с кнопками «Подтвердить / Переделать», статус станет «Отправка макета».
+                </div>
+                </>
+              )}
             </div>
 
             {showShipping && (
