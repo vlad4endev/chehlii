@@ -38,12 +38,12 @@ from app.services import (
     yandex_disk,
 )
 from app.services import order_state_machine as fsm
-from app.services.stock_pending import is_awaiting_deduction
 from app.services.order_status_notify import (
     MOCKUP_STATUSES,
     NotifyResult,
     notify_after_manual_status,
 )
+from app.services.stock_pending import is_awaiting_deduction
 
 router = APIRouter()
 
