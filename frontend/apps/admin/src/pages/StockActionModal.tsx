@@ -31,8 +31,8 @@ interface Props {
   /** Ручная правка остатка доступна только админу; приход и брак — и печатнику. */
   canAdjust: boolean
   onClose: () => void
-  /** Вызывается после успешной операции — страница перечитывает остатки. */
-  onDone: () => void | Promise<void>
+  /** Вызывается после успешной операции: страница перечитывает остатки и показывает итог. */
+  onDone: (summary: string) => void | Promise<void>
 }
 
 /** Действия над одной складской позицией: приход, брак, правка остатка. */
@@ -86,11 +86,20 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
       plate_type: row.plate_type,
       comment: comment.trim() || undefined,
     }
+    const what = `${KIND_LABEL[row.kind] ?? row.kind}${row.plate_type ? ' ' + (PLATE_LABEL[row.plate_type] ?? '').toLowerCase() : ''}, ${row.model_name}`
+    let summary: string
     try {
-      if (action === 'supply') await postSupply({ ...base, qty })
-      else if (action === 'defect') await postDefect({ ...base, qty, reason })
-      else await adjustComponent(row.id, { qty: newQty, comment: base.comment })
-      await onDone()
+      if (action === 'supply') {
+        await postSupply({ ...base, qty })
+        summary = `Приход записан: ${what} +${qty}`
+      } else if (action === 'defect') {
+        await postDefect({ ...base, qty, reason })
+        summary = `Брак списан: ${what} −${qty}`
+      } else {
+        await adjustComponent(row.id, { qty: newQty, comment: base.comment })
+        summary = `Остаток исправлен: ${what} ${row.qty} → ${newQty}`
+      }
+      await onDone(summary)
       onClose()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось сохранить — проверьте соединение и попробуйте снова')
@@ -164,6 +173,18 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
                 onChange={(e) => setQty(Math.trunc(Number(e.target.value) || 0))}
                 autoFocus
               />
+              <span className="quickqty" role="group" aria-label="Быстрый выбор количества">
+                {[1, 5, 10, 50].map((n) => (
+                  <button key={n} type="button" className="chipbtn" onClick={() => setQty(n)}>
+                    {n}
+                  </button>
+                ))}
+              </span>
+              <span className="field__hint">
+                {Number.isInteger(qty) && qty > 0
+                  ? `Станет: ${action === 'supply' ? row.qty + qty : Math.max(0, row.qty - qty)} шт.`
+                  : ' '}
+              </span>
             </label>
           )}
 

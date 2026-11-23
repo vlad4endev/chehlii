@@ -1331,3 +1331,26 @@ select.input { appearance: none; cursor: pointer; }
 .invinput { width: 96px; height: 40px; padding: 0 10px; text-align: right; font-family: var(--mono); }
 .invinput--changed { border-color: #b86200; background: #fdf6ec; }
 .invinput--bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, #fff); }
+
+/* Склад: быстрый приход, итог операции, подсветка изменённой строки */
+.rowaction { display: block; margin-top: 4px; padding: 6px 0; min-height: 32px; border: none; background: none; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.rowaction:hover { color: var(--ink); text-decoration-color: var(--ink); }
+.rowaction--hot { color: var(--ink); }
+.rowaction:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; border-radius: 6px; }
+.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; border: 1px solid #b9e0cb; background: #ecf8f1; color: #1d6b48; font-size: 14px; font-weight: 600; }
+.toast__close { flex: none; width: 32px; height: 32px; border: none; border-radius: 8px; background: none; color: inherit; font-size: 15px; }
+.toast__close:hover { background: rgba(0, 0, 0, 0.06); }
+.supplygrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.supplygrid__input { text-align: center; font-family: var(--mono); font-size: 16px; }
+.quickqty { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.chipbtn { min-width: 52px; min-height: 40px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); font-size: 14px; font-weight: 600; color: var(--ink); }
+.chipbtn:hover { border-color: var(--ink-soft); }
+.chipbtn:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; }
+@keyframes stockflash { from { background: #e3f5ea; } to { background: transparent; } }
+.stockrow--flash td { animation: stockflash 2.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .stockrow--flash td { animation: none; background: #e3f5ea; } }
+@media (max-width: 640px) {
+  .supplygrid { grid-template-columns: 1fr; }
+  .table--stock tr.stockrow.stockrow--flash { background: #e3f5ea; transition: background 2s; }
+  .stockrow--flash td { animation: none; }
+}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Availability, AvailabilityRow, PlateType, StockComponent, StockKind } from '../warehouseApi'
 
@@ -102,9 +102,17 @@ interface Props {
   availability: Availability | null
   /** Нажатие на число открывает действия над позицией (приход, брак, правка). */
   onOpen: (component: StockComponent) => void
+  /** «+ Приход» в строке: открыть приход поставки по этой модели. */
+  onSupply: (model: string) => void
+  /** Модель, по которой только что записали операцию: строка подсвечивается и показывается. */
+  highlight?: string | null
 }
 
-export function StockMatrix({ components, availability, onOpen }: Props) {
+export function StockMatrix({ components, availability, onOpen, onSupply, highlight }: Props) {
+  const flashRef = useRef<HTMLTableRowElement | null>(null)
+  useEffect(() => {
+    flashRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [highlight])
   const [search, setSearch] = useState('')
   // ?low=1 — переход с обзора («заканчивается на складе»): сразу показываем проблемные модели.
   const [statuses, setStatuses] = useState<Set<Status>>(() =>
@@ -237,7 +245,11 @@ export function StockMatrix({ components, availability, onOpen }: Props) {
                 const entries = entriesOf(r)
                 const status = statusOf(entries)
                 return (
-                  <tr key={r.model} className={`stockrow${status ? ` stockrow--${status}` : ''}`}>
+                  <tr
+                    key={r.model}
+                    ref={r.model === highlight ? flashRef : undefined}
+                    className={`stockrow${status ? ` stockrow--${status}` : ''}${r.model === highlight ? ' stockrow--flash' : ''}`}
+                  >
                     <td className="strong stockrow__model">
                       {r.model}
                       {status === 'out' && <span className="statuspill statuspill--out">Нельзя продать</span>}
@@ -247,6 +259,14 @@ export function StockMatrix({ components, availability, onOpen }: Props) {
                           Универсальная группа · {modelsWord(r.members.length)}
                         </span>
                       )}
+                      <button
+                        type="button"
+                        className={`rowaction${status === 'out' || status === 'low' ? ' rowaction--hot' : ''}`}
+                        aria-label={`Принять поставку: ${r.model}`}
+                        onClick={() => onSupply(r.model)}
+                      >
+                        + Приход
+                      </button>
                     </td>
                     {COLUMNS.map((c) => (
                       <td key={c.key} className="cell-qty" data-label={c.sub ? `${c.title} · ${c.sub}` : c.title}>

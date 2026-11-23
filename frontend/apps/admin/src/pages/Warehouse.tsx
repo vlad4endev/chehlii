@@ -22,6 +22,7 @@ import { PurchaseModal } from './PurchaseModal'
 import { StockActionModal } from './StockActionModal'
 import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
+import { SupplyModal } from './SupplyModal'
 
 export function Warehouse() {
   const { user } = useAuth()
@@ -40,6 +41,10 @@ export function Warehouse() {
   const [groupsOpen, setGroupsOpen] = useState(false)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  // Приход поставки: undefined — окно закрыто, '' — открыто без модели, иначе модель выбрана заранее.
+  const [supplyFor, setSupplyFor] = useState<string | undefined>(undefined)
+  // Модель, по которой только что записали операцию: строка коротко подсвечивается.
+  const [flashModel, setFlashModel] = useState<string | null>(null)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
 
   // Спиннер только при первой загрузке. Дальше данные обновляются на месте: иначе таблица
@@ -80,28 +85,50 @@ export function Warehouse() {
     reload()
   }, [])
 
+  // Сообщение об успехе само пропадает, чтобы не копились старые.
+  useEffect(() => {
+    if (!notice) return
+    const t = window.setTimeout(() => setNotice(null), 8000)
+    return () => window.clearTimeout(t)
+  }, [notice])
+  useEffect(() => {
+    if (!flashModel) return
+    const t = window.setTimeout(() => setFlashModel(null), 2500)
+    return () => window.clearTimeout(t)
+  }, [flashModel])
+
+  function recorded(summary: string, model: string) {
+    setNotice(summary)
+    setFlashModel(model)
+  }
+
   return (
     <div>
       <div className="page__head">
         <h1 className="page__title">Склад</h1>
-        {isAdmin && (
-          <div className="row-actions">
-            <button className="btn btn--primary" onClick={() => setPurchaseOpen(true)}>
-              Что докупить
-            </button>
-            <button className="btn btn--ghost" onClick={() => setInventoryOpen(true)}>
-              Инвентаризация
-            </button>
-            <ActionsMenu
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-              items={[
-                { label: 'Новая позиция', onSelect: () => setAddOpen(true) },
-                { label: 'Группы моделей', onSelect: () => setGroupsOpen(true) },
-              ]}
-            />
-          </div>
-        )}
+        <div className="row-actions">
+          <button className="btn btn--primary" onClick={() => setSupplyFor('')}>
+            + Принять поставку
+          </button>
+          {isAdmin && (
+            <>
+              <button className="btn btn--ghost" onClick={() => setPurchaseOpen(true)}>
+                Что докупить
+              </button>
+              <button className="btn btn--ghost" onClick={() => setInventoryOpen(true)}>
+                Инвентаризация
+              </button>
+              <ActionsMenu
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                items={[
+                  { label: 'Новая позиция', onSelect: () => setAddOpen(true) },
+                  { label: 'Группы моделей', onSelect: () => setGroupsOpen(true) },
+                ]}
+              />
+            </>
+          )}
+        </div>
       </div>
       <p className="page__lead">
         Сколько балванок и пластин лежит по каждой модели iPhone. Чехол можно продать, когда есть и балванка, и
@@ -112,8 +139,11 @@ export function Warehouse() {
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
       {notice && (
-        <div className="form-msg form-msg--ok" role="status">
-          {notice}
+        <div className="toast" role="status">
+          <span>✓ {notice}</span>
+          <button type="button" className="toast__close" onClick={() => setNotice(null)} aria-label="Скрыть сообщение">
+            ✕
+          </button>
         </div>
       )}
       {refreshError && (
@@ -130,7 +160,13 @@ export function Warehouse() {
             <h2 id="wh-stock-title" className="whsection__title">
               Остатки по моделям
             </h2>
-            <StockMatrix components={components} availability={availability} onOpen={setEditRow} />
+            <StockMatrix
+              components={components}
+              availability={availability}
+              onOpen={setEditRow}
+              onSupply={setSupplyFor}
+              highlight={flashModel}
+            />
           </section>
 
           <MovementsLog refreshKey={refreshKey} canReverse={isAdmin} onChanged={reload} />
@@ -142,9 +178,20 @@ export function Warehouse() {
           row={editRow}
           canAdjust={isAdmin}
           onClose={() => setEditRow(null)}
-          onDone={async () => {
+          onDone={async (summary) => {
             await reload()
+            recorded(summary, editRow.model_name)
           }}
+        />
+      )}
+
+      {supplyFor !== undefined && (
+        <SupplyModal
+          components={components}
+          initialModel={supplyFor || undefined}
+          onClose={() => setSupplyFor(undefined)}
+          onRecorded={reload}
+          onDone={(summary, model) => recorded(`Приход записан — ${summary}`, model)}
         />
       )}
 
