@@ -32,7 +32,7 @@ from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes
-from bots.core.phone import normalize_phone
+from bots.core.phone import format_phone, is_russian_mobile, normalize_any_phone
 from bots.core.texts import texts
 from bots.max.chat_map import remember_async
 from bots.max.keyboards import (
@@ -50,8 +50,12 @@ from bots.max.keyboards import (
     CB_MAT_REDO,
     CB_MAT_SKIP_DESC,
     CB_PAYMENTS,
+    CB_PHONE_MANUAL,
+    CB_PHONE_OK,
+    CB_PHONE_RETRY,
     confirm_kb,
     contact_kb,
+    phone_confirm_kb,
     delivery_mode_kb,
     delivery_orders_kb,
     delivery_points_kb,
@@ -316,7 +320,7 @@ async def _ask_contact_for_order(bot, chat_id: int, order_id: int, client_id: in
         text=(
             "Отличный выбор! 🎉\n\n"
             + texts.get("msg_002")
-            + "\n\nОтправьте номер в формате +7XXXXXXXXXX или нажмите кнопку ниже."
+            + "\n\nНажмите «Поделиться контактом» или введите номер вручную (с кодом страны)."
         ),
         attachments=[contact_kb()],
     )
@@ -499,7 +503,7 @@ def _extract_contact_phone(event: MessageCreated) -> str | None:
         structured = getattr(payload, "vcf", None)
         tel = getattr(structured, "phone", None) if structured is not None else None
         if tel:
-            phone = normalize_phone(tel)
+            phone = normalize_any_phone(tel, trusted_digits=True)
             if phone:
                 return phone
         raw = getattr(payload, "vcf_info", None)
@@ -509,47 +513,93 @@ def _extract_contact_phone(event: MessageCreated) -> str | None:
             if not line.upper().startswith("TEL"):
                 continue
             _, _, value = line.partition(":")
-            phone = normalize_phone(value.strip())
+            phone = normalize_any_phone(value.strip(), trusted_digits=True)
             if phone:
                 return phone
     return None
 
 
 
-@router.message_created(OrderFlow.waiting_contact)
-async def on_phone(event: MessageCreated, context: BaseContext) -> None:
-    sender = event.message.sender
-    phone = _extract_contact_phone(event) or normalize_phone(event.message.body.text or "")
-    if not phone:
-        await event.message.answer(
-            "Не разобрал номер. Пришлите его в формате +7XXXXXXXXXX.",
-            attachments=[contact_kb()],
-        )
-        return
+_PHONE_FORMAT_HINT = "Пришлите номер с кодом страны, например +79001234567 или +380501234567."
+_DELIVERY_RU_PHONE_TEXT = (
+    "Для доставки по России нужен российский мобильный получателя (+79XXXXXXXXX). "
+    "Нажмите «Ввести другой номер» или пришлите номер."
+)
+
+
+async def _complete_phone(bot, chat_id: int, user, context: BaseContext, phone: str) -> None:
+    """Сохранить телефон и продолжить прерванный сценарий (заказ/доставка/меню)."""
     client = await backend.upsert_client(
-        CHANNEL, str(sender.user_id), nickname=(sender.username or sender.full_name), phone=phone
+        CHANNEL,
+        str(user.user_id),
+        nickname=(getattr(user, "username", None) or getattr(user, "full_name", None)),
+        phone=phone,
     )
     # Контакт получен на моменте заказа → сразу показываем подтверждение заказа.
     data = await context.get_data()
     pending = data.get("pending_order_id")
     if pending:
-        await _show_order_confirm(
-            event.bot, event.message.recipient.chat_id, int(pending), client["id"], context
-        )
+        await _show_order_confirm(bot, chat_id, int(pending), client["id"], context)
         return
     pending_delivery = data.get("pending_delivery_order_id")
     if pending_delivery:
-        await _start_delivery(
-            event.bot,
-            event.message.recipient.chat_id,
-            int(pending_delivery),
-            context,
-            phone=phone,
-        )
+        if not is_russian_mobile(phone):
+            # Контактный номер мог быть иностранным, но службы доставки принимают
+            # только российский мобильный получателя.
+            await bot.send_message(chat_id=chat_id, text=_DELIVERY_RU_PHONE_TEXT, attachments=[contact_kb()])
+            return
+        await _start_delivery(bot, chat_id, int(pending_delivery), context, phone=phone)
         return
     await context.clear()
-    await _send_menu(event.bot, event.message.recipient.chat_id, texts.get("msg_003"))
+    await _send_menu(bot, chat_id, texts.get("msg_003"))
     await backend.mark_journey(client["id"], "msg_003")
+
+
+@router.message_created(OrderFlow.waiting_contact)
+async def on_phone(event: MessageCreated, context: BaseContext) -> None:
+    """Контакт (vCard) принимаем сразу, текстовый номер — через подтверждение."""
+    sender = event.message.sender
+    chat_id = event.message.recipient.chat_id
+    phone = _extract_contact_phone(event)
+    if phone:
+        await _complete_phone(event.bot, chat_id, sender, context, phone)
+        return
+    phone = normalize_any_phone(event.message.body.text or "")
+    if not phone:
+        await event.message.answer(
+            f"Не разобрал номер. {_PHONE_FORMAT_HINT}",
+            attachments=[contact_kb()],
+        )
+        return
+    await context.update_data(pending_phone=phone)
+    await event.message.answer(
+        f"Ваш номер {format_phone(phone)}. Всё верно?", attachments=[phone_confirm_kb()]
+    )
+
+
+@router.message_callback(F.callback.payload == CB_PHONE_OK)
+async def on_phone_confirmed(event: MessageCallback, context: BaseContext) -> None:
+    data = await context.get_data()
+    phone = data.get("pending_phone")
+    await event.answer()
+    chat_id = event.message.recipient.chat_id
+    if not phone:
+        await event.bot.send_message(
+            chat_id=chat_id, text=f"Введите номер ещё раз. {_PHONE_FORMAT_HINT}"
+        )
+        return
+    await context.update_data(pending_phone=None)
+    await _complete_phone(event.bot, chat_id, event.callback.user, context, phone)
+
+
+@router.message_callback(F.callback.payload.in_({CB_PHONE_RETRY, CB_PHONE_MANUAL}))
+async def on_phone_retry(event: MessageCallback, context: BaseContext) -> None:
+    await context.update_data(pending_phone=None)
+    await event.answer()
+    await event.bot.send_message(
+        chat_id=event.message.recipient.chat_id,
+        text=f"Введите номер телефона. {_PHONE_FORMAT_HINT}",
+    )
 
 
 # ── Подтверждение заказа ───────────────────────────────
@@ -1042,15 +1092,14 @@ async def on_delivery_cb(event: MessageCallback, context: BaseContext) -> None:
     chat_id = event.message.recipient.chat_id
     u = event.callback.user
     client = await backend.upsert_client(CHANNEL, str(u.user_id), nickname=u.username)
-    phone = normalize_phone(client.get("phone"))
-    if not phone:
+    phone = client.get("phone")
+    if not is_russian_mobile(phone):
         await context.set_state(OrderFlow.waiting_contact)
         await context.update_data(pending_delivery_order_id=order_id)
         await event.answer()
         await _replace(
             event,
-            "Для доставки нужен мобильный телефон получателя (+79XXXXXXXXX). "
-            "Пришлите номер или нажмите «Поделиться контактом».",
+            _DELIVERY_RU_PHONE_TEXT,
             [contact_kb()],
         )
         return

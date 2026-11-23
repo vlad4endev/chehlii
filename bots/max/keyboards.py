@@ -30,6 +30,9 @@ CB_PAYMENTS = "menu:payments"
 CB_DELIVERIES = "menu:deliveries"
 CB_HELP = "menu:help"
 CB_CONFIRM = "order:confirm"
+CB_PHONE_OK = "phone:ok"
+CB_PHONE_RETRY = "phone:retry"
+CB_PHONE_MANUAL = "phone:manual"
 CB_CANCEL = "order:cancel"
 CB_MAT_CONFIRM = "materials:confirm"
 CB_MAT_REDO = "materials:redo"
@@ -44,9 +47,21 @@ def _help_row():
 
 
 def contact_kb():
+    """Запрос телефона. Номер аккаунта бывает не тем, на который заказывают, —
+    поэтому рядом кнопка ввода другого номера вручную."""
     b = InlineKeyboardBuilder()
     b.row(RequestContactButton(text="📱 Поделиться контактом"))
+    b.row(CallbackButton(text="✏️ Ввести другой номер", payload=CB_PHONE_MANUAL))
     b.row(_help_row())
+    return b.as_markup()
+
+
+def phone_confirm_kb():
+    b = InlineKeyboardBuilder()
+    b.row(
+        CallbackButton(text="✅ Да, верно", payload=CB_PHONE_OK),
+        CallbackButton(text="✏️ Ввести заново", payload=CB_PHONE_RETRY),
+    )
     return b.as_markup()
 
 

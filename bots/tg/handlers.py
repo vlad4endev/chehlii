@@ -5,27 +5,31 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove, User
 
 from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.fetch_media import fetch_bytes
-from bots.core.phone import normalize_phone
+from bots.core.phone import format_phone, is_russian_mobile, normalize_any_phone
 from bots.core.texts import texts
 from bots.tg.keyboards import (
     BTN_CATALOG,
     BTN_DELIVERIES,
     BTN_DISCOUNT,
     BTN_HELP,
+    BTN_PHONE_MANUAL,
     BTN_PAYMENTS,
     confirm_kb,
     contact_kb,
+    phone_confirm_kb,
     delivery_mode_kb,
     delivery_orders_kb,
     delivery_points_kb,
@@ -183,9 +187,13 @@ async def on_start(msg: Message, state: FSMContext) -> None:
     await backend.mark_journey(client["id"], code)
 
 
-async def _apply_phone(msg: Message, state: FSMContext, phone: str) -> None:
-    """Общий путь после контакта/текста телефона — как в MAX."""
-    u = msg.from_user
+async def _apply_phone(
+    msg: Message, state: FSMContext, phone: str, *, user: User | None = None
+) -> None:
+    """Общий путь после контакта/текста телефона — как в MAX.
+
+    user — для вызова из callback: там msg.from_user это бот, а не клиент."""
+    u = user or msg.from_user
     client = await backend.upsert_client(
         CHANNEL, str(u.id), nickname=(u.username or u.full_name), phone=phone
     )
@@ -202,6 +210,11 @@ async def _apply_phone(msg: Message, state: FSMContext, phone: str) -> None:
         return
     pending_delivery = data.get("pending_delivery_order_id")
     if pending_delivery is not None:
+        if not is_russian_mobile(phone):
+            # Контактный номер мог быть иностранным, но службы доставки принимают
+            # только российский мобильный получателя.
+            await msg.answer(_DELIVERY_RU_PHONE_TEXT, reply_markup=contact_kb())
+            return
         await _start_delivery(msg, state, int(pending_delivery), client.get("phone"))
         return
     await state.clear()
@@ -209,13 +222,24 @@ async def _apply_phone(msg: Message, state: FSMContext, phone: str) -> None:
     await backend.mark_journey(client["id"], "msg_003")
 
 
+_PHONE_FORMAT_HINT = (
+    "Пришлите номер с кодом страны, например +79001234567 или +380501234567."
+)
+_DELIVERY_RU_PHONE_TEXT = (
+    "Для доставки по России нужен российский мобильный получателя (+79XXXXXXXXX). "
+    "Нажмите «✏️ Ввести другой номер» или пришлите номер."
+)
+
+
 @router.message(F.contact)
 async def on_contact(msg: Message, state: FSMContext) -> None:
-    phone = normalize_phone(msg.contact.phone_number if msg.contact else None)
+    phone = normalize_any_phone(
+        msg.contact.phone_number if msg.contact else None, trusted_digits=True
+    )
     if not phone:
         await msg.answer(
-            "Не разобрал мобильный номер. Нажмите «📱 Поделиться контактом» "
-            "или пришлите +79XXXXXXXXX.",
+            "Не разобрал номер из контакта. Нажмите «✏️ Ввести другой номер» "
+            f"и введите его вручную. {_PHONE_FORMAT_HINT}",
             reply_markup=contact_kb(),
         )
         return
@@ -305,23 +329,52 @@ async def on_web_app_data(msg: Message, state: FSMContext) -> None:
 
 @router.message(OrderFlow.waiting_contact, F.text)
 async def on_waiting_contact_text(msg: Message, state: FSMContext) -> None:
-    # Паритет с MAX: можно прислать номер текстом, не только кнопкой контакта.
-    phone = normalize_phone(msg.text)
+    """Ввод номера вручную: разобрать → показать → попросить подтвердить."""
+    if msg.text == BTN_PHONE_MANUAL:
+        await msg.answer(
+            f"Введите номер телефона. {_PHONE_FORMAT_HINT}", reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    phone = normalize_any_phone(msg.text)
     if not phone:
         await msg.answer(
-            "Чтобы оформить заказ, нажмите «📱 Поделиться контактом» "
-            "или пришлите номер в формате +7XXXXXXXXXX.",
+            "Не разобрал номер. Нажмите «📱 Поделиться контактом» или введите его "
+            f"вручную. {_PHONE_FORMAT_HINT}",
             reply_markup=contact_kb(),
         )
         return
-    await _apply_phone(msg, state, phone)
+    await state.update_data(pending_phone=phone)
+    await msg.answer(f"Ваш номер {format_phone(phone)}. Всё верно?", reply_markup=phone_confirm_kb())
+
+
+@router.callback_query(OrderFlow.waiting_contact, F.data == "phone:ok")
+async def on_phone_confirmed(cb: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    phone = data.get("pending_phone")
+    await cb.answer()
+    if not phone:
+        await cb.message.answer(f"Введите номер ещё раз. {_PHONE_FORMAT_HINT}")
+        return
+    await state.update_data(pending_phone=None)
+    with contextlib.suppress(TelegramBadRequest):
+        await cb.message.edit_reply_markup(reply_markup=None)
+    await _apply_phone(cb.message, state, phone, user=cb.from_user)
+
+
+@router.callback_query(OrderFlow.waiting_contact, F.data == "phone:retry")
+async def on_phone_retry(cb: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(pending_phone=None)
+    await cb.answer()
+    with contextlib.suppress(TelegramBadRequest):
+        await cb.message.edit_reply_markup(reply_markup=None)
+    await cb.message.answer(f"Введите номер ещё раз. {_PHONE_FORMAT_HINT}")
 
 
 @router.message(OrderFlow.waiting_contact)
 async def on_waiting_contact_other(msg: Message) -> None:
     await msg.answer(
         "Чтобы оформить заказ, нажмите «📱 Поделиться контактом» "
-        "или пришлите номер в формате +7XXXXXXXXXX.",
+        f"или введите номер вручную. {_PHONE_FORMAT_HINT}",
         reply_markup=contact_kb(),
     )
 
@@ -707,8 +760,8 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         return
     u = cb.from_user
     client = await backend.upsert_client(CHANNEL, str(u.id), nickname=(u.username or u.full_name))
-    phone = normalize_phone(client.get("phone"))
-    if not phone:
+    phone = client.get("phone")
+    if not is_russian_mobile(phone):
         await state.set_state(OrderFlow.waiting_contact)
         await state.update_data(pending_delivery_order_id=order_id)
         try:
@@ -716,8 +769,7 @@ async def on_delivery_cb(cb: CallbackQuery, state: FSMContext) -> None:
         except Exception:
             pass
         await cb.message.answer(
-            "Для доставки нужен мобильный телефон получателя (+79XXXXXXXXX). "
-            "Нажмите «📱 Поделиться контактом» или пришлите номер.",
+            _DELIVERY_RU_PHONE_TEXT,
             reply_markup=contact_kb(),
         )
         await cb.answer()

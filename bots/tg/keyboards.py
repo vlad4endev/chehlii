@@ -21,14 +21,18 @@ BTN_HELP = "🙋 Позвать человека"
 BTN_DISCOUNT = "🎁 Моя скидочная программа"
 BTN_PAYMENTS = "💳 Мои оплаты"
 BTN_DELIVERIES = "📦 Мои доставки"
+BTN_PHONE_MANUAL = "✏️ Ввести другой номер"
 
 
-def contact_kb() -> ReplyKeyboardMarkup:
+def contact_kb(*, manual: bool = True) -> ReplyKeyboardMarkup:
+    """Запрос телефона. manual=True добавляет ввод другого номера вручную —
+    номер аккаунта Telegram бывает не тем, на который заказывают."""
+    rows = [[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]]
+    if manual:
+        rows.append([KeyboardButton(text=BTN_PHONE_MANUAL)])
+    rows.append([KeyboardButton(text=BTN_HELP)])
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)],
-            [KeyboardButton(text=BTN_HELP)],
-        ],
+        keyboard=rows,
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -50,6 +54,17 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=BTN_HELP)],
         ],
         resize_keyboard=True,
+    )
+
+
+def phone_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, верно", callback_data="phone:ok"),
+                InlineKeyboardButton(text="✏️ Ввести заново", callback_data="phone:retry"),
+            ]
+        ]
     )
 
 
