@@ -2,21 +2,21 @@ import { useMemo, useState } from 'react'
 
 import type { Availability, AvailabilityRow, PlateType, StockComponent, StockKind } from '../warehouseApi'
 
-/** Изделие, по которому фильтруем: всё сразу или одна колонка склада. */
-type ItemFilter = 'all' | 'base' | 'silver' | 'black'
+/** Состояние модели с точки зрения продаж: можно ли собрать чехол и надолго ли хватит. */
+type Status = 'out' | 'low' | 'ok'
 
-const ITEM_FILTERS: { value: ItemFilter; label: string }[] = [
-  { value: 'all', label: 'Все изделия' },
-  { value: 'base', label: 'Балванки' },
-  { value: 'silver', label: 'Пластины · серебро' },
-  { value: 'black', label: 'Пластины · чёрные' },
+const STATUS_TILES: { key: Status; title: string }[] = [
+  { key: 'out', title: 'Нельзя продать' },
+  { key: 'low', title: 'Заканчивается' },
+  { key: 'ok', title: 'В достатке' },
 ]
 
-// prefix сворачивается в «Пл.» на узких экранах, чтобы три колонки помещались без прокрутки.
-const COLUMNS: { key: Exclude<ItemFilter, 'all'>; prefix?: string; short?: string; label: string }[] = [
-  { key: 'base', label: 'Балванка' },
-  { key: 'silver', prefix: 'Пластина', short: 'Пл.', label: 'серебро' },
-  { key: 'black', prefix: 'Пластина', short: 'Пл.', label: 'чёрная' },
+type Column = 'base' | 'silver' | 'black'
+
+const COLUMNS: { key: Column; title: string; sub?: string }[] = [
+  { key: 'base', title: 'Балванка' },
+  { key: 'silver', title: 'Пластина', sub: 'серебро' },
+  { key: 'black', title: 'Пластина', sub: 'чёрная' },
 ]
 
 export interface ModelRow {
@@ -28,7 +28,7 @@ export interface ModelRow {
   black?: StockComponent
 }
 
-function columnOf(c: StockComponent): Exclude<ItemFilter, 'all'> | null {
+function columnOf(c: StockComponent): Column | null {
   if (c.kind === ('base' satisfies StockKind)) return 'base'
   const plate: PlateType | null = c.plate_type
   return plate === 'silver' || plate === 'black' ? plate : null
@@ -61,20 +61,33 @@ const isRow = (x: AvailabilityRow | undefined): x is AvailabilityRow => x !== un
 /** Модели, чей остаток показывает строка: члены группы или сама модель. */
 const membersOf = (r: ModelRow): string[] => (r.members.length > 0 ? r.members : [r.model])
 
-const PLATE_NAME: Record<PlateType, string> = { black: 'чёрная', silver: 'серебро' }
+const PLATE_NAME: Record<PlateType, string> = { black: 'Чёрная', silver: 'Серебро' }
 
-/** «Чёрная 4 · серебро 0» только по продаваемым цветам; красный — нет, жёлтый — мало. */
+type CountState = 'out' | 'low' | 'ok'
+
+const countState = (count: number, threshold: number): CountState =>
+  count === 0 ? 'out' : count <= threshold ? 'low' : 'ok'
+
+/** Статус строки по данным «можно собрать»; null — по модели нет данных (не участвует в счётчиках). */
+function statusOf(entries: AvailabilityRow[]): Status | null {
+  if (entries.length === 0) return null
+  if (entries.some((e) => e.out)) return 'out'
+  if (entries.some((e) => e.low)) return 'low'
+  return 'ok'
+}
+
+/** «Чёрная 4 · Серебро 0» только по продаваемым цветам; красный — нельзя, жёлтый — мало. */
 function Sellable({ entries, threshold }: { entries: AvailabilityRow[]; threshold: number }) {
-  if (entries.length === 0) return <span className="muted">—</span>
+  if (entries.length === 0) return <span className="muted">нет данных</span>
   const used = (['black', 'silver'] as const).filter((p) => entries.some((e) => e.used_plates.includes(p)))
   if (used.length === 0) return <span className="muted">не продаётся</span>
   return (
     <span className="sellable">
       {used.map((p) => {
         const count = Math.min(...entries.map((e) => e[p]))
-        const state = count === 0 ? 'out' : count <= threshold ? 'low' : 'ok'
         return (
-          <span key={p} className={`sellable__item sellable__item--${state}`}>
+          <span key={p} className={`sellchip sellchip--${countState(count, threshold)}`}>
+            <i className={`dot dot--${p}`} aria-hidden="true" />
             {PLATE_NAME[p]} <b className="mono">{count}</b>
           </span>
         )
@@ -92,102 +105,102 @@ interface Props {
 }
 
 export function StockMatrix({ components, availability, onOpen }: Props) {
-  const [item, setItem] = useState<ItemFilter>('all')
-  const [model, setModel] = useState('')
   const [search, setSearch] = useState('')
-  const [onlyEmpty, setOnlyEmpty] = useState(false)
-  // ?low=1 — переход с обзора («заканчивается на складе»).
-  const [onlyLow, setOnlyLow] = useState(() => new URLSearchParams(window.location.search).get('low') === '1')
+  // ?low=1 — переход с обзора («заканчивается на складе»): сразу показываем проблемные модели.
+  const [statuses, setStatuses] = useState<Set<Status>>(() =>
+    new URLSearchParams(window.location.search).get('low') === '1' ? new Set<Status>(['out', 'low']) : new Set(),
+  )
+  const threshold = availability?.threshold ?? 0
+
   const byModel = useMemo(
     () => new Map((availability?.models ?? []).map((m) => [m.model_name, m])),
     [availability],
   )
+  const entriesOf = (r: ModelRow): AvailabilityRow[] => membersOf(r).map((m) => byModel.get(m)).filter(isRow)
 
   const all = useMemo(() => groupByModel(components), [components])
-  const columns = COLUMNS.filter((c) => item === 'all' || c.key === item)
+
+  const counts = useMemo(() => {
+    const c: Record<Status, number> = { out: 0, low: 0, ok: 0 }
+    for (const r of all) {
+      const s = statusOf(membersOf(r).map((m) => byModel.get(m)).filter(isRow))
+      if (s) c[s] += 1
+    }
+    return c
+  }, [all, byModel])
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return all.filter((r) => {
-      if (model && r.model !== model) return false
       if (needle && ![r.model, ...r.members].some((n) => n.toLowerCase().includes(needle))) return false
-      if (onlyLow && !membersOf(r).some((m) => byModel.get(m)?.low || byModel.get(m)?.out)) return false
-      if (onlyEmpty) {
-        const shown = columns.map((c) => r[c.key]).filter((c): c is StockComponent => !!c)
-        if (!shown.some((c) => c.qty === 0)) return false
+      if (statuses.size > 0) {
+        const s = statusOf(membersOf(r).map((m) => byModel.get(m)).filter(isRow))
+        if (!s || !statuses.has(s)) return false
       }
       return true
     })
-  }, [all, model, search, onlyEmpty, onlyLow, byModel, columns])
+  }, [all, search, statuses, byModel])
 
-  const filtered = item !== 'all' || model !== '' || search !== '' || onlyEmpty || onlyLow
+  const filtered = search !== '' || statuses.size > 0
   const reset = () => {
-    setItem('all')
-    setModel('')
     setSearch('')
-    setOnlyEmpty(false)
-    setOnlyLow(false)
+    setStatuses(new Set())
   }
+  const toggle = (s: Status) =>
+    setStatuses((prev) => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      return next
+    })
 
   return (
     <div>
-      <div className="stockfilters">
-        <div className="segmented" role="group" aria-label="Изделие">
-          {ITEM_FILTERS.map((f) => (
+      <div className="stocktiles" role="group" aria-label="Фильтр по состоянию">
+        {STATUS_TILES.map((t) => {
+          const active = statuses.has(t.key)
+          return (
             <button
-              key={f.value}
+              key={t.key}
               type="button"
-              className={`segmented__btn${item === f.value ? ' segmented__btn--active' : ''}`}
-              aria-pressed={item === f.value}
-              onClick={() => setItem(f.value)}
+              className={`stocktile stocktile--${t.key}${active ? ' stocktile--active' : ''}`}
+              aria-pressed={active}
+              disabled={!availability}
+              onClick={() => toggle(t.key)}
             >
-              {f.label}
+              <span className="stocktile__num mono">{availability ? counts[t.key] : '—'}</span>
+              <span className="stocktile__text">
+                <span className="stocktile__title">{t.title}</span>
+                <span className="stocktile__sub">
+                  {t.key === 'out' && 'не хватает балванки или пластины'}
+                  {t.key === 'low' && `можно собрать ≤ ${threshold} шт.`}
+                  {t.key === 'ok' && 'хватает с запасом'}
+                </span>
+              </span>
             </button>
-          ))}
-        </div>
-        <label className="stockfilters__field">
-          <span className="stockfilters__label">Модель</span>
-          <select className="input" value={model} onChange={(e) => setModel(e.target.value)}>
-            <option value="">Все модели</option>
-            {all.map((r) => (
-              <option key={r.model} value={r.model}>
-                {r.model}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="stockfilters__field">
-          <span className="stockfilters__label">Поиск</span>
+          )
+        })}
+      </div>
+
+      <div className="stocksearch">
+        <label className="stocksearch__field">
+          <span className="sr-only">Найти модель</span>
           <input
             className="input"
             type="search"
-            placeholder="Например, 15 Pro"
+            placeholder="Найти модель, например 15 Pro"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </label>
-        <label className="stockfilters__check">
-          <input
-            type="checkbox"
-            checked={onlyEmpty}
-            onChange={(e) => setOnlyEmpty(e.target.checked)}
-          />
-          Только закончившиеся
-        </label>
-        <label className="stockfilters__check">
-          <input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} />
-          Мало или нет{availability ? ` (≤ ${availability.threshold})` : ''}
         </label>
         {filtered && (
           <button type="button" className="btn btn--ghost btn--sm" onClick={reset}>
             Сбросить
           </button>
         )}
-      </div>
-
-      <div className="field__hint" style={{ margin: '4px 0 10px' }} aria-live="polite">
-        Показано моделей: {rows.length} из {all.length}
-        . Нажмите на число — приход, брак или правка остатка.
+        <span className="field__hint stocksearch__count" aria-live="polite">
+          Моделей: {rows.length === all.length ? all.length : `${rows.length} из ${all.length}`}
+        </span>
       </div>
 
       {rows.length === 0 ? (
@@ -207,71 +220,79 @@ export function StockMatrix({ components, availability, onOpen }: Props) {
             <thead>
               <tr>
                 <th>Модель</th>
-                <th title="Сколько чехлов можно собрать: минимум из балванки и пластины">Можно собрать</th>
-                {columns.map((c) => (
-                  <th key={c.key} className="num">
-                    {c.prefix && (
-                      <>
-                        <span className="th-long">{c.prefix}</span>
-                        <span className="th-short">{c.short}</span>{' '}
-                      </>
-                    )}
-                    {c.label}
+                {COLUMNS.map((c) => (
+                  <th key={c.key} className="cell-qty">
+                    {c.title}
+                    {c.sub && <span className="th-sub">{c.sub}</span>}
                   </th>
                 ))}
+                <th title="Сколько чехлов можно продать: меньшее из балванки и пластины нужного цвета">
+                  Можно собрать
+                  <span className="th-sub">чехлов</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.model}>
-                  <td className="strong">
-                    {r.model}
-                    {r.members.length > 0 && (
-                      <span className="groupnote" title={r.members.join(', ')}>
-                        Универсальная группа · {modelsWord(r.members.length)}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <Sellable
-                      entries={membersOf(r).map((m) => byModel.get(m)).filter(isRow)}
-                      threshold={availability?.threshold ?? 0}
-                    />
-                  </td>
-                  {columns.map((c) => (
-                    <td key={c.key} className="num">
-                      <QtyCell
-                        component={r[c.key]}
-                        label={`${c.prefix ? c.prefix + ' ' : ''}${c.label}, ${r.model}`}
-                        onOpen={onOpen}
-                      />
+              {rows.map((r) => {
+                const entries = entriesOf(r)
+                const status = statusOf(entries)
+                return (
+                  <tr key={r.model} className={`stockrow${status ? ` stockrow--${status}` : ''}`}>
+                    <td className="strong stockrow__model">
+                      {r.model}
+                      {status === 'out' && <span className="statuspill statuspill--out">Нельзя продать</span>}
+                      {status === 'low' && <span className="statuspill statuspill--low">Заканчивается</span>}
+                      {r.members.length > 0 && (
+                        <span className="groupnote" title={r.members.join(', ')}>
+                          Универсальная группа · {modelsWord(r.members.length)}
+                        </span>
+                      )}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {COLUMNS.map((c) => (
+                      <td key={c.key} className="cell-qty" data-label={c.sub ? `${c.title} · ${c.sub}` : c.title}>
+                        <QtyCell
+                          component={r[c.key]}
+                          threshold={threshold}
+                          label={`${c.title}${c.sub ? ' ' + c.sub : ''}, ${r.model}`}
+                          onOpen={onOpen}
+                        />
+                      </td>
+                    ))}
+                    <td className="stockrow__sell" data-label="Можно собрать">
+                      <Sellable entries={entries} threshold={threshold} />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
+      <p className="field__hint" style={{ margin: '10px 0 0' }}>
+        Нажмите на число в таблице — откроется приход, брак или правка остатка.
+      </p>
     </div>
   )
 }
 
 function QtyCell({
   component,
+  threshold,
   label,
   onOpen,
 }: {
   component?: StockComponent
+  threshold: number
   label: string
   onOpen: (component: StockComponent) => void
 }) {
   if (!component) return <span className="muted">—</span>
-  const cls = `mono${component.qty === 0 ? ' stock--empty' : ''}`
+  const state = countState(component.qty, threshold)
   return (
     <button
       type="button"
-      className={`qtybtn ${cls}`}
+      className={`qtybtn mono qtybtn--${state}`}
+      title="Приход, брак, правка"
       aria-label={`${label}: остаток ${component.qty}. Приход, брак, правка`}
       onClick={() => onOpen(component)}
     >

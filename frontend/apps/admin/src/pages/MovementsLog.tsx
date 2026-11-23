@@ -118,8 +118,10 @@ export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
   }
 
   return (
-    <section className="trash-block">
-      <div className="field__label">Движения · {total}</div>
+    <section className="whsection" aria-labelledby="wh-log-title">
+      <h2 id="wh-log-title" className="whsection__title">
+        Журнал движений <span className="whsection__count">{total}</span>
+      </h2>
 
       <div className="stockfilters">
         <label className="stockfilters__field">

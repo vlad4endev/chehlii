@@ -474,16 +474,87 @@ select.input { appearance: none; cursor: pointer; }
 .segmented__btn:focus-visible, .qtybtn:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; }
 .stockfilters .segmented__btn { min-height: 44px; }
 .table--stock th, .table--stock td { padding: 12px 10px; }
-.table--stock th { white-space: normal; }
-.th-short { display: none; }
+.table--stock th { white-space: normal; vertical-align: bottom; }
+.table--stock tbody tr { cursor: default; }
+.table--stock tbody tr:hover { background: var(--panel-2); }
+.th-sub { display: block; margin-top: 2px; font-size: 10px; letter-spacing: 0.04em; color: var(--ink-faint); text-transform: lowercase; font-weight: 600; }
+.cell-qty { text-align: center !important; }
+.qtybtn { min-width: 64px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel); color: var(--ink); font-size: 14.5px; font-weight: 600; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s, background 0.12s; }
+.qtybtn:hover { border-color: var(--ink-soft); box-shadow: var(--shadow-sm); }
+.qtybtn--low { background: #fdf3df; border-color: #ecd09a; color: #8a5a00; }
+.qtybtn--out { background: #fdecec; border-color: #f0bcbc; color: #b53a3a; }
+
+/* Склад: заголовки разделов и плитки состояния */
+.whsection { margin-top: 28px; }
+.whsection__title { margin: 0 0 12px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.whsection__count { margin-left: 6px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--ink-soft); font-size: 12.5px; font-weight: 600; vertical-align: 2px; }
+.stocktiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stocktile { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; text-align: left; border: 1px solid var(--line-2); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); transition: border-color 0.12s, box-shadow 0.12s; }
+.stocktile:hover:not(:disabled) { border-color: var(--ink-soft); }
+.stocktile:disabled { cursor: default; opacity: 0.6; }
+.stocktile:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; }
+.stocktile--active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.stocktile__num { font-size: 26px; font-weight: 700; line-height: 1; min-width: 34px; }
+.stocktile--out .stocktile__num { color: var(--danger); }
+.stocktile--low .stocktile__num { color: #b86200; }
+.stocktile--ok .stocktile__num { color: var(--ok); }
+.stocktile__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stocktile__title { font-size: 14px; font-weight: 700; }
+.stocktile__sub { font-size: 12px; color: var(--ink-soft); }
+.stocksearch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 12px; }
+.stocksearch__field { flex: 1 1 280px; max-width: 420px; }
+.stocksearch__count { margin-left: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Склад: статус модели и «можно собрать» */
+.statuspill { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px; }
+.statuspill--out { color: #a02d2d; background: #fdecec; border: 1px solid #f0bcbc; }
+.statuspill--low { color: #8a5a00; background: #fdf3df; border: 1px solid #ecd09a; }
+.stockrow--out td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.stockrow--low td:first-child { box-shadow: inset 3px 0 0 #e0a43a; }
+.sellchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel); font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.sellchip b { color: var(--ink); font-size: 13.5px; }
+.sellchip--low { background: #fdf3df; border-color: #ecd09a; }
+.sellchip--low b { color: #8a5a00; }
+.sellchip--out { background: #fdecec; border-color: #f0bcbc; }
+.sellchip--out b { color: #b53a3a; }
+.dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.25); flex: none; }
+.dot--black { background: #23262d; }
+.dot--silver { background: #d5d8de; }
+
+/* Склад: кнопка «Ещё» с меню и итог закупки */
+.menu { position: relative; display: inline-block; }
+.menu__list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 200px; padding: 6px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow-md); }
+.menu__item { min-height: 44px; padding: 0 14px; text-align: left; border: none; border-radius: 8px; background: none; font-size: 14px; color: var(--ink); }
+.menu__item:hover, .menu__item:focus-visible { background: var(--bg); outline: none; }
+.purchasetotal { padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 14px; }
+
 @media (max-width: 640px) {
-  .th-long { display: none; }
-  .th-short { display: inline; }
-  .tablewrap > .table.table--stock { min-width: 0; }
-  .table--stock th, .table--stock td { padding: 12px 6px; }
+  .stocktiles { grid-template-columns: 1fr; gap: 8px; }
+  .stocktile { min-height: 56px; padding: 10px 14px; }
+  .stocksearch__field { max-width: none; }
+  .stocksearch__count { margin-left: 0; }
+  .page__head .row-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; white-space: normal; text-align: left; }
+  .page__head .row-actions > .btn { flex: 1 1 100%; width: auto; }
+  .page__head .row-actions > .btn + .btn, .page__head .row-actions > .menu { flex: 1 1 0; min-width: 0; }
+  .menu .btn { width: 100%; }
+  .menu__list { left: auto; right: 0; }
+  /* Строки склада — карточками: на 360 px пять колонок не помещаются */
+  .tablewrap:has(.table--stock) { overflow: visible; }
+  .tablewrap > .table.table--stock { min-width: 0; display: block; background: transparent; border: none; box-shadow: none; }
+  .table--stock thead { display: none; }
+  .table--stock tbody { display: flex; flex-direction: column; gap: 10px; }
+  .table--stock tr.stockrow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-sm); }
+  .table--stock tr.stockrow:hover { background: var(--panel); }
+  .table--stock td { display: block; padding: 0; border: none; }
+  .table--stock td.stockrow__model, .table--stock td.stockrow__sell { grid-column: 1 / -1; }
+  .table--stock td.stockrow__model { box-shadow: none; }
+  .stockrow--out { border-left: 4px solid var(--danger) !important; }
+  .stockrow--low { border-left: 4px solid #e0a43a !important; }
+  .table--stock td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-faint); text-align: center; }
+  .table--stock td.stockrow__sell::before { text-align: left; }
+  .qtybtn { width: 100%; }
 }
-.qtybtn { min-width: 56px; min-height: 44px; padding: 0 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; font-size: 14px; cursor: pointer; }
-.qtybtn:hover { border-color: var(--line-2); background: var(--panel); }
 
 /* Миниатюра обложки в таблице каталога */
 .th-thumb { width: 52px; }

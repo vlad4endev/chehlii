@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../api'
 import { useModalA11y } from '../useModalA11y'
@@ -7,22 +7,18 @@ import {
   type PlateType,
   type Availability,
   type PendingOrder,
-  type PurchaseSuggestion,
   type StockComponent,
   type StockKind,
-  KIND_LABEL,
-  PLATE_LABEL,
   createComponent,
-  downloadPurchaseXlsx,
   fetchComponents,
   fetchAvailability,
   fetchPendingDeductions,
   fetchWarehouseModels,
-  fetchPurchaseSuggestion,
 } from '../warehouseApi'
 import { InventoryModal } from './InventoryModal'
 import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
+import { PurchaseModal } from './PurchaseModal'
 import { StockActionModal } from './StockActionModal'
 import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
@@ -35,10 +31,10 @@ export function Warehouse() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [pending, setPending] = useState<PendingOrder[]>([])
   const [availability, setAvailability] = useState<Availability | null>(null)
-  const [purchase, setPurchase] = useState<PurchaseSuggestion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [purchaseOpen, setPurchaseOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const [addOpen, setAddOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
@@ -84,53 +80,33 @@ export function Warehouse() {
     reload()
   }, [])
 
-  async function onPurchase() {
-    setBusy('purchase')
-    try {
-      setPurchase(await fetchPurchaseSuggestion())
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Не удалось рассчитать закупку')
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
     <div>
       <div className="page__head">
         <h1 className="page__title">Склад</h1>
         {isAdmin && (
           <div className="row-actions">
-            <button className="btn btn--primary" onClick={() => setAddOpen(true)}>
-              + Позиция
-            </button>
-            <button className="btn btn--ghost" onClick={() => setGroupsOpen(true)}>
-              Группы моделей
+            <button className="btn btn--primary" onClick={() => setPurchaseOpen(true)}>
+              Что докупить
             </button>
             <button className="btn btn--ghost" onClick={() => setInventoryOpen(true)}>
               Инвентаризация
             </button>
-            <button
-              className="btn btn--ghost"
-              disabled={busy === 'purchase'}
-              onClick={onPurchase}
-            >
-              {busy === 'purchase' ? 'Считаем…' : 'Рассчитать закупку'}
-            </button>
-            <button
-              className="btn btn--ghost"
-              onClick={() =>
-                downloadPurchaseXlsx().catch((e) => alert(e instanceof Error ? e.message : String(e)))
-              }
-            >
-              Excel закупки
-            </button>
+            <ActionsMenu
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              items={[
+                { label: 'Новая позиция', onSelect: () => setAddOpen(true) },
+                { label: 'Группы моделей', onSelect: () => setGroupsOpen(true) },
+              ]}
+            />
           </div>
         )}
       </div>
       <p className="page__lead">
-        Балванки и пластины по моделям iPhone. Доступно к продаже = min(балванка, пластина типа
-        чехла).{isAdmin ? ' Параметры закупки — в Настройках → Склад / закупка.' : ''}
+        Сколько балванок и пластин лежит по каждой модели iPhone. Чехол можно продать, когда есть и балванка, и
+        пластина нужного цвета.
+        {isAdmin ? ' Порог «заканчивается» и сроки закупки — в Настройки → Склад / закупка.' : ''}
       </p>
 
       {loading && <div className="empty">Загрузка…</div>}
@@ -150,54 +126,12 @@ export function Warehouse() {
         <>
           <PendingDeductions items={pending} onChanged={reload} />
 
-          <section className="trash-block">
-            <div className="field__label">Остатки по моделям</div>
+          <section className="whsection" aria-labelledby="wh-stock-title">
+            <h2 id="wh-stock-title" className="whsection__title">
+              Остатки по моделям
+            </h2>
             <StockMatrix components={components} availability={availability} onOpen={setEditRow} />
           </section>
-
-          {purchase && (
-            <section className="trash-block">
-              <div className="field__label">
-                Закупка · N={purchase.settings.lookback_days}, lead=
-                {purchase.settings.lead_days}, safety={purchase.settings.safety_days}
-              </div>
-              <div className="tablewrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Вид</th>
-                      <th>Модель</th>
-                      <th>Пластина</th>
-                      <th className="num">Остаток</th>
-                      <th className="num">Расход</th>
-                      <th className="num">В день</th>
-                      <th className="num">Купить</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {purchase.items
-                      .filter((r) => r.recommend > 0 || r.spent_lookback > 0)
-                      .map((r) => (
-                        <tr key={r.component_id}>
-                          <td>{KIND_LABEL[r.kind] ?? r.kind}</td>
-                          <td className="strong">{r.model_name}</td>
-                          <td>
-                            {r.plate_type ? PLATE_LABEL[r.plate_type] ?? r.plate_type : '—'}
-                          </td>
-                          <td className="num mono">{r.stock}</td>
-                          <td className="num mono">{r.spent_lookback}</td>
-                          <td className="num mono">{r.spend_per_day}</td>
-                          <td className="num mono strong">{r.recommend}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              {purchase.items.every((r) => r.recommend === 0 && r.spent_lookback === 0) && (
-                <div className="empty">Нет расхода за период — закупка не нужна.</div>
-              )}
-            </section>
-          )}
 
           <MovementsLog refreshKey={refreshKey} canReverse={isAdmin} onChanged={reload} />
         </>
@@ -209,7 +143,6 @@ export function Warehouse() {
           canAdjust={isAdmin}
           onClose={() => setEditRow(null)}
           onDone={async () => {
-            setPurchase(null)
             await reload()
           }}
         />
@@ -220,7 +153,6 @@ export function Warehouse() {
           components={components}
           onClose={() => setInventoryOpen(false)}
           onSaved={async (result) => {
-            setPurchase(null)
             await reload()
             setNotice(`Инвентаризация сохранена: изменено позиций — ${result.changed}.`)
           }}
@@ -232,29 +164,22 @@ export function Warehouse() {
           models={models}
           onClose={() => setGroupsOpen(false)}
           onChanged={async () => {
-            setPurchase(null)
             await reload()
           }}
         />
       )}
 
+      {purchaseOpen && <PurchaseModal onClose={() => setPurchaseOpen(false)} />}
+
       {addOpen && (
         <AddPositionModal
           models={models}
-          busy={busy === 'add'}
           onClose={() => setAddOpen(false)}
           onSave={async (payload) => {
-            setBusy('add')
-            try {
-              await createComponent(payload)
-              setAddOpen(false)
-              setPurchase(null)
-              await reload()
-            } catch (err) {
-              alert(err instanceof ApiError ? err.message : 'Не удалось создать позицию')
-            } finally {
-              setBusy(null)
-            }
+            await createComponent(payload)
+            setAddOpen(false)
+            await reload()
+            setNotice(`Позиция создана: ${payload.model_name}.`)
           }}
         />
       )}
@@ -262,14 +187,78 @@ export function Warehouse() {
   )
 }
 
+interface MenuItem {
+  label: string
+  onSelect: () => void
+}
+
+/** Редкие действия («Ещё»): меню закрывается по Escape, клику снаружи и выбору пункта. */
+function ActionsMenu({
+  open,
+  onOpenChange,
+  items,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  items: MenuItem[]
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) onOpenChange(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, onOpenChange])
+
+  return (
+    <div className="menu" ref={wrapRef}>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+      >
+        Ещё ▾
+      </button>
+      {open && (
+        <div className="menu__list" role="menu">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className="menu__item"
+              onClick={() => {
+                onOpenChange(false)
+                it.onSelect()
+              }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AddPositionModal({
   models,
-  busy,
   onClose,
   onSave,
 }: {
   models: string[]
-  busy: boolean
   onClose: () => void
   onSave: (payload: {
     kind: StockKind
@@ -278,41 +267,70 @@ function AddPositionModal({
     qty: number
     comment?: string
     register_canon?: boolean
-  }) => void | Promise<void>
+  }) => Promise<void>
 }) {
   const [kind, setKind] = useState<StockKind>('base')
-  const [modelName, setModelName] = useState(models[0] ?? '')
+  const [modelName, setModelName] = useState('')
   const [plate, setPlate] = useState<PlateType>('black')
   const [qty, setQty] = useState(0)
   const [comment, setComment] = useState('')
-  // YOUR TURN: true — неизвестная модель сразу в канон iPhone (+ все 3 компонента на складе).
-  // false — только выбранная позиция, без канона (редко нужно).
+  // true — неизвестная модель сразу попадает в список моделей iPhone, и для неё заводятся
+  // все три позиции склада. false — только выбранная позиция (редко нужно).
   const [registerCanon, setRegisterCanon] = useState(true)
-  const cardRef = useRef<HTMLDivElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const cardRef = useRef<HTMLFormElement>(null)
+  // Пока идёт запись, закрывать нельзя: иначе человек не узнает, сохранилось ли.
   useModalA11y(cardRef, () => {
     if (!busy) onClose()
   })
 
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (busy || !modelName.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onSave({
+        kind,
+        model_name: modelName.trim(),
+        plate_type: kind === 'plate' ? plate : null,
+        qty,
+        comment: comment.trim() || undefined,
+        register_canon: registerCanon,
+      })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось создать позицию — проверьте соединение и попробуйте снова')
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className="modal" onClick={onClose}>
-      <div
+    <div className="modal" onClick={() => !busy && onClose()}>
+      <form
         ref={cardRef}
         tabIndex={-1}
         className="modal__card"
         role="dialog"
         aria-modal="true"
-        aria-label="Новая позиция"
+        aria-labelledby="add-position-title"
         onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
       >
         <div className="modal__head">
-          <h2 className="modal__title">Новая позиция</h2>
-          <button className="modal__close" onClick={onClose}>
+          <h2 id="add-position-title" className="modal__title">
+            Новая позиция
+          </h2>
+          <button type="button" className="modal__close" onClick={onClose} disabled={busy} aria-label="Закрыть">
             ✕
           </button>
         </div>
         <div className="modal__body">
+          <p className="field__hint" style={{ margin: 0 }}>
+            Нужна, когда на склад приходит новая модель. Обычный приход — нажмите на число в таблице остатков.
+          </p>
           <label className="field">
-            <span className="field__label">Вид</span>
+            <span className="field__label">Что за изделие</span>
             <select
               className="input"
               value={kind}
@@ -329,8 +347,9 @@ function AddPositionModal({
               list="wh-models"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              placeholder="iPhone 19 Pro или выберите из списка"
+              placeholder="Выберите из списка или введите, например iPhone 19 Pro"
               required
+              autoFocus
             />
             <datalist id="wh-models">
               {models.map((m) => (
@@ -340,7 +359,7 @@ function AddPositionModal({
           </label>
           {kind === 'plate' && (
             <label className="field">
-              <span className="field__label">Тип пластины</span>
+              <span className="field__label">Цвет пластины</span>
               <select
                 className="input"
                 value={plate}
@@ -352,13 +371,14 @@ function AddPositionModal({
             </label>
           )}
           <label className="field">
-            <span className="field__label">Начальный остаток</span>
+            <span className="field__label">Сколько сейчас на складе, шт.</span>
             <input
               className="input"
               type="number"
               min={0}
+              inputMode="numeric"
               value={qty}
-              onChange={(e) => setQty(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(e) => setQty(Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
             />
           </label>
           <label className="field">
@@ -376,31 +396,23 @@ function AddPositionModal({
               checked={registerCanon}
               onChange={(e) => setRegisterCanon(e.target.checked)}
             />
-            <span>Добавить модель в канон (если новой ещё нет)</span>
+            <span>Если такой модели ещё нет в списке iPhone — добавить её</span>
           </label>
+          {error && (
+            <div className="form-msg form-msg--err" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="modal__actions">
-          <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
+          <button type="button" className="btn btn--ghost" onClick={onClose} disabled={busy}>
             Отмена
           </button>
-          <button
-            className="btn btn--primary"
-            disabled={busy || !modelName.trim()}
-            onClick={() =>
-              void onSave({
-                kind,
-                model_name: modelName.trim(),
-                plate_type: kind === 'plate' ? plate : null,
-                qty,
-                comment: comment || undefined,
-                register_canon: registerCanon,
-              })
-            }
-          >
-            {busy ? 'Создание…' : 'Создать'}
+          <button type="submit" className="btn btn--primary" disabled={busy || !modelName.trim()}>
+            {busy ? 'Создание…' : 'Создать позицию'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   )
 }
