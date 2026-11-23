@@ -58,7 +58,7 @@ class SupplyIn(BaseModel):
     kind: StockKind
     model_name: str = Field(min_length=1, max_length=64)
     plate_type: PlateType | None = None
-    qty: int = Field(gt=0)
+    qty: int = Field(gt=0, le=wh.MAX_QTY)
     comment: str | None = None
 
 
@@ -66,7 +66,7 @@ class DefectIn(BaseModel):
     kind: StockKind
     model_name: str = Field(min_length=1, max_length=64)
     plate_type: PlateType | None = None
-    qty: int = Field(gt=0)
+    qty: int = Field(gt=0, le=wh.MAX_QTY)
     reason: StockMovementReason
     comment: str | None = None
 
@@ -75,14 +75,14 @@ class ComponentCreateIn(BaseModel):
     kind: StockKind
     model_name: str = Field(min_length=1, max_length=64)
     plate_type: PlateType | None = None
-    qty: int = Field(default=0, ge=0)
+    qty: int = Field(default=0, ge=0, le=wh.MAX_QTY)
     comment: str | None = None
     # Если модели нет в каноне — добавить (без авто-включения во все типы).
     register_canon: bool = True
 
 
 class ComponentAdjustIn(BaseModel):
-    qty: int = Field(ge=0)
+    qty: int = Field(ge=0, le=wh.MAX_QTY)
     comment: str | None = None
 
 
