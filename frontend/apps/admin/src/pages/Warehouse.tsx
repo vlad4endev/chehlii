@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../api'
+import { useAuth } from '../auth'
 import { fetchIphoneModels } from '../catalogApi'
 import {
   type DefectReason,
@@ -21,6 +22,7 @@ import {
   postDefect,
   postSupply,
 } from '../warehouseApi'
+import { StockMatrix } from './StockMatrix'
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('ru-RU', {
@@ -38,6 +40,8 @@ const DEFECT_OPTIONS: { value: DefectReason; label: string }[] = [
 ]
 
 export function Warehouse() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [components, setComponents] = useState<StockComponent[]>([])
   const [models, setModels] = useState<string[]>([])
   const [movements, setMovements] = useState<StockMovement[]>([])
@@ -149,30 +153,32 @@ export function Warehouse() {
     <div>
       <div className="page__head">
         <h1 className="page__title">Склад</h1>
-        <div className="row-actions">
-          <button className="btn btn--primary" onClick={() => setAddOpen(true)}>
-            + Позиция
-          </button>
-          <button
-            className="btn btn--ghost"
-            disabled={busy === 'purchase'}
-            onClick={onPurchase}
-          >
-            {busy === 'purchase' ? 'Считаем…' : 'Рассчитать закупку'}
-          </button>
-          <button
-            className="btn btn--ghost"
-            onClick={() =>
-              downloadPurchaseXlsx().catch((e) => alert(e instanceof Error ? e.message : String(e)))
-            }
-          >
-            Excel закупки
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="row-actions">
+            <button className="btn btn--primary" onClick={() => setAddOpen(true)}>
+              + Позиция
+            </button>
+            <button
+              className="btn btn--ghost"
+              disabled={busy === 'purchase'}
+              onClick={onPurchase}
+            >
+              {busy === 'purchase' ? 'Считаем…' : 'Рассчитать закупку'}
+            </button>
+            <button
+              className="btn btn--ghost"
+              onClick={() =>
+                downloadPurchaseXlsx().catch((e) => alert(e instanceof Error ? e.message : String(e)))
+              }
+            >
+              Excel закупки
+            </button>
+          </div>
+        )}
       </div>
       <p className="page__lead">
         Балванки и пластины по моделям iPhone. Доступно к продаже = min(балванка, пластина типа
-        чехла). Параметры закупки — в Настройках → Склад / закупка.
+        чехла).{isAdmin ? ' Параметры закупки — в Настройках → Склад / закупка.' : ''}
       </p>
 
       {loading && <div className="empty">Загрузка…</div>}
@@ -181,49 +187,8 @@ export function Warehouse() {
       {!loading && !error && (
         <>
           <section className="trash-block">
-            <div className="field__label">Компоненты · {components.length}</div>
-            <div className="field__hint" style={{ marginBottom: 10 }}>
-              Клик по строке — править остаток (корректировка). «+ Позиция» — новая модель или
-              недостающий вид.
-            </div>
-            <div className="tablewrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Вид</th>
-                    <th>Модель</th>
-                    <th>Пластина</th>
-                    <th className="num">Остаток</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {components.map((c) => (
-                    <tr key={c.id} onClick={() => setEditRow(c)} style={{ cursor: 'pointer' }}>
-                      <td>{KIND_LABEL[c.kind] ?? c.kind}</td>
-                      <td className="strong">{c.model_name}</td>
-                      <td>
-                        {c.plate_type ? PLATE_LABEL[c.plate_type] ?? c.plate_type : '—'}
-                      </td>
-                      <td className={`num mono${c.qty === 0 ? ' stock--empty' : ''}`}>{c.qty}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn--ghost"
-                          style={{ padding: '4px 10px', fontSize: 13 }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setEditRow(c)
-                          }}
-                        >
-                          Изменить
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <div className="field__label">Остатки по моделям</div>
+            <StockMatrix components={components} canEdit={isAdmin} onEdit={setEditRow} />
           </section>
 
           <div className="grid2" style={{ display: 'grid', gap: 24, gridTemplateColumns: '1fr 1fr' }}>

@@ -463,6 +463,26 @@ select.input { appearance: none; cursor: pointer; }
 .modelrow__stock .input { width: 76px; height: 34px; padding: 0 8px; text-align: right; font-family: var(--mono); }
 .stock--empty { color: var(--danger); }
 
+/* Склад: единая таблица остатков с фильтрами */
+.stockfilters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; margin-bottom: 8px; }
+.stockfilters__field { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+.stockfilters__label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 700; }
+.stockfilters__check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.stockfilters__check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.segmented__btn:focus-visible, .qtybtn:focus-visible { outline: 3px solid rgba(35, 38, 45, 0.35); outline-offset: 2px; }
+.stockfilters .segmented__btn { min-height: 44px; }
+.table--stock th, .table--stock td { padding: 12px 10px; }
+.table--stock th { white-space: normal; }
+.th-short { display: none; }
+@media (max-width: 640px) {
+  .th-long { display: none; }
+  .th-short { display: inline; }
+  .tablewrap > .table.table--stock { min-width: 0; }
+  .table--stock th, .table--stock td { padding: 12px 6px; }
+}
+.qtybtn { min-width: 56px; min-height: 44px; padding: 0 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; font-size: 14px; cursor: pointer; }
+.qtybtn:hover { border-color: var(--line-2); background: var(--panel); }
+
 /* Миниатюра обложки в таблице каталога */
 .th-thumb { width: 52px; }
 .td-thumb { width: 52px; }
