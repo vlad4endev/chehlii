@@ -19,7 +19,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Chat, Message, Update, User
 
 from bots.tg import handlers
-from bots.tg.keyboards import BTN_HELP
+from bots.tg.keyboards import BTN_DISCOUNT, BTN_HELP
 from bots.tg.middlewares import install
 from bots.tg.states import OrderFlow
 
@@ -170,3 +170,22 @@ async def test_promo_mode_is_left_for_the_same_update(world) -> None:
     await chat.seed(OrderFlow.entering_promo)
     await chat.say(BTN_HELP)
     assert await chat.state() == OrderFlow.consulting.state  # а не остался entering_promo
+
+
+async def test_screenshot_scenario_discount_then_human_then_chat(world) -> None:
+    """Скриншот заказчика: «Скидочная программа» → «Позвать человека» → «Привет»/«Подскажите».
+
+    Раньше обе реплики проверялись как промокод («Промокод не найден») и менеджеру не доходили.
+    """
+    world.backend.activate_promo = AsyncMock(side_effect=ValueError("Промокод не найден"))
+    chat = Chat_()
+    await chat.seed(None)
+    await chat.say(BTN_DISCOUNT)
+    assert await chat.state() == OrderFlow.entering_promo.state
+    await chat.say(BTN_HELP)
+    await chat.say("Привет")
+    await chat.say("Подскажите")
+    world.backend.activate_promo.assert_not_awaited()
+    texts = _ingested_texts(world)
+    assert any("Привет" in t for t in texts) and any("Подскажите" in t for t in texts)
+    assert not any("Промокод не найден" in s for s in world.sent)
