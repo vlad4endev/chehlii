@@ -17,6 +17,7 @@ import re
 import httpx
 from maxapi import F, Router
 from maxapi.context.base import BaseContext
+from maxapi.enums.upload_type import UploadType
 from maxapi.filters.state import StateFilter
 from maxapi.types import (
     BotStarted,
@@ -25,7 +26,6 @@ from maxapi.types import (
     MessageCallback,
     MessageCreated,
 )
-from maxapi.enums.upload_type import UploadType
 from maxapi.types.input_media import InputMediaBuffer
 
 from bots.core import consult, delivery, payments, review
@@ -33,6 +33,7 @@ from bots.core.backend import backend
 from bots.core.config import settings
 from bots.core.fetch_media import fetch_bytes
 from bots.core.phone import format_phone, is_russian_mobile, normalize_any_phone
+from bots.core.promo import MAX_PROMO_ATTEMPTS, looks_like_promo_code
 from bots.core.texts import texts
 from bots.max.chat_map import remember_async
 from bots.max.keyboards import (
@@ -55,7 +56,6 @@ from bots.max.keyboards import (
     CB_PHONE_RETRY,
     confirm_kb,
     contact_kb,
-    phone_confirm_kb,
     delivery_mode_kb,
     delivery_orders_kb,
     delivery_points_kb,
@@ -66,6 +66,7 @@ from bots.max.keyboards import (
     materials_files_done_kb,
     materials_skip_desc_kb,
     pay_kb,
+    phone_confirm_kb,
     pick_order_kb,
 )
 from bots.max.states import OrderFlow
@@ -700,6 +701,12 @@ async def on_promo_code(event: MessageCreated, context: BaseContext) -> None:
     if not text:
         await _send_menu(event.bot, chat_id, "Пришлите промокод друга текстом.")
         return
+    if not looks_like_promo_code(text):
+        # Не код (фраза, вопрос) — выходим из режима и обрабатываем как обычное сообщение:
+        # уйдёт менеджеру/в отзыв, а не в проверку промокода.
+        await context.set_state(None)
+        await on_fallback(event, context)
+        return
     c = await backend.upsert_client(
         CHANNEL, str(event.message.sender.user_id),
         nickname=event.message.sender.username or event.message.sender.full_name,
@@ -707,10 +714,26 @@ async def on_promo_code(event: MessageCreated, context: BaseContext) -> None:
     try:
         res = await backend.activate_promo(c["id"], text)
     except ValueError as e:
-        await _send_menu(event.bot, chat_id, str(e) or "Не удалось активировать код.")
+        data = await context.get_data()
+        attempts = int(data.get("promo_attempts") or 0) + 1
+        reason = str(e) or "Не удалось активировать код."
+        if attempts >= MAX_PROMO_ATTEMPTS:
+            await context.set_state(None)
+            await context.update_data(promo_attempts=0)
+            await _send_menu(
+                event.bot,
+                chat_id,
+                f"{reason}\nПопытки закончились — выберите пункт меню или нажмите «Позвать человека».",
+            )
+            return
+        await context.update_data(promo_attempts=attempts)
+        await _send_menu(
+            event.bot, chat_id, f"{reason}\nПришлите другой код или выберите пункт меню."
+        )
         return
     except Exception:  # noqa: BLE001
         logging.warning("max: promo activate failed", exc_info=True)
+        await context.set_state(None)
         await _send_menu(event.bot, chat_id, "Не удалось активировать код. Попробуйте позже.")
         return
     await context.clear()

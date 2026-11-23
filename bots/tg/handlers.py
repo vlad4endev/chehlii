@@ -13,23 +13,29 @@ from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove, User
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    Message,
+    ReplyKeyboardRemove,
+    User,
+)
 
 from bots.core import consult, delivery, payments, review
 from bots.core.backend import backend
 from bots.core.fetch_media import fetch_bytes
 from bots.core.phone import format_phone, is_russian_mobile, normalize_any_phone
+from bots.core.promo import MAX_PROMO_ATTEMPTS, looks_like_promo_code
 from bots.core.texts import texts
 from bots.tg.keyboards import (
     BTN_CATALOG,
     BTN_DELIVERIES,
     BTN_DISCOUNT,
     BTN_HELP,
-    BTN_PHONE_MANUAL,
     BTN_PAYMENTS,
+    BTN_PHONE_MANUAL,
     confirm_kb,
     contact_kb,
-    phone_confirm_kb,
     delivery_mode_kb,
     delivery_orders_kb,
     delivery_points_kb,
@@ -40,6 +46,7 @@ from bots.tg.keyboards import (
     materials_files_done_kb,
     materials_skip_desc_kb,
     pay_kb,
+    phone_confirm_kb,
     pick_order_kb,
 )
 from bots.tg.states import OrderFlow
@@ -550,14 +557,37 @@ async def on_discount(msg: Message, state: FSMContext) -> None:
 @router.message(OrderFlow.entering_promo, F.text, ~F.text.in_(_MENU_TEXTS))
 async def on_promo_code(msg: Message, state: FSMContext) -> None:
     text = (msg.text or "").strip()
+    if not looks_like_promo_code(text):
+        # Не код (фраза, вопрос) — выходим из режима и обрабатываем как обычное сообщение:
+        # уйдёт менеджеру/в отзыв, а не в проверку промокода.
+        await state.set_state(None)
+        await on_fallback(msg, state)
+        return
     c = await _client(msg)
     try:
         res = await backend.activate_promo(c["id"], text)
     except ValueError as e:
-        await msg.answer(str(e) or "Не удалось активировать код.", reply_markup=main_menu_kb())
+        data = await state.get_data()
+        attempts = int(data.get("promo_attempts") or 0) + 1
+        if attempts >= MAX_PROMO_ATTEMPTS:
+            await state.set_state(None)
+            await state.update_data(promo_attempts=0)
+            await msg.answer(
+                f"{e or 'Не удалось активировать код.'}\n"
+                "Попытки закончились — выберите пункт меню или нажмите «Позвать человека».",
+                reply_markup=main_menu_kb(),
+            )
+            return
+        await state.update_data(promo_attempts=attempts)
+        await msg.answer(
+            f"{e or 'Не удалось активировать код.'}\n"
+            "Пришлите другой код или выберите пункт меню.",
+            reply_markup=main_menu_kb(),
+        )
         return
     except Exception:  # noqa: BLE001
         logging.warning("tg: promo activate failed", exc_info=True)
+        await state.set_state(None)
         await msg.answer("Не удалось активировать код. Попробуйте позже.", reply_markup=main_menu_kb())
         return
     await state.clear()

@@ -43,6 +43,7 @@ from bots.tg.keyboards import (
     pay_kb,
 )
 from bots.tg.pending_fsm import PendingFsmMiddleware
+from bots.tg.promo_guard import PromoStateGuard
 from bots.tg.states import OrderFlow
 
 
@@ -396,6 +397,7 @@ async def main() -> None:
     storage = RedisStorage.from_url(settings.redis_url)
     dp = Dispatcher(storage=storage)
     dp.message.outer_middleware(PendingFsmMiddleware())
+    dp.message.outer_middleware(PromoStateGuard())
     dp.include_router(router)
 
     try:

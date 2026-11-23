@@ -41,6 +41,7 @@ from bots.max.keyboards import (
     pay_kb,
 )
 from bots.max.pending_fsm import PendingFsmMiddleware, apply_pending_fsm
+from bots.max.promo_guard import PromoStateGuard
 from bots.max.states import OrderFlow
 
 _MAX_STATE = {
@@ -259,6 +260,7 @@ async def main() -> None:
     )
     dp.include_routers(router)
     dp.register_outer_middleware(PendingFsmMiddleware())
+    dp.register_outer_middleware(PromoStateGuard())
 
     bot = Bot(settings.max_bot_token)
     outbox = asyncio.create_task(_outbox_loop(bot, dp))
