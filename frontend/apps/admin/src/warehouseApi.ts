@@ -11,6 +11,17 @@ export interface StockComponent {
   plate_type: PlateType | null
   qty: number
   available: number
+  /** Модели, делящие этот остаток («универсальная» группа); у обычной модели пусто. */
+  members: string[]
+}
+
+export type GroupScope = 'both' | 'base' | 'plate'
+
+export interface StockGroup {
+  id: number
+  name: string
+  scope: GroupScope
+  models: string[]
 }
 
 export interface StockMovement {
@@ -72,6 +83,9 @@ export const REASON_LABEL: Record<string, string> = {
   adjust: 'Корректировка',
 }
 
+/** Модели iPhone для склада: доступно и админу, и печатнику (каталожный список — только админу). */
+export const fetchWarehouseModels = () => apiGet<string[]>('/admin/warehouse/models')
+
 export const fetchComponents = () => apiGet<StockComponent[]>('/admin/warehouse/components')
 
 export const createComponent = (body: {
@@ -124,3 +138,17 @@ export async function downloadPurchaseXlsx(): Promise<void> {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+export const GROUP_SCOPE_LABEL: Record<GroupScope, string> = {
+  both: 'Балванка и пластины',
+  plate: 'Только пластины',
+  base: 'Только балванка',
+}
+
+export const fetchGroups = () => apiGet<StockGroup[]>('/admin/warehouse/groups')
+
+export const saveGroup = (body: { name: string; scope: GroupScope; models: string[] }) =>
+  apiSend<StockGroup>('POST', '/admin/warehouse/groups', body)
+
+export const deleteGroup = (name: string) =>
+  apiSend<void>('DELETE', `/admin/warehouse/groups/${encodeURIComponent(name)}`)

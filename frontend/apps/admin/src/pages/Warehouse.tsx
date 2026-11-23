@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../api'
 import { useAuth } from '../auth'
-import { fetchIphoneModels } from '../catalogApi'
 import {
   type DefectReason,
   type PlateType,
@@ -16,12 +15,14 @@ import {
   createComponent,
   downloadPurchaseXlsx,
   fetchComponents,
+  fetchWarehouseModels,
   fetchMovements,
   fetchPurchaseSuggestion,
   postDefect,
   postSupply,
 } from '../warehouseApi'
 import { StockActionModal } from './StockActionModal'
+import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
 
 const fmtDate = (iso: string) =>
@@ -65,6 +66,7 @@ export function Warehouse() {
   const [defectComment, setDefectComment] = useState('')
 
   const [addOpen, setAddOpen] = useState(false)
+  const [groupsOpen, setGroupsOpen] = useState(false)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
 
   async function reload() {
@@ -73,7 +75,7 @@ export function Warehouse() {
     try {
       const [comps, mdl, mov] = await Promise.all([
         fetchComponents(),
-        fetchIphoneModels(),
+        fetchWarehouseModels(),
         fetchMovements(50, 0),
       ])
       setComponents(comps)
@@ -157,6 +159,9 @@ export function Warehouse() {
           <div className="row-actions">
             <button className="btn btn--primary" onClick={() => setAddOpen(true)}>
               + Позиция
+            </button>
+            <button className="btn btn--ghost" onClick={() => setGroupsOpen(true)}>
+              Группы моделей
             </button>
             <button
               className="btn btn--ghost"
@@ -439,6 +444,17 @@ export function Warehouse() {
           canAdjust={isAdmin}
           onClose={() => setEditRow(null)}
           onDone={async () => {
+            setPurchase(null)
+            await reload()
+          }}
+        />
+      )}
+
+      {groupsOpen && (
+        <StockGroupsModal
+          models={models}
+          onClose={() => setGroupsOpen(false)}
+          onChanged={async () => {
             setPurchase(null)
             await reload()
           }}

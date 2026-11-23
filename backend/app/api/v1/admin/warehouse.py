@@ -21,6 +21,7 @@ from app.api.v1.admin.deps import AdminOnly, WarehouseStaff
 from app.core.database import get_session
 from app.enums import PlateType, StockGroupScope, StockKind, StockMovementReason
 from app.models.warehouse import StockComponent, StockMovement
+from app.services import iphone_models as im
 from app.services import stock_groups as sg
 from app.services import warehouse as wh
 
@@ -135,6 +136,12 @@ def _component_out(c: dict) -> ComponentOut:
         available=c["qty"],
         members=c.get("members", []),
     )
+
+
+@router.get("/models", response_model=list[str])
+async def list_models(_: WarehouseStaff, session: Session) -> list[str]:
+    """Модели iPhone для форм склада. Свой эндпоинт: каталожный закрыт для печатника."""
+    return await im.list_model_names(session)
 
 
 @router.get("/components", response_model=list[ComponentOut])

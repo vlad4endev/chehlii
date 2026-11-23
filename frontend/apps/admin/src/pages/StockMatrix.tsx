@@ -21,6 +21,8 @@ const COLUMNS: { key: Exclude<ItemFilter, 'all'>; prefix?: string; short?: strin
 
 interface ModelRow {
   model: string
+  /** Для «универсальной» группы — модели, делящие этот остаток; у обычной модели пусто. */
+  members: string[]
   base?: StockComponent
   silver?: StockComponent
   black?: StockComponent
@@ -32,13 +34,22 @@ function columnOf(c: StockComponent): Exclude<ItemFilter, 'all'> | null {
   return plate === 'silver' || plate === 'black' ? plate : null
 }
 
+function modelsWord(n: number): string {
+  const tail = n % 100
+  const last = n % 10
+  if (tail >= 11 && tail <= 14) return `${n} моделей`
+  if (last === 1) return `${n} модель`
+  if (last >= 2 && last <= 4) return `${n} модели`
+  return `${n} моделей`
+}
+
 /** Одна строка на модель: балванка и обе пластины рядом, вместо плоского списка. */
 export function groupByModel(components: StockComponent[]): ModelRow[] {
   const rows = new Map<string, ModelRow>()
   for (const c of components) {
     const col = columnOf(c)
     if (!col) continue
-    const row = rows.get(c.model_name) ?? { model: c.model_name }
+    const row = rows.get(c.model_name) ?? { model: c.model_name, members: c.members ?? [] }
     row[col] = c
     rows.set(c.model_name, row)
   }
@@ -64,7 +75,7 @@ export function StockMatrix({ components, onOpen }: Props) {
     const needle = search.trim().toLowerCase()
     return all.filter((r) => {
       if (model && r.model !== model) return false
-      if (needle && !r.model.toLowerCase().includes(needle)) return false
+      if (needle && ![r.model, ...r.members].some((n) => n.toLowerCase().includes(needle))) return false
       if (onlyEmpty) {
         const shown = columns.map((c) => r[c.key]).filter((c): c is StockComponent => !!c)
         if (!shown.some((c) => c.qty === 0)) return false
@@ -171,7 +182,14 @@ export function StockMatrix({ components, onOpen }: Props) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.model}>
-                  <td className="strong">{r.model}</td>
+                  <td className="strong">
+                    {r.model}
+                    {r.members.length > 0 && (
+                      <span className="groupnote" title={r.members.join(', ')}>
+                        Универсальная группа · {modelsWord(r.members.length)}
+                      </span>
+                    )}
+                  </td>
                   {columns.map((c) => (
                     <td key={c.key} className="num">
                       <QtyCell

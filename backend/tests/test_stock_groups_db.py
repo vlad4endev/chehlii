@@ -9,7 +9,7 @@ import os
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.enums import Channel, StockKind, StockMovementReason
@@ -33,6 +33,12 @@ async def session():
         s = AsyncSession(
             bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False
         )
+        # Чистый склад: тесты считают остатки в абсолютных числах. Всё внутри транзакции,
+        # которая откатывается, — реальные данные базы не страдают.
+        await s.execute(update(IphoneModel).values(stock_group_id=None))
+        await s.execute(delete(StockGroup))
+        await s.execute(delete(StockMovement))
+        await s.execute(delete(StockComponent))
         yield s
         await s.close()
         await outer.rollback()
@@ -311,3 +317,23 @@ async def test_api_groups_are_admin_only(api, role) -> None:
     assert (await api.post("/api/v1/admin/warehouse/groups", json=body)).status_code == 403
     assert (await api.get("/api/v1/admin/warehouse/groups")).status_code == 403
     assert (await api.delete("/api/v1/admin/warehouse/groups/Pro Max")).status_code == 403
+
+
+async def test_printer_can_load_everything_the_warehouse_page_needs(api) -> None:
+    """Печатник открывает склад: остатки, движения, модели — без 403 (каталог ему закрыт)."""
+    from app.enums import AdminRole
+
+    api.set_role(AdminRole.PRINTER)
+    for path in ("components", "movements", "models"):
+        res = await api.get(f"/api/v1/admin/warehouse/{path}")
+        assert res.status_code == 200, (path, res.text)
+    assert A in (await api.get("/api/v1/admin/warehouse/models")).json()
+    # а вот каталожный эндпоинт по-прежнему только для админа
+    assert (await api.get("/api/v1/admin/case-types/iphone-models")).status_code == 403
+
+
+async def test_designer_cannot_read_warehouse_models(api) -> None:
+    from app.enums import AdminRole
+
+    api.set_role(AdminRole.DESIGNER)
+    assert (await api.get("/api/v1/admin/warehouse/models")).status_code == 403

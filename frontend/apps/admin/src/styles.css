@@ -1225,3 +1225,11 @@ select.input { appearance: none; cursor: pointer; }
 
 /* Настройки → Логотип: подложка в цвет сайдбара, чтобы видеть логотип как на сайте */
 .logo-preview { display: flex; align-items: center; min-height: 72px; padding: 16px; border: 1px dashed var(--line-2); border-radius: 12px; background: var(--panel); }
+
+/* Склад: строка «универсальной» группы моделей */
+.groupnote { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--ink-soft); }
+.grouprow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.grouprow__info { min-width: 0; }
+.modelpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; max-height: 240px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 12px; }
+.modelpick__item { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.modelpick__item input { width: 18px; height: 18px; accent-color: var(--accent); }
