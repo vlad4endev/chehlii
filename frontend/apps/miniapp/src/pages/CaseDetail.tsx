@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
 import { MIN_PRICE_LABEL, createOrder, mediaUrl, upsertClient } from '@ui/api'
@@ -7,6 +7,20 @@ import { HeartIcon } from '@ui/CatalogView'
 
 import { getMaxUser, isMax, maxBackButton, openBotWithOrder } from '../max'
 import { backButton, isTelegram, mainButton, sendOrder } from '../telegram'
+
+// Модели iPhone группируем по поколению («iPhone 15 Pro Max» → «iPhone 15»),
+// чтобы длинный список читался и не превращался в стену чипов.
+const GENERATION_RE = /^(iPhone\s+(?:\d+|SE|XS|XR|X))\b/i
+const OTHER_GENERATION = 'Другие модели'
+
+export function groupByGeneration<T extends { model_name: string }>(models: T[]) {
+  const groups = new Map<string, T[]>()
+  for (const m of models) {
+    const key = GENERATION_RE.exec(m.model_name)?.[1] ?? OTHER_GENERATION
+    groups.set(key, [...(groups.get(key) ?? []), m])
+  }
+  return [...groups.entries()].map(([label, items]) => ({ label, items }))
+}
 
 // Экран типа чехла. Модель iPhone выбирается здесь же, в мини-приложении.
 // «Выбрать для заказа» доступна только после выбора модели; далее в бот уходит
@@ -27,7 +41,10 @@ export function CaseDetail({
 }) {
   const caseType = item.is_custom ? 'custom' : 'standard'
   const available = item.models.filter((m) => m.is_available)
+  const groups = useMemo(() => groupByGeneration(available), [available])
   const [model, setModel] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Фото под выбранную модель → фолбэк на обложку типа. Мокап рисуется, если фото нет.
@@ -65,6 +82,13 @@ export function CaseDetail({
     // Лендинг/браузер: экран-хэндофф со ссылкой в бот.
     onOrdered(model)
   }
+
+  // При раскрытии подводим список в зону видимости — иначе он прячется под нижней панелью.
+  useEffect(() => {
+    if (!pickerOpen) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    pickerRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [pickerOpen])
 
   // Нативная кнопка «Назад» Telegram закрывает экран типа.
   useEffect(() => {
@@ -143,25 +167,51 @@ export function CaseDetail({
         {item.description && <p className="detail__desc">{item.description}</p>}
 
         <div className="detail__models">
-          <div className="meta detail__label">Выберите модель iPhone</div>
-          <div className="chips">
-            {available.map((m) => {
-              const out = !m.in_stock
-              return (
-                <button
-                  key={m.model_name}
-                  className={`chip chip--select${model === m.model_name ? ' chip--on' : ''}${out ? ' chip--out' : ''}`}
-                  onClick={() => !out && setModel(m.model_name)}
-                  disabled={out}
-                  aria-pressed={model === m.model_name}
-                  aria-disabled={out}
-                >
-                  {m.model_name}
-                  {out && <span className="chip__badge">нет в наличии</span>}
-                </button>
-              )
-            })}
-          </div>
+          <div className="meta detail__label">Модель iPhone</div>
+          <button
+            type="button"
+            className={`picker__trigger${model ? ' picker__trigger--set' : ''}`}
+            aria-expanded={pickerOpen}
+            aria-controls="model-picker"
+            onClick={() => setPickerOpen((v) => !v)}
+          >
+            <span>{model ?? 'Выберите модель'}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" className={pickerOpen ? 'picker__chev picker__chev--up' : 'picker__chev'}>
+              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {pickerOpen && (
+            <div id="model-picker" ref={pickerRef} className="picker__list" role="group" aria-label="Модели iPhone">
+              {available.length === 0 && <p className="picker__empty">Сейчас нет доступных моделей</p>}
+              {groups.map((g) => (
+                <div key={g.label} className="picker__group">
+                  <div className="meta picker__heading">{g.label}</div>
+                  <div className="chips">
+                    {g.items.map((m) => {
+                      const out = !m.in_stock
+                      return (
+                        <button
+                          key={m.model_name}
+                          className={`chip chip--select${model === m.model_name ? ' chip--on' : ''}${out ? ' chip--out' : ''}`}
+                          onClick={() => {
+                            if (out) return
+                            setModel(m.model_name)
+                            setPickerOpen(false)
+                          }}
+                          disabled={out}
+                          aria-pressed={model === m.model_name}
+                          aria-disabled={out}
+                        >
+                          {m.model_name}
+                          {out && <span className="chip__badge">нет в наличии</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

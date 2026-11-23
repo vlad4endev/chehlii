@@ -234,6 +234,18 @@
 .detail__price { font-size: 18px; }
 .detail__desc { color: var(--ink-soft); line-height: 1.55; margin: 18px 0; font-size: 15px; }
 .detail__label { margin-bottom: 10px; }
+
+/* Выбор модели: свёрнут по умолчанию, список прокручивается внутри карточки */
+.picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink-soft); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.picker__trigger--set { color: var(--ink); font-weight: 600; }
+.picker__trigger:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.picker__chev { flex: none; transition: transform 0.2s ease-out; }
+.picker__chev--up { transform: rotate(180deg); }
+.picker__list { margin-top: 10px; max-height: min(46vh, 360px); overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px 8px; border: 1px solid var(--line); border-radius: 14px; }
+.picker__group { padding: 10px 12px 0; }
+.picker__heading { margin-bottom: 8px; }
+.picker__empty { margin: 0; padding: 16px; color: var(--ink-soft); font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .picker__chev { transition: none; } }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { font-size: 13px; padding: 7px 11px; border: 1px solid var(--line-2); border-radius: var(--r-pill); color: var(--ink-soft); background: var(--card); }
 .chip--select { transition: color 0.15s, border-color 0.15s, background 0.15s; }
