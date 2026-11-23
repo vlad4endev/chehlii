@@ -10,11 +10,16 @@ import {
   REASON_LABEL,
   downloadMovementsXlsx,
   fetchMovements,
+  reverseMovement,
 } from '../warehouseApi'
 
 const PAGE = 50
 
 const REASONS = ['supply', 'defect_supplier', 'defect_print', 'defect_glue', 'order', 'adjust']
+
+/** У отмены комментарий начинается с «Отмена записи #N» — это уже видно по пометке, не дублируем. */
+const commentOf = (m: StockMovement): string =>
+  m.reverses_id ? (m.comment ?? '').replace(/^Отмена записи #\d+:?\s*/, '') : (m.comment ?? '')
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('ru-RU', {
@@ -25,13 +30,20 @@ const fmtDate = (iso: string) =>
     minute: '2-digit',
   })
 
+// Списание по заказу из журнала не отменяется — его возвращает отмена заказа.
+const REVERSIBLE = new Set(['supply', 'defect_supplier', 'defect_print', 'defect_glue', 'adjust'])
+
 interface Props {
   /** Меняется после каждой операции на складе — журнал подтягивает свежие записи. */
   refreshKey: number
+  /** Отменять записи может только админ. */
+  canReverse: boolean
+  /** Вызывается после отмены — страница перечитывает остатки. */
+  onChanged: () => void | Promise<void>
 }
 
 /** Журнал движений: фильтры, «показать ещё», Excel. Фильтры живут здесь и не сбрасываются. */
-export function MovementsLog({ refreshKey }: Props) {
+export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
   const [filters, setFilters] = useState<MovementFilters>({})
   const [model, setModel] = useState('') // поиск по названию применяется с задержкой
   const [items, setItems] = useState<StockMovement[]>([])
@@ -39,6 +51,7 @@ export function MovementsLog({ refreshKey }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [undoing, setUndoing] = useState<number | null>(null)
   const request = useRef(0)
 
   const load = useCallback(
@@ -85,6 +98,22 @@ export function MovementsLog({ refreshKey }: Props) {
       setError(e instanceof Error ? e.message : 'Не удалось скачать журнал')
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function undo(m: StockMovement) {
+    if (undoing !== null) return
+    const what = `${m.delta > 0 ? '+' : ''}${m.delta} · ${KIND_LABEL[m.kind] ?? m.kind} ${m.model_name}`
+    if (!window.confirm(`Отменить запись #${m.id} (${what})? Остаток изменится на ${-m.delta > 0 ? '+' : ''}${-m.delta}, сама запись останется в журнале.`)) return
+    setUndoing(m.id)
+    setError(null)
+    try {
+      await reverseMovement(m.id)
+      await onChanged() // остатки обновятся, а журнал подтянется по refreshKey
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Не удалось отменить — проверьте соединение и попробуйте снова')
+    } finally {
+      setUndoing(null)
     }
   }
 
@@ -164,18 +193,19 @@ export function MovementsLog({ refreshKey }: Props) {
               <th>Кто</th>
               <th>Заказ</th>
               <th>Комментарий</th>
+              {canReverse && <th></th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={canReverse ? 8 : 7} className="muted">
                   {filtered ? 'По выбранным фильтрам движений нет' : 'Пока нет движений'}
                 </td>
               </tr>
             )}
             {items.map((m) => (
-              <tr key={m.id}>
+              <tr key={m.id} className={m.reversed_by_id ? 'movrow--undone' : undefined}>
                 <td className="muted mono">{fmtDate(m.created_at)}</td>
                 <td>
                   {KIND_LABEL[m.kind] ?? m.kind} · {m.model_name}
@@ -185,12 +215,30 @@ export function MovementsLog({ refreshKey }: Props) {
                 <td>{REASON_LABEL[m.reason] ?? m.reason}</td>
                 <td className="muted">{m.admin_name ?? '—'}</td>
                 <td>{m.order_id ? <Link to={`/orders?open=${m.order_id}`}>#{m.order_id}</Link> : '—'}</td>
-                <td className="muted">{m.comment || '—'}</td>
+                <td className="muted">
+                  {m.reversed_by_id && <span className="stockflag">отменена записью #{m.reversed_by_id}</span>}
+                  {m.reverses_id && <span className="stockflag">отмена записи #{m.reverses_id}</span>}
+                  {commentOf(m) || (m.reversed_by_id || m.reverses_id ? '' : '—')}
+                </td>
+                {canReverse && (
+                  <td>
+                    {REVERSIBLE.has(m.reason) && !m.reversed_by_id && !m.reverses_id && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        disabled={undoing !== null}
+                        onClick={() => void undo(m)}
+                      >
+                        {undoing === m.id ? 'Отменяем…' : 'Отменить'}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {loading && (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={canReverse ? 8 : 7} className="muted">
                   Загрузка…
                 </td>
               </tr>

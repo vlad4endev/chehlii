@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.enums import PlateType, StockKind, StockMovementReason
 from app.models.admin_user import AdminUser
@@ -235,6 +236,7 @@ async def _apply_delta(
     comment: str | None = None,
     order_id: int | None = None,
     admin_user_id: int | None = None,
+    reverses_id: int | None = None,
 ) -> StockMovement:
     """Изменить остаток и записать движение.
 
@@ -264,6 +266,7 @@ async def _apply_delta(
         comment=comment,
         order_id=order_id,
         admin_user_id=admin_user_id,
+        reverses_id=reverses_id,
     )
     session.add(mov)
     await session.flush()
@@ -325,6 +328,68 @@ async def write_off_defect(
         comment=comment,
         admin_user_id=admin_user_id,
     )
+
+
+REVERSIBLE_REASONS = frozenset(
+    {
+        StockMovementReason.SUPPLY,
+        StockMovementReason.ADJUST,
+        *DEFECT_REASONS,
+    }
+)
+
+
+async def reverse_movement(
+    session: AsyncSession,
+    movement_id: int,
+    *,
+    admin_user_id: int | None = None,
+    comment: str | None = None,
+) -> StockMovement:
+    """Отменить ошибочную запись встречным движением (сторно): история остаётся целой.
+
+    Нельзя: отменить списание по заказу (его возвращает отмена заказа), отменить саму отмену,
+    отменить повторно. Отмену прихода запретит нехватка остатка — товар уже мог уйти."""
+    # Блокируем запись: две одновременные отмены не должны пройти обе.
+    original = await session.get(
+        StockMovement, movement_id, with_for_update=True, populate_existing=True
+    )
+    if original is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Запись не найдена")
+    if original.reverses_id is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Это уже отмена — отменять её не нужно")
+    if original.reason not in REVERSIBLE_REASONS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Списание по заказу отменяется отменой заказа, а не из журнала склада",
+        )
+    already = await session.scalar(
+        select(StockMovement.id).where(StockMovement.reverses_id == movement_id)
+    )
+    if already is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Эта запись уже отменена")
+
+    component = await session.get(StockComponent, original.component_id)
+    extra = (comment or "").strip()
+    note = f"Отмена записи #{original.id}" + (f": {extra}" if extra else "")
+    try:
+        return await _apply_delta(
+            session,
+            component,
+            -original.delta,
+            StockMovementReason.ADJUST,
+            comment=note,
+            admin_user_id=admin_user_id,
+            reverses_id=original.id,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Нельзя отменить: {exc.detail.removeprefix('Недостаточно на складе: ')}. "
+                "Товар уже израсходован — внесите корректировку вручную.",
+            ) from exc
+        raise
 
 
 async def set_qty(
@@ -518,15 +583,19 @@ class MovementFilter:
 
 
 def _movement_query(flt: MovementFilter):
+    # Запись, которая отменила эту (если есть): по ней в журнале видно «отменено».
+    undo = aliased(StockMovement)
     stmt = (
         select(
             StockMovement,
             StockComponent,
             AdminUser.full_name,
             AdminUser.email,
+            undo.id,
         )
         .join(StockComponent, StockComponent.id == StockMovement.component_id)
         .outerjoin(AdminUser, AdminUser.id == StockMovement.admin_user_id)
+        .outerjoin(undo, undo.reverses_id == StockMovement.id)
     )
     if flt.model:
         needle = flt.model.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -558,7 +627,7 @@ def _movement_query(flt: MovementFilter):
     return stmt
 
 
-def _movement_row(movement, component, full_name, email) -> dict:
+def _movement_row(movement, component, full_name, email, reversed_by_id) -> dict:
     return {
         "id": movement.id,
         "component_id": movement.component_id,
@@ -572,6 +641,8 @@ def _movement_row(movement, component, full_name, email) -> dict:
         "admin_user_id": movement.admin_user_id,
         # Кто сделал: имя, а если не заполнено — почта; пусто у системных операций (заказ).
         "admin_name": (full_name or email) if movement.admin_user_id else None,
+        "reverses_id": movement.reverses_id,
+        "reversed_by_id": reversed_by_id,
         "created_at": movement.created_at,
     }
 
@@ -582,9 +653,14 @@ async def list_movements(
     limit: int = 50,
     offset: int = 0,
     flt: MovementFilter | None = None,
+    only_id: int | None = None,
 ) -> tuple[list[dict], int]:
-    """Журнал движений с позицией и автором; новые первыми. total — под тем же отбором."""
+    """Журнал движений с позицией и автором; новые первыми. total — под тем же отбором.
+
+    only_id — одна конкретная запись (например, только что созданная)."""
     stmt = _movement_query(flt or MovementFilter())
+    if only_id is not None:
+        stmt = stmt.where(StockMovement.id == only_id)
     total = await session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
     rows = (
         await session.execute(

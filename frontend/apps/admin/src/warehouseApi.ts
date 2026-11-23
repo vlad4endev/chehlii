@@ -37,6 +37,10 @@ export interface StockMovement {
   admin_user_id: number | null
   /** Кто сделал: имя или почта; пусто у автоматических списаний по заказу. */
   admin_name: string | null
+  /** Эта запись — отмена записи с таким id (сторно). */
+  reverses_id: number | null
+  /** Эту запись отменила запись с таким id. */
+  reversed_by_id: number | null
   created_at: string
 }
 
@@ -234,3 +238,9 @@ export interface Availability {
 }
 
 export const fetchAvailability = () => apiGet<Availability>('/admin/warehouse/availability')
+
+/** Отменить ошибочную запись журнала встречным движением (только админ). */
+export const reverseMovement = (id: number, comment?: string) =>
+  apiSend<StockMovement>('POST', `/admin/warehouse/movements/${id}/reverse`, {
+    comment: comment?.trim() || undefined,
+  })

@@ -43,6 +43,10 @@ class ComponentOut(BaseModel):
     members: list[str] = []
 
 
+class ReverseIn(BaseModel):
+    comment: str | None = Field(default=None, max_length=200)
+
+
 class PendingOrderOut(BaseModel):
     order_id: int
     status: str
@@ -133,6 +137,10 @@ class MovementOut(BaseModel):
     order_id: int | None
     admin_user_id: int | None
     admin_name: str | None = None
+    # Эта запись отменяет запись с таким id (сторно)
+    reverses_id: int | None = None
+    # Эту запись отменила запись с таким id — в журнале помечается «отменено»
+    reversed_by_id: int | None = None
     created_at: datetime
 
 
@@ -509,3 +517,16 @@ async def post_deduct_one(order_id: int, _: WarehouseStaff, session: Session) ->
 async def get_availability(_: WarehouseStaff, session: Session) -> dict:
     """Сколько чехлов можно собрать по моделям и что заканчивается (порог — в Настройках)."""
     return await sa.availability(session)
+
+
+@router.post("/movements/{movement_id}/reverse", response_model=MovementOut, status_code=201)
+async def post_reverse_movement(
+    movement_id: int, body: ReverseIn, admin: AdminOnly, session: Session
+) -> MovementOut:
+    """Отменить ошибочную запись журнала встречным движением (только админ)."""
+    mov = await wh.reverse_movement(
+        session, movement_id, admin_user_id=admin.id, comment=body.comment
+    )
+    await session.commit()
+    rows, _ = await wh.list_movements(session, limit=1, flt=wh.MovementFilter(), only_id=mov.id)
+    return MovementOut(**rows[0])

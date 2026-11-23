@@ -1249,3 +1249,7 @@ select.input { appearance: none; cursor: pointer; }
 .sellable__item b { color: var(--ink); }
 .sellable__item--low b { color: #b86200; }
 .sellable__item--out b { color: var(--danger); }
+
+/* Журнал склада: отменённая запись */
+.movrow--undone td { color: var(--ink-faint); }
+.movrow--undone td:nth-child(2), .movrow--undone td:nth-child(3) { text-decoration: line-through; text-decoration-color: var(--ink-faint); }

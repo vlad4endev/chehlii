@@ -76,6 +76,10 @@ class StockMovement(Base):
     admin_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id", ondelete="SET NULL")
     )
+    # Если запись — отмена другой (сторно), здесь id отменённой. Уникально: отменить дважды нельзя.
+    reverses_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stock_movements.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -188,7 +188,7 @@ export function Warehouse() {
             </section>
           )}
 
-          <MovementsLog refreshKey={refreshKey} />
+          <MovementsLog refreshKey={refreshKey} canReverse={isAdmin} onChanged={reload} />
         </>
       )}
 
