@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
 import { fetchCatalog, plural } from '@ui/api'
+import { BrandLogo } from '@ui/brand'
 import { CatalogView } from '@ui/CatalogView'
 
 import { isMax } from './max'
@@ -55,8 +56,7 @@ export function App() {
     <div className="app">
       <header className="header">
         <div className="wordmark">
-          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={30} height={30} />
-          casetop
+          <BrandLogo height={30} />
         </div>
         <p className="tagline">
           Индивидуальные чехлы <span className="serif-it">уникального дизайна</span> для вас и близких

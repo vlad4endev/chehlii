@@ -9,6 +9,7 @@
 /* ── Хедер ─────────────────────────────────────────── */
 .header { padding: calc(var(--pad) + 8px) var(--pad) 6px; }
 .brand-mark { flex: none; display: block; border-radius: 8px; }
+.brand-logo { display: block; width: auto; max-width: 200px; object-fit: contain; }
 .wordmark {
   display: inline-flex;
   align-items: center;

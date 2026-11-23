@@ -15,6 +15,7 @@ from app.api.v1.clients import router as clients_router
 from app.api.v1.consult import router as consult_router
 from app.api.v1.delivery import router as delivery_router
 from app.api.v1.internal import require_internal
+from app.api.v1.brand import router as brand_router
 from app.api.v1.miniapp import router as miniapp_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.outbox import router as outbox_router
@@ -33,6 +34,7 @@ api_router = APIRouter()
 api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(reviews_router, prefix="/reviews", tags=["reviews"])
 api_router.include_router(miniapp_router, prefix="/miniapp", tags=["miniapp"])
+api_router.include_router(brand_router, prefix="/brand", tags=["brand"])
 # Внутренние (только боты). payments/delivery смешанные — защита на уровне эндпоинтов.
 api_router.include_router(
     clients_router, prefix="/clients", tags=["clients"], dependencies=_internal

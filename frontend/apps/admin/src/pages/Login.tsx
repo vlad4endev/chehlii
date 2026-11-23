@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError } from '../api'
+import { BrandLogo } from '../brand'
 import { useAuth } from '../auth'
 
 export function Login() {
@@ -30,8 +31,7 @@ export function Login() {
     <div className="login">
       <form className="login__card" onSubmit={submit}>
         <div className="login__brand">
-          <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={32} height={32} />
-          casetop · админка
+          <BrandLogo height={32} suffix="· админка" />
         </div>
         <label className="field">
           <span className="field__label">Почта</span>

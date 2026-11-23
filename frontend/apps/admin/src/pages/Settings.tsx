@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, apiGet, apiSend, apiUpload, mediaUrl } from '../api'
 import { BotTexts } from './BotTexts'
+import { LogoPanel } from './LogoSettings'
 import { IntegrationsPanel } from './Integrations'
 import { ProxyPanel } from './ProxySettings'
 
-type SettingsTab = 'integrations' | 'proxy' | 'bots' | 'promo' | 'miniapp'
+type SettingsTab = 'integrations' | 'proxy' | 'bots' | 'promo' | 'miniapp' | 'logo'
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'integrations', label: 'Интеграции' },
@@ -13,6 +14,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'bots', label: 'Боты' },
   { id: 'promo', label: 'Скидки друзей' },
   { id: 'miniapp', label: 'Мини-приложение' },
+  { id: 'logo', label: 'Логотип' },
 ]
 
 export function Settings() {
@@ -40,6 +42,7 @@ export function Settings() {
       {tab === 'bots' && <BotTexts embedded />}
       {tab === 'promo' && <PromoPanel />}
       {tab === 'miniapp' && <MiniappPanel />}
+      {tab === 'logo' && <LogoPanel />}
     </div>
   )
 }

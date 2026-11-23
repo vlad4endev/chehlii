@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin.auth import router as auth_router
 from app.api.v1.admin.bot_messages import router as bot_messages_router
+from app.api.v1.admin.brand import router as brand_router
 from app.api.v1.admin.broadcasts import router as broadcasts_router
 from app.api.v1.admin.catalog import router as catalog_router
 from app.api.v1.admin.clients import router as clients_router
@@ -48,3 +49,4 @@ admin_router.include_router(trash_router, prefix="/trash", tags=["admin-trash"])
 admin_router.include_router(journeys_router, prefix="/journeys", tags=["admin-journeys"])
 admin_router.include_router(consult_router, prefix="/consult", tags=["admin-consult"])
 admin_router.include_router(warehouse_router, prefix="/warehouse", tags=["admin-warehouse"])
+admin_router.include_router(brand_router, prefix="/brand", tags=["admin-brand"])

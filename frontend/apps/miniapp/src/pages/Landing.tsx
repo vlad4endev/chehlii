@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
+import { BrandLogo } from '@ui/brand'
 import { MIN_PRICE_LABEL, fetchReviews, mediaUrl, type ReviewItem } from '@ui/api'
 
 import heroCasePhoto from '../assets/hero-case.webp'
@@ -126,8 +127,7 @@ export function Landing({ items }: { items: CaseType[] }) {
       <header className={`lp-nav${scrolled ? ' lp-nav--scrolled' : ''}`}>
         <div className="lp-nav__inner">
           <a href="#top" className="lp-nav__brand">
-            <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={28} height={28} />
-            casetop
+            <BrandLogo height={28} />
           </a>
           <nav className="lp-nav__links">
             <a href="#gallery">Каталог</a>
@@ -339,8 +339,7 @@ export function Landing({ items }: { items: CaseType[] }) {
       <footer className="lp-foot">
         <div className="lp-foot__inner">
           <div className="lp-foot__brand">
-            <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={40} height={40} />
-            casetop
+            <BrandLogo height={40} />
           </div>
           <div className="lp-foot__cols">
             <div>

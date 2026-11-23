@@ -60,6 +60,7 @@ input, select, textarea { font-family: inherit; }
   gap: 16px;
 }
 .brand-mark { flex: none; display: block; border-radius: 8px; }
+.brand-logo { display: block; width: auto; max-width: 168px; object-fit: contain; }
 .login__brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; text-transform: lowercase; margin-bottom: 8px; }
 .login__error { color: var(--danger); font-size: 13px; }
 
@@ -1221,3 +1222,6 @@ select.input { appearance: none; cursor: pointer; }
   pointer-events: none;
   z-index: 100;
 }
+
+/* Настройки → Логотип: подложка в цвет сайдбара, чтобы видеть логотип как на сайте */
+.logo-preview { display: flex; align-items: center; min-height: 72px; padding: 16px; border: 1px dashed var(--line-2); border-radius: 12px; background: var(--panel); }
