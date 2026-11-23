@@ -20,6 +20,7 @@ import {
   fetchWarehouseModels,
   fetchPurchaseSuggestion,
 } from '../warehouseApi'
+import { InventoryModal } from './InventoryModal'
 import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
 import { StockActionModal } from './StockActionModal'
@@ -41,6 +42,8 @@ export function Warehouse() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
+  const [inventoryOpen, setInventoryOpen] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
 
   // Спиннер только при первой загрузке. Дальше данные обновляются на месте: иначе таблица
@@ -104,6 +107,9 @@ export function Warehouse() {
             <button className="btn btn--ghost" onClick={() => setGroupsOpen(true)}>
               Группы моделей
             </button>
+            <button className="btn btn--ghost" onClick={() => setInventoryOpen(true)}>
+              Инвентаризация
+            </button>
             <button
               className="btn btn--ghost"
               disabled={busy === 'purchase'}
@@ -129,6 +135,11 @@ export function Warehouse() {
 
       {loading && <div className="empty">Загрузка…</div>}
       {error && <div className="empty">{error}</div>}
+      {notice && (
+        <div className="form-msg form-msg--ok" role="status">
+          {notice}
+        </div>
+      )}
       {refreshError && (
         <div className="form-msg form-msg--err" role="alert">
           {refreshError}
@@ -200,6 +211,18 @@ export function Warehouse() {
           onDone={async () => {
             setPurchase(null)
             await reload()
+          }}
+        />
+      )}
+
+      {inventoryOpen && (
+        <InventoryModal
+          components={components}
+          onClose={() => setInventoryOpen(false)}
+          onSaved={async (result) => {
+            setPurchase(null)
+            await reload()
+            setNotice(`Инвентаризация сохранена: изменено позиций — ${result.changed}.`)
           }}
         />
       )}

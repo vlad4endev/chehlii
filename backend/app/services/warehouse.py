@@ -421,6 +421,75 @@ async def set_qty(
     )
 
 
+MAX_INVENTORY_ITEMS = 500
+
+
+async def apply_inventory(
+    session: AsyncSession,
+    counts: list[tuple[int, int]],
+    *,
+    note: str | None = None,
+    admin_user_id: int | None = None,
+) -> dict:
+    """Инвентаризация: выставить фактические остатки сразу по многим позициям.
+
+    counts — пары (id позиции, посчитанное количество). Все данные проверяются до первого
+    изменения: при любой ошибке не применяется ничего. Меняются только позиции, где факт
+    расходится с учётом; каждая правка — запись «Корректировка» с пометкой «Инвентаризация»."""
+    if not counts:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нечего сохранять: список позиций пуст")
+    if len(counts) > MAX_INVENTORY_ITEMS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"За один раз можно сохранить не больше {MAX_INVENTORY_ITEMS} позиций",
+        )
+    ids = [component_id for component_id, _ in counts]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Одна позиция указана несколько раз")
+    for _, qty in counts:
+        _check_qty(qty, allow_zero=True)
+
+    # Блокируем строки в порядке id: параллельные инвентаризации не зайдут в тупик.
+    rows = (
+        await session.scalars(
+            select(StockComponent)
+            .where(StockComponent.id.in_(ids))
+            .order_by(StockComponent.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    by_id = {c.id: c for c in rows}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"Позиции не найдены: {', '.join(map(str, missing))}. Обновите страницу.",
+        )
+
+    label = "Инвентаризация" + (f": {note.strip()}" if note and note.strip() else "")
+    changes: list[dict] = []
+    for component_id, qty in counts:
+        component = by_id[component_id]
+        before = component.qty
+        if qty == before:
+            continue
+        await _apply_delta(
+            session,
+            component,
+            qty - before,
+            StockMovementReason.ADJUST,
+            comment=label,
+            admin_user_id=admin_user_id,
+        )
+        changes.append({"component_id": component_id, "before": before, "after": qty})
+    return {
+        "changed": len(changes),
+        "unchanged": len(counts) - len(changes),
+        "items": changes,
+    }
+
+
 async def create_position(
     session: AsyncSession,
     *,

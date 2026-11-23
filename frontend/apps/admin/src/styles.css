@@ -1253,3 +1253,10 @@ select.input { appearance: none; cursor: pointer; }
 /* Журнал склада: отменённая запись */
 .movrow--undone td { color: var(--ink-faint); }
 .movrow--undone td:nth-child(2), .movrow--undone td:nth-child(3) { text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+
+/* Инвентаризация */
+.modal__card--wide { max-width: 860px; }
+.invwrap { max-height: 46vh; overflow-y: auto; }
+.invinput { width: 96px; height: 40px; padding: 0 10px; text-align: right; font-family: var(--mono); }
+.invinput--changed { border-color: #b86200; background: #fdf6ec; }
+.invinput--bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, #fff); }

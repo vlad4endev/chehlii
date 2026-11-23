@@ -19,7 +19,7 @@ const COLUMNS: { key: Exclude<ItemFilter, 'all'>; prefix?: string; short?: strin
   { key: 'black', prefix: 'Пластина', short: 'Пл.', label: 'чёрная' },
 ]
 
-interface ModelRow {
+export interface ModelRow {
   model: string
   /** Для «универсальной» группы — модели, делящие этот остаток; у обычной модели пусто. */
   members: string[]

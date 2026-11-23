@@ -43,6 +43,28 @@ class ComponentOut(BaseModel):
     members: list[str] = []
 
 
+class InventoryItemIn(BaseModel):
+    component_id: int = Field(ge=1)
+    qty: int = Field(ge=0, le=wh.MAX_QTY)
+
+
+class InventoryIn(BaseModel):
+    items: list[InventoryItemIn] = Field(min_length=1, max_length=wh.MAX_INVENTORY_ITEMS)
+    comment: str | None = Field(default=None, max_length=200)
+
+
+class InventoryChangeOut(BaseModel):
+    component_id: int
+    before: int
+    after: int
+
+
+class InventoryOut(BaseModel):
+    changed: int
+    unchanged: int
+    items: list[InventoryChangeOut]
+
+
 class ReverseIn(BaseModel):
     comment: str | None = Field(default=None, max_length=200)
 
@@ -530,3 +552,18 @@ async def post_reverse_movement(
     await session.commit()
     rows, _ = await wh.list_movements(session, limit=1, flt=wh.MovementFilter(), only_id=mov.id)
     return MovementOut(**rows[0])
+
+
+@router.post("/inventory", response_model=InventoryOut)
+async def post_inventory(body: InventoryIn, admin: AdminOnly, session: Session) -> dict:
+    """Инвентаризация: фактические остатки по многим позициям за один раз (только админ).
+
+    Либо применяется всё, либо ничего; меняются только расходящиеся позиции."""
+    out = await wh.apply_inventory(
+        session,
+        [(i.component_id, i.qty) for i in body.items],
+        note=body.comment,
+        admin_user_id=admin.id,
+    )
+    await session.commit()
+    return out

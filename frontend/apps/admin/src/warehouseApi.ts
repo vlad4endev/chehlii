@@ -244,3 +244,19 @@ export const reverseMovement = (id: number, comment?: string) =>
   apiSend<StockMovement>('POST', `/admin/warehouse/movements/${id}/reverse`, {
     comment: comment?.trim() || undefined,
   })
+
+export interface InventoryResult {
+  changed: number
+  unchanged: number
+  items: { component_id: number; before: number; after: number }[]
+}
+
+/** Инвентаризация: фактические остатки по многим позициям за раз (только админ). */
+export const saveInventory = (items: { component_id: number; qty: number }[], comment?: string) =>
+  apiSend<InventoryResult>('POST', '/admin/warehouse/inventory', {
+    items,
+    comment: comment?.trim() || undefined,
+  })
+
+/** Предел одной цифры на складе — как на сервере. */
+export const MAX_QTY = 1_000_000
