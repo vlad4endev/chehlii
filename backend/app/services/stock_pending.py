@@ -54,19 +54,6 @@ def is_awaiting_deduction(order: Order) -> bool:
     return order.status in paid
 
 
-async def _in_stock(session: AsyncSession, model_name: str, plate_type: str | None) -> bool:
-    """Хватает ли остатка на пару «балванка + пластина» — без создания позиций (чтение)."""
-    plate = wh._normalize_plate(plate_type)
-    for kind, plate_arg in ((StockKind.BASE, None), (StockKind.PLATE, plate)):
-        try:
-            component = await wh.get_component(session, kind, model_name, plate_arg, create=False)
-        except HTTPException:
-            return False
-        if component.qty < 1:
-            return False
-    return True
-
-
 async def _awaiting_orders(session: AsyncSession) -> list[tuple[Order, CaseType]]:
     rows = (
         await session.execute(
@@ -98,7 +85,7 @@ async def list_pending(session: AsyncSession) -> list[dict]:
         plate = wh._normalize_plate(case_type.plate_type)
         base_key = await stock_key(session, StockKind.BASE, order.model_name)
         plate_key = await stock_key(session, StockKind.PLATE, order.model_name)
-        enough = await _in_stock(session, order.model_name, case_type.plate_type)
+        enough = await wh.has_stock(session, order.model_name, case_type.plate_type)
         if enough:
             # Сколько пар уже «отдано» более ранним заказам с теми же позициями.
             used = max(reserved.get((base_key, "base"), 0), reserved.get((plate_key, plate), 0))

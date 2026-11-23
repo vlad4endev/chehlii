@@ -24,10 +24,11 @@ from app.api.v1.internal import require_internal
 from app.core.config import settings
 from app.core.database import get_session
 from app.enums import CaseBranch, OrderStatus, PaymentKind, PaymentStatus
+from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
 from app.models.payment import Payment
-from app.services import integrations, robokassa, stock, yandex_pay
+from app.services import integrations, robokassa, stock, warehouse, yandex_pay
 from app.services.order_state_machine import can_transition
 from app.services.order_status_notify import continue_after_paid, payment_amount
 
@@ -185,6 +186,22 @@ async def _robokassa_link(
     )
 
 
+async def _ensure_in_stock(session: AsyncSession, order: Order, kind: PaymentKind) -> None:
+    """Не давать платить за товар, которого нет на складе (с учётом «универсальных» групп).
+
+    Не проверяем тестовые заказы и заказы, по которым склад уже списан (товар отложен)."""
+    if order.is_test or order.stock_deducted or order.case_type_id is None or not order.model_name:
+        return
+    case_type = await session.get(CaseType, order.case_type_id)
+    plate = case_type.plate_type if case_type else None
+    if await warehouse.has_stock(session, order.model_name, plate):
+        return
+    # Остаток постоплаты кастома: предоплату клиент уже внёс — говорим об этом,
+    # а не «выберите другую модель».
+    prepaid = kind == PaymentKind.POSTPAYMENT
+    raise warehouse.out_of_stock_error(order.model_name, prepaid=prepaid)
+
+
 @router.post("/link", response_model=LinkOut, dependencies=[Depends(require_internal)])
 async def create_link(body: LinkIn, session: Session) -> LinkOut:
     """Ссылки оплаты для заказа (вызывает бот) — по одной на каждый настроенный шлюз.
@@ -197,6 +214,9 @@ async def create_link(body: LinkIn, session: Session) -> LinkOut:
     order = await session.get(Order, body.order_id)
     if order is None:
         raise HTTPException(404, "Заказ не найден")
+    # Товара нет — оплату не выставляем. Доставка не в счёт (товар уже оплачен и отложен).
+    if body.kind in (PaymentKind.PREPAYMENT, PaymentKind.POSTPAYMENT):
+        await _ensure_in_stock(session, order, body.kind)
     percent = float(await integrations.get(session, "payment.prepay_percent", "50") or 50)
     # Стандарт: одна оплата 100% (без предоплаты). Кастом — процент из настроек.
     if order.branch != CaseBranch.CUSTOM and body.kind == PaymentKind.PREPAYMENT:

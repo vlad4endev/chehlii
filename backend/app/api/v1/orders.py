@@ -18,7 +18,7 @@ from app.enums import CaseBranch, OrderStatus
 from app.models.catalog import CaseType
 from app.models.client import Client
 from app.models.order import Order, OrderStatusHistory
-from app.services import media, media_assets, pricing, yandex_disk
+from app.services import media, media_assets, pricing, warehouse, yandex_disk
 
 router = APIRouter()
 
@@ -116,6 +116,9 @@ async def create_order(
     client = await session.get(Client, payload.client_id)
     if client is None:
         raise HTTPException(status_code=404, detail="Клиент не найден")
+    # Нет заготовки — заказ не заводим: иначе клиент дойдёт до оплаты и упрётся в отказ.
+    if not await warehouse.has_stock(session, payload.model_name, ct.plate_type):
+        raise warehouse.out_of_stock_error(payload.model_name)
 
     order = Order(
         client_id=client.id,

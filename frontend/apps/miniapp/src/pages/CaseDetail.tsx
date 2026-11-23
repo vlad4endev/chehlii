@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CaseType } from '@ui/types'
-import { MIN_PRICE_LABEL, createOrder, mediaUrl, upsertClient } from '@ui/api'
+import { MIN_PRICE_LABEL, OrderUnavailableError, createOrder, mediaUrl, upsertClient } from '@ui/api'
 import { CaseMockup } from '@ui/CaseMockup'
 import { HeartIcon } from '@ui/CatalogView'
 
@@ -72,8 +72,12 @@ export function CaseDetail({
         const ord = await createOrder(client.id, item.id, caseType, model)
         openBotWithOrder(ord.id)
         return
-      } catch {
-        setOrderError('Не удалось создать заказ. Проверьте связь и нажмите ещё раз.')
+      } catch (e) {
+        setOrderError(
+          e instanceof OrderUnavailableError
+            ? e.message
+            : 'Не удалось создать заказ. Проверьте связь и нажмите ещё раз.',
+        )
         return
       } finally {
         setSubmitting(false)

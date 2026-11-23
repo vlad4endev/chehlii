@@ -22,7 +22,7 @@ from aiogram.types import (
 )
 
 from bots.core import consult, delivery, payments, review
-from bots.core.backend import backend
+from bots.core.backend import OutOfStock, backend
 from bots.core.fetch_media import fetch_bytes
 from bots.core.phone import format_phone, is_russian_mobile, normalize_any_phone
 from bots.core.promo import MAX_PROMO_ATTEMPTS, looks_like_promo_code
@@ -273,7 +273,13 @@ async def _begin_order(
                 "materials_files": data.get("materials_files"),
             }
         )
-    order = await backend.create_order(client_id, case_id, case_type, model)
+    try:
+        order = await backend.create_order(client_id, case_id, case_type, model)
+    except OutOfStock as e:
+        # Нет заготовки — заказ не заводим; выбор из мини-приложения сбрасываем.
+        await state.update_data(pending_case_id=None, pending_case_type=None, pending_model=None)
+        await msg.answer(e.message, reply_markup=main_menu_kb())
+        return
     await state.set_state(OrderFlow.confirming)
     await state.update_data(
         order_id=order["id"],

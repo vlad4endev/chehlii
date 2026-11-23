@@ -164,6 +164,11 @@ function GroupForm({
     return models.filter((m) => !needle || m.toLowerCase().includes(needle))
   }, [models, search])
 
+  /** Добавить в группу все показанные модели (после поиска — только найденные). */
+  function pickVisible() {
+    setPicked((prev) => new Set([...prev, ...visible]))
+  }
+
   function toggle(model: string) {
     setPicked((prev) => {
       const next = new Set(prev)
@@ -234,6 +239,14 @@ function GroupForm({
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Найти модель"
           />
+          <div className="row-actions" style={{ marginTop: 6 }}>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={pickVisible} disabled={visible.length === 0}>
+              {search.trim() ? `Выбрать найденные (${visible.length})` : `Выбрать все (${models.length})`}
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPicked(new Set())} disabled={picked.size === 0}>
+              Снять все
+            </button>
+          </div>
           <div className="modelpick" role="group" aria-label="Модели">
             {visible.map((m) => (
               <label key={m} className="modelpick__item">

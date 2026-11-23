@@ -90,9 +90,21 @@ export async function createOrder(
       model_name: modelName,
     }),
   })
-  if (!res.ok) throw new Error(`Не удалось создать заказ (${res.status})`)
+  if (!res.ok) {
+    // Нет в наличии: сервер отдаёт готовый текст для клиента — показываем его, а не «ошибка 409».
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => null)) as { detail?: { code?: string; message?: string } } | null
+      if (body?.detail?.code === 'out_of_stock' && body.detail.message) {
+        throw new OrderUnavailableError(body.detail.message)
+      }
+    }
+    throw new Error(`Не удалось создать заказ (${res.status})`)
+  }
   return res.json()
 }
+
+/** Модели нет на складе: заказать и оплатить нельзя, message можно показать клиенту. */
+export class OrderUnavailableError extends Error {}
 
 export function formatPrice(value: number): string {
   return new Intl.NumberFormat('ru-RU').format(value) + ' ₽'

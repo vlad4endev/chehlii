@@ -14,7 +14,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from bots.core.backend import backend
+from bots.core.backend import OutOfStock, backend
 
 _PAY_START = re.compile(r"pay[_-](\d+)")
 
@@ -102,6 +102,9 @@ async def block(order_id: int, kind: str = "prepayment") -> PayBlock:
     """Карточка оплаты по заказу. Если шлюзы не настроены — текст-фолбэк без кнопок."""
     try:
         p = await backend.payment_link(order_id, kind)
+    except OutOfStock as e:
+        # Товара нет — платить нельзя: честно говорим об этом, кнопок оплаты не даём.
+        return PayBlock(e.message, [])
     except Exception:
         return PayBlock("Ссылка на оплату придёт следующим сообщением.", [])
     options = list(p.get("options") or [])

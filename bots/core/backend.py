@@ -7,6 +7,26 @@ import httpx
 from bots.core.config import settings
 
 
+class OutOfStock(Exception):
+    """Товара нет на складе: оплатить или заказать нельзя. message — текст для клиента."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def raise_if_out_of_stock(response: httpx.Response) -> None:
+    """409 с кодом out_of_stock → OutOfStock с готовым текстом для клиента."""
+    if response.status_code != 409:
+        return
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        return
+    if isinstance(detail, dict) and detail.get("code") == "out_of_stock":
+        raise OutOfStock(str(detail.get("message") or "Этого товара сейчас нет в наличии."))
+
+
 class Backend:
     def __init__(self) -> None:
         headers = (
@@ -89,6 +109,7 @@ class Backend:
                 "model_name": model_name,
             },
         )
+        raise_if_out_of_stock(r)
         r.raise_for_status()
         return r.json()
 
@@ -99,6 +120,7 @@ class Backend:
 
     async def payment_link(self, order_id: int, kind: str = "prepayment") -> dict:
         r = await self._client.post("/payments/link", json={"order_id": order_id, "kind": kind})
+        raise_if_out_of_stock(r)
         r.raise_for_status()
         return r.json()
 

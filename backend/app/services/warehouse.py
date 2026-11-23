@@ -227,6 +227,38 @@ def _check_qty(qty: int, *, allow_zero: bool = False) -> None:
         )
 
 
+async def has_stock(session: AsyncSession, model_name: str, plate_type: str | None) -> bool:
+    """Есть ли на складе хотя бы одна пара «балванка + пластина» для этой модели и цвета.
+
+    Только чтение (позиции не создаются); остаток «универсальной» группы общий для её моделей."""
+    plate = _normalize_plate(plate_type)
+    for kind, plate_arg in ((StockKind.BASE, None), (StockKind.PLATE, plate)):
+        try:
+            component = await get_component(session, kind, model_name, plate_arg, create=False)
+        except HTTPException:
+            return False
+        if component.qty < 1:
+            return False
+    return True
+
+
+def out_of_stock_error(model_name: str, *, prepaid: bool = False) -> HTTPException:
+    """409 с машинным кодом: бот и мини-приложение показывают message клиенту как есть."""
+    if prepaid:
+        message = (
+            f"Для {model_name} сейчас нет заготовки на складе. Мы уже приняли вашу предоплату — "
+            "как только поступит товар, пришлём ссылку на оплату остатка."
+        )
+    else:
+        message = (
+            f"К сожалению, для {model_name} сейчас нет в наличии — оплатить пока нельзя. "
+            "Выберите другую модель или загляните позже."
+        )
+    return HTTPException(
+        status.HTTP_409_CONFLICT, detail={"code": "out_of_stock", "message": message}
+    )
+
+
 async def _apply_delta(
     session: AsyncSession,
     component: StockComponent,
