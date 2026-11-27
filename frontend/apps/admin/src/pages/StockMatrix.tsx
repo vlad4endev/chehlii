@@ -281,7 +281,6 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
       clear: () => patch({ qtyMin: '', qtyMax: '' }),
     })
   }
-  if (filters.onlyGroups) chips.push({ id: 'g', label: 'Только универсальные группы', clear: () => patch({ onlyGroups: false }) })
 
   return (
     <div>
@@ -453,14 +452,6 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
               </button>
             </div>
           </fieldset>
-          <label className="stockfilters__check">
-            <input
-              type="checkbox"
-              checked={filters.onlyGroups}
-              onChange={(e) => patch({ onlyGroups: e.target.checked })}
-            />
-            Только универсальные группы
-          </label>
         </div>
       )}
 
@@ -538,7 +529,7 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                       {status === 'low' && <span className="statuspill statuspill--low">Заканчивается</span>}
                       {r.members.length > 0 && (
                         <span className="groupnote" title={r.members.join(', ')}>
-                          Универсальная группа · {modelsWord(r.members.length)}
+                          Общий остаток · {modelsWord(r.members.length)}
                         </span>
                       )}
                     </td>
@@ -559,7 +550,7 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                       <button
                         type="button"
                         className={`btn btn--sm ${status === 'out' || status === 'low' ? 'btn--hot' : 'btn--ghost'}`}
-                        aria-label={`Принять поставку: ${r.model}`}
+                        aria-label={`Приход: ${r.model}`}
                         onClick={() => onSupply(r.model)}
                       >
                         + Приход

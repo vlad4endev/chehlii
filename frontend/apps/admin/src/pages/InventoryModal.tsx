@@ -117,7 +117,7 @@ export function InventoryModal({ components, onClose, onSaved }: Props) {
                   <tr key={r.model}>
                     <td className="strong">
                       {r.model}
-                      {r.members.length > 0 && <span className="groupnote">Универсальная группа</span>}
+                      {r.members.length > 0 && <span className="groupnote">Общий остаток</span>}
                     </td>
                     {COLUMNS.map((c) => {
                       const comp = r[c.key]

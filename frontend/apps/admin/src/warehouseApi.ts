@@ -15,15 +15,6 @@ export interface StockComponent {
   members: string[]
 }
 
-export type GroupScope = 'both' | 'base' | 'plate'
-
-export interface StockGroup {
-  id: number
-  name: string
-  scope: GroupScope
-  models: string[]
-}
-
 export interface StockMovement {
   id: number
   component_id: number
@@ -175,17 +166,7 @@ export async function downloadPurchaseXlsx(): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
-export const GROUP_SCOPE_LABEL: Record<GroupScope, string> = {
-  both: 'Балванка и пластины',
-  plate: 'Только пластины',
-  base: 'Только балванка',
-}
-
-export const fetchGroups = () => apiGet<StockGroup[]>('/admin/warehouse/groups')
-
-export const saveGroup = (body: { name: string; scope: GroupScope; models: string[] }) =>
-  apiSend<StockGroup>('POST', '/admin/warehouse/groups', body)
-
+/** Расформировать старую группу: остаток переходит первой модели группы (только админ). */
 export const deleteGroup = (name: string) =>
   apiSend<void>('DELETE', `/admin/warehouse/groups/${encodeURIComponent(name)}`)
 

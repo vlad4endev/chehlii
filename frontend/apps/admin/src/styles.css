@@ -1516,3 +1516,7 @@ th:not(.cell-qty) .sorthead__arrow { position: static; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+.metachip--warn { background: #fdf3df; color: #7a4f00; }
+.groupsbanner { padding: 12px 14px; border-radius: 12px; background: #fdf3df; border: 1px solid #ecd09a; font-size: 13.5px; line-height: 1.5; }
+.groupsbanner__list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

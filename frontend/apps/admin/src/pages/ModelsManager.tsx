@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError } from '../api'
 import { useModalA11y } from '../useModalA11y'
+import { deleteGroup } from '../warehouseApi'
 import {
   type IphoneModelDetail,
   createIphoneModel,
   deleteIphoneModel,
   fetchIphoneModelDetails,
+  fetchIphoneModels,
   renameIphoneModel,
 } from '../catalogApi'
 
@@ -32,6 +34,7 @@ export function ModelsManager({ onClose, onChanged }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameTo, setRenameTo] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [dissolving, setDissolving] = useState<string | null>(null)
 
   const cardRef = useRef<HTMLDivElement>(null)
   useModalA11y(cardRef, () => {
@@ -50,6 +53,12 @@ export function ModelsManager({ onClose, onChanged }: Props) {
   useEffect(() => {
     void load()
   }, [load])
+
+  const oldGroups = useMemo(() => {
+    const byName = new Map<string, string[]>()
+    for (const d of details ?? []) if (d.group_name) byName.set(d.group_name, [...(byName.get(d.group_name) ?? []), d.name])
+    return [...byName].map(([name, models]) => ({ name, models }))
+  }, [details])
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -98,6 +107,13 @@ export function ModelsManager({ onClose, onChanged }: Props) {
       return
     }
     if (await run(() => renameIphoneModel(from, to), `Переименовано: «${from}» → «${to}»`)) setRenaming(null)
+  }
+
+  /** Расформировать старую группу: остаток переходит первой модели группы. */
+  async function dissolve(groupName: string) {
+    if (await run(async () => { await deleteGroup(groupName); return fetchIphoneModels() }, `Группа «${groupName}» расформирована`)) {
+      setDissolving(null)
+    }
   }
 
   async function remove(name: string) {
@@ -154,6 +170,21 @@ export function ModelsManager({ onClose, onChanged }: Props) {
               <span>Сразу показывать клиентам во всех типах чехлов</span>
             </label>
           </form>
+
+          {oldGroups.length > 0 && (
+            <div className="groupsbanner" role="note">
+              <b>Старые группы моделей больше не создаются.</b> Один чехол на две модели теперь оформляется одной
+              моделью вроде <b>iPhone 17|18</b>. Чтобы перейти: расформируйте группу кнопкой ниже (остаток уйдёт
+              первой модели группы), создайте общую модель и оприходуйте на неё остаток.
+              <div className="groupsbanner__list">
+                {oldGroups.map((g) => (
+                  <span key={g.name} className="metachip">
+                    «{g.name}»: {g.models.join(', ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {notice && (
             <div className="toast" role="status">
@@ -233,7 +264,7 @@ export function ModelsManager({ onClose, onChanged }: Props) {
                         <span className="modelsrow__meta">
                           {d.orders > 0 && <span className="metachip">заказов: {d.orders}</span>}
                           <span className="metachip">остаток: {d.stock_qty} шт.</span>
-                          {d.group_name && <span className="metachip">группа «{d.group_name}»</span>}
+                          {d.group_name && <span className="metachip metachip--warn">старая группа «{d.group_name}»</span>}
                         </span>
                       </div>
                       <div className="modelsrow__actions">
@@ -250,6 +281,21 @@ export function ModelsManager({ onClose, onChanged }: Props) {
                         >
                           Переименовать
                         </button>
+                        {d.group_name && (
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            disabled={busy}
+                            onClick={() => {
+                              setDissolving(dissolving === d.group_name ? null : d.group_name)
+                              setDeleting(null)
+                              setRenaming(null)
+                              setError(null)
+                            }}
+                          >
+                            Расформировать группу
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn--danger btn--sm"
@@ -263,6 +309,22 @@ export function ModelsManager({ onClose, onChanged }: Props) {
                           Удалить
                         </button>
                       </div>
+                      {d.group_name && dissolving === d.group_name && (
+                        <div className="modelsrow__confirm modelsrow__confirm--blocked" role="group">
+                          <p>
+                            Расформировать группу «{d.group_name}»? Весь её остаток перейдёт первой модели группы, остальные
+                            модели начнут с нуля. История движений сохранится.
+                          </p>
+                          <div>
+                            <button type="button" className="btn btn--primary btn--sm" disabled={busy} onClick={() => void dissolve(d.group_name!)}>
+                              {busy ? 'Расформировываем…' : 'Да, расформировать'}
+                            </button>{' '}
+                            <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setDissolving(null)}>
+                              Нет
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {deleting === d.name && (
                         <div className={`modelsrow__confirm${d.can_delete ? '' : ' modelsrow__confirm--blocked'}`} role="group">
                           {d.can_delete ? (

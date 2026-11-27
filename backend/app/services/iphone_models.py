@@ -154,7 +154,10 @@ def _delete_blocker(name: str, orders: int, qty: int, group_name: str | None) ->
             "Отключите её в типах чехлов, чтобы клиенты её не видели."
         )
     if group_name:
-        return f"Модель входит в группу «{group_name}». Сначала уберите её из группы."
+        return (
+            f"Модель входит в старую группу «{group_name}». "
+            "Сначала расформируйте группу в окне «Модели iPhone»."
+        )
     if qty:
         return f"На складе остаток {qty} шт. Сначала спишите или обнулите его."
     return None

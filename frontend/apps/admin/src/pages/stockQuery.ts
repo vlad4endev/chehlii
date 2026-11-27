@@ -150,7 +150,6 @@ export interface Filters {
   qtyTarget: QtyTarget
   qtyMin: string
   qtyMax: string
-  onlyGroups: boolean
 }
 
 export const emptyFilters = (): Filters => ({
@@ -160,7 +159,6 @@ export const emptyFilters = (): Filters => ({
   qtyTarget: 'any',
   qtyMin: '',
   qtyMax: '',
-  onlyGroups: false,
 })
 
 const toNum = (s: string): number | null => (s.trim() === '' || Number.isNaN(Number(s)) ? null : Number(s))
@@ -173,8 +171,7 @@ export function activeFilterCount(f: Filters): number {
     (f.series.size > 0 ? 1 : 0) +
     (f.variants.size > 0 ? 1 : 0) +
     (f.statuses.size > 0 ? 1 : 0) +
-    (hasQtyRange(f) ? 1 : 0) +
-    (f.onlyGroups ? 1 : 0)
+    (hasQtyRange(f) ? 1 : 0)
   )
 }
 
@@ -183,7 +180,6 @@ export function matchesFilters(r: RowFacts, f: Filters): boolean {
   if (f.series.size > 0 && !f.series.has(p.series)) return false
   if (f.variants.size > 0 && !f.variants.has(p.variant)) return false
   if (f.statuses.size > 0 && (!r.status || !f.statuses.has(r.status))) return false
-  if (f.onlyGroups && r.members.length === 0) return false
   const min = toNum(f.qtyMin)
   const max = toNum(f.qtyMax)
   if (min !== null || max !== null) {

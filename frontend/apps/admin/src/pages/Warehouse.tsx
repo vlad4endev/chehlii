@@ -21,7 +21,6 @@ import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
 import { PurchaseModal } from './PurchaseModal'
 import { StockActionModal } from './StockActionModal'
-import { StockGroupsModal } from './StockGroupsModal'
 import { StockMatrix } from './StockMatrix'
 import { SupplyModal } from './SupplyModal'
 
@@ -39,7 +38,6 @@ export function Warehouse() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const [addOpen, setAddOpen] = useState(false)
-  const [groupsOpen, setGroupsOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -48,7 +46,6 @@ export function Warehouse() {
   // Модель, по которой только что записали операцию: строка коротко подсвечивается.
   const [flashModel, setFlashModel] = useState<string | null>(null)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
-  const hasGroups = components.some((c) => (c.members?.length ?? 0) > 0)
 
   // Спиннер только при первой загрузке. Дальше данные обновляются на месте: иначе таблица
   // размонтировалась бы после каждой операции, сбрасывая фильтры и сообщения об ошибках.
@@ -127,9 +124,6 @@ export function Warehouse() {
                 items={[
                   { label: 'Модели iPhone: добавить, переименовать, удалить', onSelect: () => setModelsOpen(true) },
                   { label: 'Новая позиция', onSelect: () => setAddOpen(true) },
-                  // Группы остались для уже созданных: новым «один чехол на две модели» удобнее
-                  // оформлять одной моделью с названием вида «iPhone 17|18».
-                  ...(hasGroups ? [{ label: 'Старые группы моделей', onSelect: () => setGroupsOpen(true) }] : []),
                 ]}
               />
             </>
@@ -208,16 +202,6 @@ export function Warehouse() {
           onSaved={async (result) => {
             await reload()
             setNotice(`Инвентаризация сохранена: изменено позиций — ${result.changed}.`)
-          }}
-        />
-      )}
-
-      {groupsOpen && (
-        <StockGroupsModal
-          models={models}
-          onClose={() => setGroupsOpen(false)}
-          onChanged={async () => {
-            await reload()
           }}
         />
       )}
