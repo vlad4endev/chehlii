@@ -417,7 +417,7 @@ input, select, textarea { font-family: inherit; }
 
 /* ── Модалка ──────────────────────────────────────── */
 .modal { position: fixed; inset: 0; z-index: 50; background: rgba(18, 18, 20, 0.5); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; }
-.modal__card { width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-pop); }
+.modal__card { width: 100%; max-width: 560px; max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); display: flex; flex-direction: column; background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-pop); }
 .modal__card--wide { max-width: 660px; }
 .modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--line); }
 .modal__title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
@@ -1480,4 +1480,15 @@ th:not(.cell-qty) .sorthead__arrow { position: static; }
   .modelsrow__actions { width: 100%; }
   .modelsrow__actions .btn { flex: 1; }
   .modelstools .input { max-width: none; }
+}
+
+/* Окна: шапка и кнопки всегда на экране, прокручивается только середина.
+   Форма внутри карточки (создание группы и др.) тоже должна быть flex-колонкой с min-height: 0,
+   иначе она вырастает выше окна и кнопки уезжают за край экрана. */
+.modal__card > form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.modal__head, .modal__actions { flex: none; }
+.modal__actions { flex-wrap: wrap; }
+.modal__body > * { flex-shrink: 0; }
+@media (max-width: 640px) {
+  .modal__card, .modal__card--wide { max-height: 100dvh; }
 }
