@@ -472,7 +472,7 @@ function OrderModal({ id, onClose, onChanged }: { id: number; onClose: () => voi
               </span>
             )}
           </h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>

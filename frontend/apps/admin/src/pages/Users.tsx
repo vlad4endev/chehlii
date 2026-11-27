@@ -188,7 +188,7 @@ function CreateUser({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
       <div className="modal__card" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">Новый пользователь</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>
@@ -279,7 +279,7 @@ function EditUser({
       <div className="modal__card" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">{user.email}</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>

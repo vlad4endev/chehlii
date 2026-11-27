@@ -199,7 +199,11 @@ export function MovementsLog({ refreshKey, canReverse, onChanged }: Props) {
               <th>Кто</th>
               <th>Заказ</th>
               <th>Комментарий</th>
-              {canReverse && <th></th>}
+              {canReverse && (
+                <th>
+                  <span className="sr-only">Действие</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>

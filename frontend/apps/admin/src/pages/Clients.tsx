@@ -217,7 +217,7 @@ function ContactModal({
       <div className="modal__card" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">{contact.display_name || 'Контакт'}</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>
@@ -319,7 +319,7 @@ function ClientModal({ id, onClose, onSaved }: { id: number; onClose: () => void
       <div className="modal__card modal__card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">{client?.nickname || `Клиент #${id}`}</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>

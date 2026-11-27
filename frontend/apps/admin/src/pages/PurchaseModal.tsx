@@ -88,7 +88,7 @@ export function PurchaseModal({ onClose }: Props) {
                   <div className="purchasetotal">
                     Позиций к закупке: <b>{items.length}</b> · всего <b className="mono">{total}</b> шт.
                   </div>
-                  <div className="tablewrap invwrap">
+                  <div className="tablewrap invwrap" tabIndex={0} role="region" aria-label="Таблица закупки">
                     <table className="table">
                       <thead>
                         <tr>

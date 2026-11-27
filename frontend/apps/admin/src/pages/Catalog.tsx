@@ -262,7 +262,7 @@ function CaseTypeEditor({
       <div className="modal__card" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">{item ? 'Изменить тип' : 'Новый тип'}</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>

@@ -4,22 +4,22 @@
   --panel-2: #f7f8fb;
   --ink: #232733;
   --ink-2: #494f5d;
-  --ink-soft: #6c7180;
-  --ink-faint: #a3a8b4;
+  --ink-soft: #5a6070;
+  --ink-faint: #697080;
   --line: #ebedf2;
   --line-2: #dde0e7;
   --accent: #23262d;         /* графит — монохромный акцент (в тон логотипу) */
   --accent-press: #101216;   /* глубже при нажатии */
   --accent-soft: #eceef1;    /* нейтральная светло-серая подложка */
-  --danger: #dc5757;
-  --ok: #2f9e6a;
+  --danger: #b83232;
+  --ok: #1f7a50;
   --warn: #c08a2a;
 
   /* Светлый сайдбар — воздушно, без «тяжёлого» чёрного */
   --side-bg: #fbfbfd;
   --side-bg-2: #f1f2f7;
   --side-ink: #3d4250;
-  --side-ink-soft: #969cab;
+  --side-ink-soft: #666c7b;
   --side-line: #eceef3;
 
   --radius: 12px;
@@ -1397,7 +1397,6 @@ th.cell-qty .sorthead { text-align: center; }
   .table--stock td, .table--stock th { vertical-align: middle; }
   .table--stock th { vertical-align: bottom; }
   .table--stock .stockrow__act { text-align: right; }
-  .table--stock tbody tr { height: 68px; }
 }
 .stockrow__model { overflow-wrap: anywhere; }
 .btn--hot { background: var(--panel); border-color: var(--accent); color: var(--ink); }
@@ -1485,10 +1484,35 @@ th:not(.cell-qty) .sorthead__arrow { position: static; }
 /* Окна: шапка и кнопки всегда на экране, прокручивается только середина.
    Форма внутри карточки (создание группы и др.) тоже должна быть flex-колонкой с min-height: 0,
    иначе она вырастает выше окна и кнопки уезжают за край экрана. */
-.modal__card > form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.modal__card > form, .modal__card > .modal__form, .modal__card > form.modal__form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .modal__head, .modal__actions { flex: none; }
 .modal__actions { flex-wrap: wrap; }
 .modal__body > * { flex-shrink: 0; }
 @media (max-width: 640px) {
   .modal__card, .modal__card--wide { max-height: 100dvh; }
+}
+
+/* ── Единые правила доступности ──────────────────────────
+   Контраст текста ≥ 4.5:1 (токены выше), зоны нажатия ≥ 44 px, виден фокус с клавиатуры,
+   уважаем «меньше анимации» в настройках системы. */
+:where(a, button, [role="button"], select, input, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid rgba(35, 38, 45, 0.6);
+  outline-offset: 2px;
+}
+:where(.input):focus-visible { outline-offset: 0; }
+.modal__close { width: 44px; height: 44px; }
+.chipbtn, .sorthead, .btn { min-height: 44px; }
+/* Склад, окна и шапка страницы: компактные кнопки и поля тоже ≥ 44 px. На сенсорных экранах и на
+   узких окнах — везде в админке. */
+.whsection .btn--sm, .pendingbox .btn--sm, .modal .btn--sm, .page__head .btn--sm,
+.whsection .input, .pendingbox .input, .modal .input, .stocksearch .input { min-height: 44px; }
+.pendingbox__info a.strong, .table--log td a { display: inline-block; min-width: 44px; padding: 14px 0; margin: -14px 0; }
+@media (pointer: coarse), (max-width: 900px) {
+  .btn--sm, .input, .nav__link, .sidebar__logout, .topbar__notif, .linkbtn, .segmented__btn { min-height: 44px; }
+  .hamburger { min-width: 44px; min-height: 44px; }
+  .modelrow__stock .input { min-height: 44px; }
+}
+@media (min-width: 641px) { .table--stock tbody tr { height: 72px; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

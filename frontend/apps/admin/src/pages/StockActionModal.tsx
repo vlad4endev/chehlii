@@ -45,7 +45,7 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const cardRef = useRef<HTMLFormElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   // Пока идёт запись, закрывать нельзя: иначе человек не узнает, сохранилось ли.
   useModalA11y(cardRef, () => {
     if (!busy) onClose()
@@ -112,7 +112,7 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
 
   return (
     <div className="modal" onClick={onClose}>
-      <form
+      <div
         ref={cardRef}
         tabIndex={-1}
         className="modal__card"
@@ -120,8 +120,8 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
       >
+        <form className="modal__form" onSubmit={submit}>
         <div className="modal__head">
           <h2 className="modal__title">{title}</h2>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Закрыть">
@@ -225,7 +225,8 @@ export function StockActionModal({ row, canAdjust, onClose, onDone }: Props) {
             {submitLabel}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   )
 }

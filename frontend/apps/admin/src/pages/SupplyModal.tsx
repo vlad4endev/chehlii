@@ -34,7 +34,7 @@ export function SupplyModal({ components, initialModel, onClose, onRecorded, onD
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const cardRef = useRef<HTMLFormElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   useModalA11y(cardRef, () => {
     if (!busy) onClose()
   })
@@ -108,7 +108,7 @@ export function SupplyModal({ components, initialModel, onClose, onRecorded, onD
 
   return (
     <div className="modal" onClick={() => !busy && onClose()}>
-      <form
+      <div
         ref={cardRef}
         tabIndex={-1}
         className="modal__card"
@@ -116,8 +116,8 @@ export function SupplyModal({ components, initialModel, onClose, onRecorded, onD
         aria-modal="true"
         aria-labelledby="supply-title"
         onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
       >
+        <form className="modal__form" onSubmit={submit}>
         <div className="modal__head">
           <h2 id="supply-title" className="modal__title">
             Принять поставку
@@ -201,7 +201,8 @@ export function SupplyModal({ components, initialModel, onClose, onRecorded, onD
             {busy ? 'Записываем…' : total > 0 ? `Записать приход · ${total} шт.` : 'Записать приход'}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   )
 }

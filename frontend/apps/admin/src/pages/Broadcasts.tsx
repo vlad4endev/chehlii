@@ -256,7 +256,7 @@ function Composer({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
       <div className="modal__card modal__card--wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal__head">
           <h2 className="modal__title">Новая рассылка</h2>
-          <button className="modal__close" onClick={onClose}>
+          <button className="modal__close" onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         </div>

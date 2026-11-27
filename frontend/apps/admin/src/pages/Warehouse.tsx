@@ -342,7 +342,7 @@ function AddPositionModal({
   const [registerCanon, setRegisterCanon] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const cardRef = useRef<HTMLFormElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   // Пока идёт запись, закрывать нельзя: иначе человек не узнает, сохранилось ли.
   useModalA11y(cardRef, () => {
     if (!busy) onClose()
@@ -370,7 +370,7 @@ function AddPositionModal({
 
   return (
     <div className="modal" onClick={() => !busy && onClose()}>
-      <form
+      <div
         ref={cardRef}
         tabIndex={-1}
         className="modal__card"
@@ -378,8 +378,8 @@ function AddPositionModal({
         aria-modal="true"
         aria-labelledby="add-position-title"
         onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
       >
+        <form className="modal__form" onSubmit={submit}>
         <div className="modal__head">
           <h2 id="add-position-title" className="modal__title">
             Новая позиция
@@ -475,7 +475,8 @@ function AddPositionModal({
             {busy ? 'Создание…' : 'Создать позицию'}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   )
 }
