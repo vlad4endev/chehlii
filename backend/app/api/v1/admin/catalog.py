@@ -36,6 +36,19 @@ class IphoneModelCreate(BaseModel):
     enable_on_all: bool = False
 
 
+class IphoneModelRename(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class IphoneModelDetail(BaseModel):
+    name: str
+    orders: int
+    stock_qty: int
+    group_name: str | None
+    can_delete: bool
+    delete_blocker: str | None
+
+
 class CaseTypeIn(BaseModel):
     name: str = Field(min_length=1)
     is_custom: bool = False
@@ -119,6 +132,37 @@ async def create_iphone_model(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[str]:
     await im.add_model(session, payload.name, enable_on_all=payload.enable_on_all)
+    await session.commit()
+    return await im.list_model_names(session)
+
+
+@router.get("/iphone-models/details", response_model=list[IphoneModelDetail])
+async def iphone_model_details(
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    return await im.model_details(session)
+
+
+@router.patch("/iphone-models/{name:path}", response_model=list[str])
+async def rename_iphone_model(
+    name: str,
+    payload: IphoneModelRename,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[str]:
+    await im.rename_model(session, name, payload.name)
+    await session.commit()
+    return await im.list_model_names(session)
+
+
+@router.delete("/iphone-models/{name:path}", response_model=list[str])
+async def delete_iphone_model(
+    name: str,
+    _: AdminOnly,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[str]:
+    await im.delete_model(session, name)
     await session.commit()
     return await im.list_model_names(session)
 

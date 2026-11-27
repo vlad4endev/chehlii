@@ -80,6 +80,7 @@ const isRow = (x: AvailabilityRow | undefined): x is AvailabilityRow => x !== un
 const membersOf = (r: ModelRow): string[] => (r.members.length > 0 ? r.members : [r.model])
 
 const PLATE_NAME: Record<PlateType, string> = { black: 'Чёрная', silver: 'Серебро' }
+const PLATE_TIP: Record<PlateType, string> = { black: 'с чёрной пластиной', silver: 'с серебряной пластиной' }
 
 type CountState = 'out' | 'low' | 'ok'
 
@@ -104,7 +105,11 @@ function Sellable({ entries, threshold }: { entries: AvailabilityRow[]; threshol
       {used.map((p) => {
         const count = Math.min(...entries.map((e) => e[p]))
         return (
-          <span key={p} className={`sellchip sellchip--${countState(count, threshold)}`}>
+          <span
+            key={p}
+            className={`sellchip sellchip--${countState(count, threshold)}`}
+            title={`Можно собрать чехлов ${PLATE_TIP[p]}: ${count}`}
+          >
             <i className={`dot dot--${p}`} aria-hidden="true" />
             {PLATE_NAME[p]} <b className="mono">{count}</b>
           </span>
@@ -509,7 +514,7 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
                   aria-sort={ariaSort('sellable')}
                   title="Сколько чехлов можно продать: меньшее из балванки и пластины нужного цвета"
                 >
-                  <SortHead label="Можно собрать" sub="чехлов" arrow={arrow('sellable')} onClick={() => clickHeader('sellable')} />
+                  <SortHead label="Можно собрать" sub="чехлов по цвету пластины" arrow={arrow('sellable')} onClick={() => clickHeader('sellable')} />
                 </th>
                 <th className="col-act">
                   <span className="sr-only">Действие</span>
@@ -568,7 +573,8 @@ export function StockMatrix({ components, availability, onOpen, onSupply, highli
         </div>
       )}
       <p className="field__hint" style={{ margin: '10px 0 0' }}>
-        Нажмите на число в таблице — откроется приход, брак или правка остатка. Заголовки колонок сортируют.
+        Чёрная и серебро — это цвет пластины: чехол собирается из балванки и пластины нужного цвета. Нажмите на число
+        в таблице — откроется приход, брак или правка остатка. Заголовки колонок сортируют.
       </p>
     </div>
   )

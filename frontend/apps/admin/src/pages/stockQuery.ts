@@ -29,7 +29,10 @@ export interface ParsedModel {
 const VARIANT_ORDER = ['Базовая', 'mini', 'e', 'Air', 'Plus', 'Pro', 'Pro Max', 'Другое']
 
 export function parseModel(name: string): ParsedModel {
-  const m = /^iphone\s+(\d+|se|x[rs]?)\s*(.*)$/i.exec(name.trim())
+  // «iPhone 17|18» — одна модель на два телефона: серия по первому, вариант общий.
+  const first = name.split(/[|/]/)[0].trim()
+  const tail = name.includes('|') || name.includes('/') ? name.split(/[|/]/).slice(1).join(' ').replace(/^\s*\d+/, '').trim() : ''
+  const m = /^iphone\s+(\d+|se|x[rs]?)\s*(.*)$/i.exec(`${first} ${tail}`.trim())
   if (!m) return { series: 'Другие', variant: 'Другое', generation: 0 }
   const rawSeries = m[1].toUpperCase()
   const rest = m[2].toLowerCase().replace(/\s+/g, ' ').trim()

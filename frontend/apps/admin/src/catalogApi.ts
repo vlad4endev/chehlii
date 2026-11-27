@@ -42,6 +42,27 @@ export const fetchCaseTypes = () => apiGet<CaseTypeAdmin[]>('/admin/case-types')
 export const fetchIphoneModels = () => apiGet<string[]>('/admin/case-types/iphone-models')
 export const createIphoneModel = (body: { name: string; enable_on_all?: boolean }) =>
   apiSend<string[]>('POST', '/admin/case-types/iphone-models', body)
+
+/** Модель со сводкой: сколько заказов и остатка, можно ли удалить (и если нет — почему). */
+export interface IphoneModelDetail {
+  name: string
+  orders: number
+  stock_qty: number
+  group_name: string | null
+  can_delete: boolean
+  delete_blocker: string | null
+}
+
+export const fetchIphoneModelDetails = () =>
+  apiGet<IphoneModelDetail[]>('/admin/case-types/iphone-models/details')
+
+// Имя может содержать «|» и «/» (модель с двойным названием) — кодируем целиком.
+const modelPath = (name: string) => `/admin/case-types/iphone-models/${encodeURIComponent(name)}`
+
+export const renameIphoneModel = (name: string, newName: string) =>
+  apiSend<string[]>('PATCH', modelPath(name), { name: newName })
+
+export const deleteIphoneModel = (name: string) => apiSend<string[]>('DELETE', modelPath(name))
 export const createCaseType = (body: CaseTypeInput) =>
   apiSend<CaseTypeAdmin>('POST', '/admin/case-types', body)
 export const updateCaseType = (id: number, body: CaseTypeInput) =>

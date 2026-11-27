@@ -16,6 +16,7 @@ import {
   fetchWarehouseModels,
 } from '../warehouseApi'
 import { InventoryModal } from './InventoryModal'
+import { ModelsManager } from './ModelsManager'
 import { MovementsLog } from './MovementsLog'
 import { PendingDeductions } from './PendingDeductions'
 import { PurchaseModal } from './PurchaseModal'
@@ -39,6 +40,7 @@ export function Warehouse() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   // Приход поставки: undefined — окно закрыто, '' — открыто без модели, иначе модель выбрана заранее.
@@ -46,6 +48,7 @@ export function Warehouse() {
   // Модель, по которой только что записали операцию: строка коротко подсвечивается.
   const [flashModel, setFlashModel] = useState<string | null>(null)
   const [editRow, setEditRow] = useState<StockComponent | null>(null)
+  const hasGroups = components.some((c) => (c.members?.length ?? 0) > 0)
 
   // Спиннер только при первой загрузке. Дальше данные обновляются на месте: иначе таблица
   // размонтировалась бы после каждой операции, сбрасывая фильтры и сообщения об ошибках.
@@ -122,8 +125,11 @@ export function Warehouse() {
                 open={menuOpen}
                 onOpenChange={setMenuOpen}
                 items={[
+                  { label: 'Модели iPhone: добавить, переименовать, удалить', onSelect: () => setModelsOpen(true) },
                   { label: 'Новая позиция', onSelect: () => setAddOpen(true) },
-                  { label: 'Группы моделей', onSelect: () => setGroupsOpen(true) },
+                  // Группы остались для уже созданных: новым «один чехол на две модели» удобнее
+                  // оформлять одной моделью с названием вида «iPhone 17|18».
+                  ...(hasGroups ? [{ label: 'Старые группы моделей', onSelect: () => setGroupsOpen(true) }] : []),
                 ]}
               />
             </>
@@ -211,6 +217,16 @@ export function Warehouse() {
           models={models}
           onClose={() => setGroupsOpen(false)}
           onChanged={async () => {
+            await reload()
+          }}
+        />
+      )}
+
+      {modelsOpen && (
+        <ModelsManager
+          onClose={() => setModelsOpen(false)}
+          onChanged={async (next) => {
+            setModels(next)
             await reload()
           }}
         />
